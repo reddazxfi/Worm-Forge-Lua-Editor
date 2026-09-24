@@ -100,8 +100,15 @@ Contributions are **warmly welcomed**! 💖 Feel free to open an issue or submit
 
 MIT. ⚖️
 
+## Disclaimers
+
+ -- Not affiliated with Team17 or Worms Armageddon. WormForge is a third-party modding project.
+ -- Example mods are from EdLud and Ropa.
+ -- Early stages, save/export your work every 2 seconds.
+ 
 <div align="center">
 
 **Made with ❤️ and a *deep passion* for worms.** 🪱
 
 </div>
+
