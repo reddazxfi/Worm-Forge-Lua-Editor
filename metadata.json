@@ -1,0 +1,6 @@
+{
+  "name": "WormForge Code Studio",
+  "description": "Real-time collaborative code editor and syntax checker for WormForge Lua modding with custom classes, verbs, AST parser, and engine introspection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
