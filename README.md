@@ -94,7 +94,7 @@ Contributions are **warmly welcomed**! 💖 Feel free to open an issue or submit
 ---
 
 ## ❌ Limitations
--- Vibecoded if you didnt notice
+- Vibecoded if you didnt notice
 
 ## 📜 License
 
@@ -102,9 +102,9 @@ MIT. ⚖️
 
 ## Disclaimers
 
- -- Not affiliated with Team17 or Worms Armageddon. WormForge is a third-party modding project.
- -- Example mods are from EdLud and Ropa.
- -- Early stages, save/export your work every 2 seconds.
+ - Not affiliated with Team17 or Worms Armageddon. WormForge is a third-party modding project.
+ - Example mods are from EdLud and Ropa.
+ - Early stages, save/export your work every 2 seconds.
  
 <div align="center">
 
