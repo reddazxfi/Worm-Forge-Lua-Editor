@@ -6,6 +6,12 @@ WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully cr
 
 ---
 
+## 📁 WormForge Repo
+
+https://github.com/ropahektic/WormForge
+
+---
+
 ## 🌟 Key Features
 
 - 🧠 **Intelligent Lua Editor** — A custom-built tokenizer and parser delivers real-time syntax diagnostics as you type.
@@ -87,9 +93,12 @@ Contributions are **warmly welcomed**! 💖 Feel free to open an issue or submit
 
 ---
 
+## ❌ Limitations
+-- Vibecoded if you didnt notice
+
 ## 📜 License
 
-TBD. ⚖️
+MIT. ⚖️
 
 <div align="center">
 
