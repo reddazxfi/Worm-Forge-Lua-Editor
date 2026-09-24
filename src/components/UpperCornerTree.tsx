@@ -47,7 +47,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
   existingMods,
   workspaceName,
   workspaceFiles,
-  dirtyFiles = [],
+  dirtyFiles = [] as string[],
   activeFile,
   onOpenWorkspaceFile,
   selectedItem,
@@ -66,7 +66,6 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
   const [openSubNodes, setOpenSubNodes] = useState<Record<string, boolean>>({
     'class_LuaActor': false,
     'class_WormEntity': false,
-    'class_customClass': true,
   });
 
   const toggleNode = (node: string) => {

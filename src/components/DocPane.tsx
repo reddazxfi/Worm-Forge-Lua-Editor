@@ -33,7 +33,7 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
 
   const getSignature = () => {
     if (activeMember) {
-      if (selectedItem.name === 'customClass' || activeMember.isCustom) {
+      if (activeMember.isCustom) {
         const sep = activeMember.kind === 'method' ? ':' : '.';
         const params = activeMember.parameters?.map((p) => p.name).join(', ') || '';
         return `${selectedItem.name}${sep}${activeMember.name}(${params})`;
@@ -88,7 +88,7 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
           </span>
           {activeMember?.isCustom && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              customClass-&gt;
+              custom
             </span>
           )}
         </div>

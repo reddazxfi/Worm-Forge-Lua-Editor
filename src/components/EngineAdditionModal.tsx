@@ -15,10 +15,10 @@ export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
   onAddClassOrMember,
   existingClasses,
 }) => {
-  const [targetClass, setTargetClass] = useState('customClass');
+  const [targetClass, setTargetClass] = useState(existingClasses[0]?.name ?? 'wa');
   const [isNewClass, setIsNewClass] = useState(false);
   const [newClassName, setNewClassName] = useState('');
-  const [memberName, setMemberName] = useState('customvariable');
+  const [memberName, setMemberName] = useState('');
   const [memberKind, setMemberKind] = useState<'method' | 'variable'>('method');
   const [callSyntax, setCallSyntax] = useState<'.' | ':'>('.');
   const [returnType, setReturnType] = useState('any');
@@ -81,7 +81,7 @@ export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
           <p className="text-[11.5px] text-[#8ea1b8] leading-relaxed">
             Expand the WormForge parser and autocompletion with custom classes and verbs.
-            In Lua, use <code className="text-emerald-300 font-mono">.</code> for functions/properties (e.g. <code className="text-emerald-300 font-mono">wa.on_hurt()</code>) or <code className="text-amber-300 font-mono">:</code> for methods with self (e.g. <code className="text-amber-300 font-mono">a:gfx()</code>). The arrow <code className="text-rose-400 font-mono">-&gt;</code> is from PX engine C++ internals, not valid Lua.
+            In Lua, use <code className="text-emerald-300 font-mono">.</code> for functions/properties (e.g. <code className="text-emerald-300 font-mono">wa.log()</code>) or <code className="text-amber-300 font-mono">:</code> for methods with self (e.g. <code className="text-amber-300 font-mono">a:gfx()</code>). The arrow <code className="text-rose-400 font-mono">-&gt;</code> is from PX engine C++ internals, not valid Lua.
           </p>
 
           {/* Target Class */}
@@ -143,7 +143,7 @@ export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
                 type="text"
                 value={memberName}
                 onChange={(e) => setMemberName(e.target.value)}
-                placeholder="e.g. customvariable"
+                placeholder="e.g. my_verb"
                 className="w-full bg-[#12151a] border border-[#2e3540] rounded px-2.5 py-1.5 text-xs text-[#dce7f3] font-mono"
                 required
               />

@@ -633,8 +633,8 @@ export function parseAndValidate(code: string): {
         const memberName = rightTok.value;
         const isColon = t.value === ':';
 
-        // Check if this is a custom class (like customClass or user-defined class)
-        if (className === 'customClass' || extractedClasses.some((c) => c.name === className)) {
+        // Check if this is a user-defined class
+        if (extractedClasses.some((c) => c.name === className)) {
           customVerbs.add(memberName);
 
           let params: any[] = [];

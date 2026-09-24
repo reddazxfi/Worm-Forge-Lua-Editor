@@ -9,7 +9,6 @@ import {
   Upload,
   Sparkles,
   FileCode,
-  RotateCcw,
   AlignLeft,
   Share2,
   Layers,
@@ -41,7 +40,7 @@ import {
   BUILTIN_VARIABLES,
 } from './data/wormforgeDefinitions';
 import { EXISTING_MODS } from './data/existingMods';
-import { CUSTOM_CLASS_DEMO, INITIAL_TEMPLATE } from './data/templates';
+import { INITIAL_TEMPLATE } from './data/templates';
 import { parseAndValidate } from './services/parser';
 import { collabService } from './services/collab';
 import { openModFolder, saveModFile, canOpenFolders } from './services/modFolder';
@@ -49,11 +48,10 @@ import { openModFolder, saveModFile, canOpenFolders } from './services/modFolder
 export default function App() {
   // Files State
   const [files, setFiles] = useState<Record<string, string>>({
-    'custom_demo.lua': CUSTOM_CLASS_DEMO,
     'mod.lua': INITIAL_TEMPLATE,
   });
-  const [openFiles, setOpenFiles] = useState<string[]>(['custom_demo.lua', 'mod.lua']);
-  const [activeFile, setActiveFile] = useState<string>('custom_demo.lua');
+  const [openFiles, setOpenFiles] = useState<string[]>(['mod.lua']);
+  const [activeFile, setActiveFile] = useState<string>('mod.lua');
 
   // Opened mod folder (desktop app or Chromium browser)
   const [modFolder, setModFolder] = useState<{ name: string; root: string } | null>(null);
@@ -66,17 +64,11 @@ export default function App() {
   const [customClasses, setCustomClasses] = useState<ClassDef[]>([]);
 
   // Selected symbol for DocPane
-  const [selectedSymbolItem, setSelectedSymbolItem] = useState<any>(() => {
-    // Default to customClass.customvariable documentation
-    const customCls = BUILTIN_CLASSES.find((c) => c.name === 'customClass');
-    return customCls
-      ? { ...customCls, activeMember: customCls.members[0] }
-      : BUILTIN_CLASSES[0];
-  });
+  const [selectedSymbolItem, setSelectedSymbolItem] = useState<any>(() => BUILTIN_CLASSES[0]);
 
   // Diagnostics and Symbols from Parser
   const [diagnostics, setDiagnostics] = useState<SyntaxDiagnostic[]>([]);
-  const [symbols, setSymbols] = useState(() => parseAndValidate(CUSTOM_CLASS_DEMO).symbols);
+  const [symbols, setSymbols] = useState(() => parseAndValidate(INITIAL_TEMPLATE).symbols);
   const [hasRunCheck, setHasRunCheck] = useState<boolean>(true);
 
   // Console Logs
@@ -85,12 +77,12 @@ export default function App() {
   >([
     {
       time: new Date().toLocaleTimeString(),
-      text: 'WormForge Code Studio v0.6 initialized. Lockstep AST engine active.',
+      text: 'WormForge Code Studio initialized. Lockstep AST engine active.',
       type: 'info',
     },
     {
       time: new Date().toLocaleTimeString(),
-      text: 'Loaded customClass (. / :) syntax parser and Worms Armageddon API definitions.',
+      text: 'Loaded WormForge API definitions and lockstep checks.',
       type: 'success',
     },
   ]);
@@ -288,15 +280,6 @@ export default function App() {
 
   // Load Mod or Template
   const handleLoadTemplate = (templateId: string) => {
-    if (templateId === 'custom_class_demo') {
-      const fileName = 'custom_demo.lua';
-      setFiles((prev) => ({ ...prev, [fileName]: CUSTOM_CLASS_DEMO }));
-      if (!openFiles.includes(fileName)) setOpenFiles((prev) => [...prev, fileName]);
-      setActiveFile(fileName);
-      runSyntaxCheck(CUSTOM_CLASS_DEMO);
-      return;
-    }
-
     const mod = EXISTING_MODS.find((m) => m.id === templateId);
     if (mod && mod.files.length > 0) {
       const newFiles = { ...files };
@@ -627,15 +610,6 @@ export default function App() {
           >
             <Download className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Export</span>
-          </button>
-
-          {/* Quick Demo Reload */}
-          <button
-            onClick={() => handleLoadTemplate('custom_class_demo')}
-            className="p-1.5 rounded bg-[#202631] hover:bg-[#2b3341] text-amber-400 border border-[#2e3745]"
-            title="Load customClass Demo"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

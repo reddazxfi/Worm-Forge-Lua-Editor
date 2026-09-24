@@ -6,9 +6,7 @@ WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully cr
 
 ---
 
-## 📁 WormForge Repo
-
-https://github.com/ropahektic/WormForge
+📁[WormForge Repo](https://github.com/ropahektic/WormForge)
 
 ---
 
@@ -17,7 +15,8 @@ https://github.com/ropahektic/WormForge
 - 🧠 **Intelligent Lua Editor** — A custom-built tokenizer and parser delivers real-time syntax diagnostics as you type.
 - 🔒 **Lockstep Guardian™** — Proactively catches desync-prone patterns like `math.random` and unordered `pairs()` iteration, so your mods stay **deterministic** and your multiplayer matches stay **drama-free**. 🛡️
 - 📚 **Built-in Documentation Pane** — Explore engine functions, classes, enums, and constants without ever leaving your editor.
-- 🧩 **Example Mods & Templates** — Get up and running in seconds with battle-tested weapons like the Saw, Sentry Gun, and more. 🔫
+- 📂 **Open / Save Mod Folders** — Open a pack folder (`mod.toml` + Lua), edit its files in tabs, and save straight back to disk with Ctrl+S. 🗂️
+- 🧩 **Example Mods & Templates** — Load the Saw and Sentry Gun examples to get started fast. 🔫
 - 🤝 **Real-Time Collaboration** — Code together with your fellow modders via WebSockets, complete with live cursors and a chat drawer. 💬
 - 🖥️ **Native Desktop App** — Powered by Tauri for a **lightweight**, **lightning-quick** Windows executable. No bloated Chromium bundle required! 🪶
 
@@ -49,6 +48,8 @@ npm run dev
 ```
 Then open **http://localhost:3000** and let the magic happen. 🪄
 
+> Folder open/save works in the desktop app and in Chromium-based browsers (Chrome/Edge).
+
 ### Build the Windows `.exe`
 ```bat
 build-tauri.bat
@@ -79,11 +80,20 @@ before building. 🌐
 ├── src/
 │   ├── components/   # 🎨 UI components
 │   ├── data/         # 📚 Engine definitions, templates, example mods
-│   ├── services/     # ⚙️ Parser and collaboration logic
+│   ├── services/     # ⚙️ Parser, collaboration, mod folder access
 │   └── types/        # 🧾 TypeScript types
 ├── src-tauri/        # 🦀 Desktop app shell
 └── server.ts         # 🔌 Collaboration server
 ```
+
+---
+
+## ⚠️ Known Limitations
+
+- Built with heavy AI assistance (vibecoded). Expect rough edges.
+- The API sidebar and autocomplete follow engine 0.7.2 and may lag behind newer engine versions.
+- Parser safeguards are limited: unknown-method checks only cover common receivers (`a`, `actor`, `worm`).
+- The desktop build has no bundled collaboration server; set `VITE_COLLAB_URL` to use one.
 
 ---
 
@@ -93,22 +103,14 @@ Contributions are **warmly welcomed**! 💖 Feel free to open an issue or submit
 
 ---
 
-## ❌ Limitations
-- Vibecoded if you didnt notice
-
 ## 📜 License
 
-MIT. ⚖️
+MIT. See [LICENSE](LICENSE). ⚖️
 
-## Disclaimers
+Not affiliated with Team17 or Worms Armageddon. This is a third-party tool for the [WormForge](https://github.com/ropahektic/WormForge) modding engine, which is MIT-licensed and maintained separately.
 
- - Not affiliated with Team17 or Worms Armageddon. WormForge is a third-party modding project.
- - Example mods are from EdLud and Ropa.
- - Early stages, save/export your work every 2 seconds.
- 
 <div align="center">
 
 **Made with ❤️ and a *deep passion* for worms.** 🪱
 
 </div>
-

@@ -64,7 +64,7 @@ function highlightLuaLine(line: string): string {
 
     // 3. Arrow operator -> (Flag as invalid in WormForge Lua)
     if (line.slice(i, i + 2) === '->') {
-      result += `<span class="text-rose-400 font-bold underline decoration-wavy decoration-rose-500/70" title="'->' is not valid in Lua; use '.' (e.g. wa.on_hurt()) or ':' (e.g. a:gfx)">-&gt;</span>`;
+      result += `<span class="text-rose-400 font-bold underline decoration-wavy decoration-rose-500/70" title="'->' is not valid in Lua; use '.' (e.g. wa.log()) or ':' (e.g. a:gfx)">-&gt;</span>`;
       i += 2;
       continue;
     }
@@ -110,8 +110,6 @@ function highlightLuaLine(line: string): string {
         result += `<span class="text-purple-400 font-medium">${escapeHtml(word)}</span>`;
       } else if (word === 'wa' || word === 'require') {
         result += `<span class="text-cyan-400 font-semibold">${escapeHtml(word)}</span>`;
-      } else if (word === 'customClass') {
-        result += `<span class="text-amber-300 font-bold underline decoration-amber-500/50">${escapeHtml(word)}</span>`;
       } else {
         result += escapeHtml(word);
       }
@@ -212,7 +210,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   };
 
   const checkAutocompleteTrigger = (lineText: string, lineNum: number, colNum: number) => {
-    // 1. Colon method trigger: e.g. "a:", "actor:", "worm:", "customClass:"
+    // 1. Colon method trigger: e.g. "a:", "actor:", "worm:"
     const colonMatch = lineText.match(/([a-zA-Z0-9_]+):([a-zA-Z0-9_]*)$/);
     if (colonMatch) {
       const obj = colonMatch[1];
@@ -248,7 +246,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           }
         }
       } else {
-        // Any other class or customClass method calls
+        // Any other class method calls
         const cls = BUILTIN_CLASSES.find((c) => c.name.toLowerCase() === obj.toLowerCase());
         if (cls) {
           for (const m of cls.members.filter((m) => m.kind === 'method')) {
@@ -272,7 +270,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       }
     }
 
-    // 2. Dot member / function / namespace trigger: e.g. "wa.", "customClass.", "hit.", "fire."
+    // 2. Dot member / function / namespace trigger: e.g. "wa.", "hit.", "fire."
     const dotMatch = lineText.match(/([a-zA-Z0-9_]+)\.([a-zA-Z0-9_.]*)$/);
     if (dotMatch) {
       const obj = dotMatch[1];
@@ -309,22 +307,6 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                   documentation: val.description,
                 });
               }
-            }
-          }
-        }
-      } else if (obj === 'customClass') {
-        const cls = BUILTIN_CLASSES.find((c) => c.name === 'customClass');
-        if (cls) {
-          for (const m of cls.members) {
-            if (!query || m.name.toLowerCase().includes(query)) {
-              const params = m.parameters?.map((p) => p.name).join(', ') || '';
-              items.push({
-                label: m.name,
-                kind: m.kind === 'method' ? 'method' : 'function',
-                detail: `customClass.${m.name}(${params})`,
-                insertText: `${m.name}(${params})`,
-                documentation: m.description,
-              });
             }
           }
         }
@@ -374,7 +356,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       }
     }
 
-    // 3. Arrow operator warning / helper: e.g. "customClass->" or "a->"
+    // 3. Arrow operator warning / helper: e.g. "wa->" or "a->"
     const arrowMatch = lineText.match(/([a-zA-Z0-9_]+)->$/);
     if (arrowMatch) {
       const obj = arrowMatch[1];
@@ -383,14 +365,14 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           label: `Fix: ${obj}. (function/property)`,
           kind: 'function',
           detail: `Replace '->' with '.' for standard Lua member access`,
-          insertText: `.${obj === 'customClass' ? 'customvariable(1, "test", 3.14)' : ''}`,
-          documentation: `'->' is not valid in WormForge Lua. Use '.' for functions and properties (e.g. wa.on_hurt(), customClass.customvariable()).`,
+          insertText: '.',
+          documentation: `'->' is not valid in WormForge Lua. Use '.' for functions and properties (e.g. wa.log(), wa.on.hurt()).`,
         },
         {
           label: `Fix: ${obj}: (method with self)`,
           kind: 'method',
           detail: `Replace '->' with ':' for Lua object methods`,
-          insertText: `:${obj === 'a' || obj === 'actor' ? 'gfx()' : 'initialize()'}`,
+          insertText: `:${obj === 'a' || obj === 'actor' ? 'gfx()' : ''}`,
           documentation: `'->' is not valid in WormForge Lua. Use ':' for object methods (e.g. a:gfx(), actor:move()).`,
         },
       ];
@@ -415,17 +397,6 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             documentation: fn.description,
           });
         }
-      }
-
-      // Add customClass sample with valid Lua dot notation
-      if ('customclass'.includes(word)) {
-        items.push({
-          label: 'customClass',
-          kind: 'class',
-          detail: 'customClass.customvariable(1, "test", 3.14)',
-          insertText: 'customClass.customvariable(1, "test", 3.14)',
-          documentation: 'Custom class supporting functions (.) and methods (:).',
-        });
       }
 
       if (items.length > 0) {

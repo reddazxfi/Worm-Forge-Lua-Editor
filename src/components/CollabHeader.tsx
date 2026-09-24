@@ -86,7 +86,7 @@ export const CollabHeader: React.FC<CollabHeaderProps> = ({
             <h1 className="font-bold text-[13px] tracking-tight text-[#e4edf7] flex items-center gap-1.5">
               <span>WormForge Code Studio</span>
               <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono border border-amber-500/30">
-                v0.6-dev
+                v0.72-dev
               </span>
             </h1>
           </div>
@@ -166,20 +166,6 @@ export const CollabHeader: React.FC<CollabHeaderProps> = ({
 
             {isTemplatesOpen && (
               <div className="absolute right-0 mt-1 w-56 bg-[#1a1e26] border border-[#313a48] rounded-md shadow-2xl py-1 z-50 text-xs">
-                <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#637488]">
-                  Demo &amp; Custom Scripts
-                </div>
-                <button
-                  onClick={() => {
-                    onLoadTemplate('custom_class_demo');
-                    setIsTemplatesOpen(false);
-                  }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#242b36] text-amber-300 font-medium flex items-center justify-between"
-                >
-                  <span>customClass-&gt; Syntax Demo</span>
-                  <span className="text-[10px] text-amber-400/70">Arrow operator</span>
-                </button>
-                <div className="h-px bg-[#262c36] my-1" />
                 <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#637488]">
                   Existing Mod Source
                 </div>
