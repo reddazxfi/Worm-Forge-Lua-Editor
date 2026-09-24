@@ -9,13 +9,14 @@
     "start": "tsx server.ts",
     "build": "vite build",
     "tauri": "tauri",
-    "build:tauri": "tauri build",
     "preview": "vite preview",
     "clean": "node -e \"for (const d of ['dist','dist_exe']) require('fs').rmSync(d,{recursive:true,force:true})\"",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.11",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-fs": "^2.0.0",
     "@vitejs/plugin-react": "^4.7.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",

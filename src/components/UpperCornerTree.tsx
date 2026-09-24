@@ -28,6 +28,11 @@ interface UpperCornerTreeProps {
   functions: FunctionDef[];
   classes: ClassDef[];
   existingMods: ModFolderInfo[];
+  workspaceName?: string;
+  workspaceFiles?: string[];
+  dirtyFiles?: string[];
+  activeFile?: string;
+  onOpenWorkspaceFile?: (file: string) => void;
   selectedItem: any;
   onSelectItem: (type: 'var' | 'enum' | 'func' | 'class' | 'mod' | 'mod_item', item: any) => void;
   onInsertCode: (snippet: string) => void;
@@ -40,6 +45,11 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
   functions,
   classes,
   existingMods,
+  workspaceName,
+  workspaceFiles,
+  dirtyFiles = [],
+  activeFile,
+  onOpenWorkspaceFile,
   selectedItem,
   onSelectItem,
   onInsertCode,
@@ -118,6 +128,32 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
 
       {/* Tree Content */}
       <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 font-mono text-[11.5px]">
+        {/* Opened mod folder */}
+        {workspaceFiles && workspaceFiles.length > 0 && (
+          <div className="mb-1">
+            <div className="flex items-center gap-1.5 py-1 px-1.5 text-emerald-300 font-semibold">
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span className="truncate">{workspaceName} ({workspaceFiles.length})</span>
+            </div>
+            <div className="pl-4 ml-1.5 border-l border-[#262c35] space-y-0.5">
+              {workspaceFiles
+                .filter((f) => f.toLowerCase().includes(searchTerm.toLowerCase()))
+                .map((f) => (
+                  <div
+                    key={`ws_${f}`}
+                    onClick={() => onOpenWorkspaceFile?.(f)}
+                    className={`flex items-center justify-between py-0.5 px-1.5 rounded hover:bg-[#232933] cursor-pointer ${
+                      activeFile === f ? 'bg-[#29323f] text-emerald-300 font-semibold' : 'text-[#a2b3c7]'
+                    }`}
+                  >
+                    <span className="truncate">{f}</span>
+                    {dirtyFiles.includes(f) && <span className="text-amber-400 ml-1">●</span>}
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
         {/* Mod Folders */}
         <div>
           <div

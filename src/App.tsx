@@ -15,7 +15,8 @@ import {
   Layers,
   Terminal,
   BookOpen,
-  Laptop,
+  FolderOpen,
+  Save,
 } from 'lucide-react';
 import { CollabHeader } from './components/CollabHeader';
 import { UpperCornerTree } from './components/UpperCornerTree';
@@ -25,7 +26,6 @@ import { ConsoleOutput } from './components/ConsoleOutput';
 import { CollabChatDrawer } from './components/CollabChatDrawer';
 import { KeycodeModal } from './components/KeycodeModal';
 import { EngineAdditionModal } from './components/EngineAdditionModal';
-import { BuildExeModal } from './components/BuildExeModal';
 
 import {
   ClassDef,
@@ -44,6 +44,7 @@ import { EXISTING_MODS } from './data/existingMods';
 import { CUSTOM_CLASS_DEMO, INITIAL_TEMPLATE } from './data/templates';
 import { parseAndValidate } from './services/parser';
 import { collabService } from './services/collab';
+import { openModFolder, saveModFile, canOpenFolders } from './services/modFolder';
 
 export default function App() {
   // Files State
@@ -53,6 +54,10 @@ export default function App() {
   });
   const [openFiles, setOpenFiles] = useState<string[]>(['custom_demo.lua', 'mod.lua']);
   const [activeFile, setActiveFile] = useState<string>('custom_demo.lua');
+
+  // Opened mod folder (desktop app or Chromium browser)
+  const [modFolder, setModFolder] = useState<{ name: string; root: string } | null>(null);
+  const [savedFiles, setSavedFiles] = useState<Record<string, string>>({});
 
   // Active Code
   const activeCode = files[activeFile] || '';
@@ -108,7 +113,6 @@ export default function App() {
   // Modals
   const [isKeycodeModalOpen, setIsKeycodeModalOpen] = useState(false);
   const [isEngineModalOpen, setIsEngineModalOpen] = useState(false);
-  const [isBuildExeModalOpen, setIsBuildExeModalOpen] = useState(false);
 
   // Layout View State (Mobile responsive tabs)
   const [mobileTab, setMobileTab] = useState<'editor' | 'tree' | 'docs' | 'console'>('editor');
@@ -328,6 +332,74 @@ export default function App() {
     }
   };
 
+  // ----- Mod folder: open / save -----
+  const addLog = (text: string, type: 'info' | 'success' | 'warn' | 'error') =>
+    setLogs((prev) => [...prev, { time: new Date().toLocaleTimeString(), text, type }]);
+
+  const dirtyFiles = useMemo(
+    () => (modFolder ? Object.keys(files).filter((f) => files[f] !== savedFiles[f]) : []),
+    [files, savedFiles, modFolder]
+  );
+
+  const handleOpenFolder = async () => {
+    if (dirtyFiles.length > 0 && !window.confirm('You have unsaved changes. Open another folder anyway?')) {
+      return;
+    }
+    try {
+      const res = await openModFolder();
+      if (!res) return;
+      const names = Object.keys(res.files).sort();
+      if (names.length === 0) {
+        addLog(`Folder "${res.name}" has no .lua/.toml/.md/.txt/.json files.`, 'warn');
+        return;
+      }
+      const first = names.find((n) => n.toLowerCase().endsWith('.lua')) ?? names[0];
+      setModFolder({ name: res.name, root: res.root });
+      setSavedFiles(res.files);
+      setFiles(res.files);
+      setOpenFiles([first]);
+      setActiveFile(first);
+      runSyntaxCheck(res.files[first]);
+      addLog(`Opened folder "${res.name}" (${names.length} files).`, 'success');
+    } catch (e: any) {
+      addLog(`Could not open folder: ${e?.message ?? String(e)}`, 'error');
+    }
+  };
+
+  const saveFiles = async (names: string[]) => {
+    if (!modFolder) return;
+    try {
+      const written: Record<string, string> = {};
+      for (const n of names) {
+        await saveModFile(modFolder.root, n, files[n]);
+        written[n] = files[n];
+      }
+      setSavedFiles((prev) => ({ ...prev, ...written }));
+      addLog(`Saved ${names.length} file${names.length === 1 ? '' : 's'} to "${modFolder.name}".`, 'success');
+    } catch (e: any) {
+      addLog(`Save failed: ${e?.message ?? String(e)}`, 'error');
+    }
+  };
+
+  const handleOpenWorkspaceFile = (f: string) => {
+    if (!openFiles.includes(f)) setOpenFiles((prev) => [...prev, f]);
+    setActiveFile(f);
+    runSyntaxCheck(files[f] ?? '');
+  };
+
+  // Ctrl+S: save active file into the open folder, or export it if no folder is open
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (modFolder) saveFiles([activeFile]);
+        else handleExportFile();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   // Export current file
   const handleExportFile = () => {
     const blob = new Blob([activeCode], { type: 'text/plain;charset=utf-8' });
@@ -454,7 +526,6 @@ export default function App() {
           if (activeFile === f) setActiveFile(nextOpen[0]);
         }}
         onLoadTemplate={handleLoadTemplate}
-        onOpenBuildExe={() => setIsBuildExeModalOpen(true)}
       />
 
       {/* Main Studio Action Toolbar */}
@@ -514,6 +585,28 @@ export default function App() {
 
         {/* Right Toolbar Actions */}
         <div className="flex items-center gap-1.5">
+          {/* Open mod folder / Save */}
+          {canOpenFolders() && (
+            <button
+              onClick={handleOpenFolder}
+              className="flex items-center gap-1 px-2 py-1.5 rounded bg-[#202631] hover:bg-[#2b3341] text-[#93a6bd] hover:text-[#dce7f3] border border-[#2b3340]"
+              title="Open a mod folder"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Open Folder</span>
+            </button>
+          )}
+          {modFolder && (
+            <button
+              onClick={() => saveFiles(dirtyFiles.length ? dirtyFiles : [activeFile])}
+              className="flex items-center gap-1 px-2 py-1.5 rounded bg-[#202631] hover:bg-[#2b3341] text-[#93a6bd] hover:text-[#dce7f3] border border-[#2b3340]"
+              title="Save changed files to the folder (Ctrl+S saves the current file)"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Save{dirtyFiles.length > 0 ? ` (${dirtyFiles.length})` : ''}</span>
+            </button>
+          )}
+
           {/* Quick Upload Local Lua */}
           <label className="flex items-center gap-1 px-2 py-1.5 rounded bg-[#202631] hover:bg-[#2b3341] text-[#93a6bd] hover:text-[#dce7f3] border border-[#2b3340] cursor-pointer">
             <Upload className="w-3.5 h-3.5" />
@@ -534,17 +627,6 @@ export default function App() {
           >
             <Download className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Export</span>
-          </button>
-
-          {/* Export Windows .EXE */}
-          <button
-            onClick={() => setIsBuildExeModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 hover:text-emerald-200 border border-emerald-600/40 text-xs font-medium transition-colors shadow-sm"
-            title="Compile into lightweight standalone Windows .EXE (Tauri ~8MB)"
-          >
-            <Laptop className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden sm:inline">Build .EXE</span>
-            <span className="hidden lg:inline text-[9px] px-1 py-0.2 bg-emerald-900/90 text-emerald-200 rounded font-mono border border-emerald-700/50">Tauri ~8MB</span>
           </button>
 
           {/* Quick Demo Reload */}
@@ -626,6 +708,11 @@ export default function App() {
               functions={symbols.functions}
               classes={combinedClasses}
               existingMods={EXISTING_MODS}
+              workspaceName={modFolder?.name}
+              workspaceFiles={modFolder ? Object.keys(files).sort() : undefined}
+              dirtyFiles={dirtyFiles}
+              activeFile={activeFile}
+              onOpenWorkspaceFile={handleOpenWorkspaceFile}
               selectedItem={selectedSymbolItem}
               onSelectItem={handleSelectTreeItem}
               onInsertCode={handleInsertCode}
@@ -720,12 +807,6 @@ export default function App() {
         onClose={() => setIsEngineModalOpen(false)}
         onAddClassOrMember={handleAddClassOrMember}
         existingClasses={combinedClasses}
-      />
-
-      {/* Compile into Windows .EXE Modal */}
-      <BuildExeModal
-        isOpen={isBuildExeModalOpen}
-        onClose={() => setIsBuildExeModalOpen(false)}
       />
     </div>
   );

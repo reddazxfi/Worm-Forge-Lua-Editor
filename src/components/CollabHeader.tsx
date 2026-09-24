@@ -10,7 +10,6 @@ import {
   Sparkles,
   Settings,
   ChevronDown,
-  Laptop,
 } from 'lucide-react';
 import { CollabUser } from '../types/wormforge';
 
@@ -29,7 +28,6 @@ interface CollabHeaderProps {
   openFiles: string[];
   onCloseFile: (file: string) => void;
   onLoadTemplate: (templateId: string) => void;
-  onOpenBuildExe?: () => void;
 }
 
 export const CollabHeader: React.FC<CollabHeaderProps> = ({
@@ -47,7 +45,6 @@ export const CollabHeader: React.FC<CollabHeaderProps> = ({
   openFiles,
   onCloseFile,
   onLoadTemplate,
-  onOpenBuildExe,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isEditingUser, setIsEditingUser] = useState(false);
@@ -212,19 +209,6 @@ export const CollabHeader: React.FC<CollabHeaderProps> = ({
               </div>
             )}
           </div>
-
-          {/* Build .EXE Modal Toggle */}
-          {onOpenBuildExe && (
-            <button
-              onClick={onOpenBuildExe}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-950/50 hover:bg-emerald-900/70 text-emerald-300 border border-emerald-600/40 text-xs font-medium transition-colors shadow-sm"
-              title="Compile WormForge Editor into a lightweight standalone Windows .exe with Tauri (~8MB)"
-            >
-              <Laptop className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Build .EXE</span>
-              <span className="hidden xl:inline text-[9px] px-1 py-0.2 bg-emerald-900/90 text-emerald-200 rounded font-mono border border-emerald-700/50">Tauri ~8MB</span>
-            </button>
-          )}
 
           {/* Collaboration Chat Drawer Toggle */}
           <button
