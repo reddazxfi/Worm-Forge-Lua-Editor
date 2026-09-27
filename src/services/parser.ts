@@ -681,7 +681,7 @@ export function parseAndValidate(code: string): {
             diagnostics.push({
               line: right.line,
               column: right.column,
-              message: `Unknown LuaActor method "${method}". Valid methods include: move, gravity, advance, look, frame, explode, despawn, gfx, angle, scale, tint, blend, sound, in_water, on_feet`,
+              message: `Unknown LuaActor method "${method}". Valid methods include: move, gravity, draw_quad, advance, look, frame, explode, despawn, gfx, angle, scale, tint, blend, sound, in_water, on_feet`,
               severity: 'warning',
               rule: 'actor-api',
             });
@@ -692,7 +692,7 @@ export function parseAndValidate(code: string): {
             diagnostics.push({
               line: right.line,
               column: right.column,
-              message: `Unknown WormEntity method "${method}". Valid methods: carry, drop, equip, ammo, hurt`,
+              message: `Unknown WormEntity method "${method}". Valid methods: carry, drop, equip, ammo, hurt, ammo_absolute, inventory`,
               severity: 'warning',
               rule: 'worm-api',
             });

@@ -1,7 +1,7 @@
 import express from 'express';
 import http from 'http';
-import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -9,108 +9,90 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws' });
 
 app.use(express.json({ limit: '10mb' }));
 
-// In-memory rooms state for real-time collaboration
-interface ClientInfo {
-  ws: WebSocket;
-  room: string;
-  userId: string;
-  userName: string;
-  userColor: string;
-}
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', engine: 'WormForge 0.7.5', time: new Date().toISOString() });
+});
 
-const clients = new Map<WebSocket, ClientInfo>();
-const roomCodes = new Map<string, { code: string; lastUpdated: number }>();
+// Filesystem helper endpoint for loading local mod folders
+app.get('/api/fs/scan-folder', (req, res) => {
+  try {
+    const rawPath = String(req.query.path || '').trim();
+    if (!rawPath) {
+      return res.status(400).json({ success: false, error: 'Path query parameter is required' });
+    }
+    // Clean wrapping quotes, trailing slashes, and trim spaces
+    const cleanPath = rawPath.replace(/^["']|["']$/g, '').trim().replace(/[\\/]+$/, '');
 
-wss.on('connection', (ws: WebSocket, req) => {
-  const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
-  const room = url.searchParams.get('room') || 'main-forge';
+    if (!fs.existsSync(cleanPath)) {
+      return res.status(404).json({
+        success: false,
+        error: `Folder not found: "${cleanPath}". Note: If using the remote cloud web preview, local drives (such as D:\\) are not on this Linux container. In the browser use 'Open Folder' (Directory Picker), or run the local desktop app / local Node server to access your local drive.`,
+      });
+    }
 
-  const clientInfo: ClientInfo = {
-    ws,
-    room,
-    userId: `user_${Math.random().toString(36).substring(2, 9)}`,
-    userName: 'Anonymous Modder',
-    userColor: '#f59e0b',
-  };
-  clients.set(ws, clientInfo);
+    const stat = fs.statSync(cleanPath);
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ success: false, error: `Path "${cleanPath}" is not a directory` });
+    }
 
-  // Send current room code if available
-  const existingDoc = roomCodes.get(room);
-  if (existingDoc) {
-    ws.send(
-      JSON.stringify({
-        type: 'change',
-        code: existingDoc.code,
-        userId: 'server',
-        room,
-      })
-    );
-  }
+    const TEXT_EXTS = ['.lua', '.toml', '.md', '.txt', '.json', '.ini'];
+    const files: Record<string, string> = {};
+    const MAX_FILES = 500;
 
-  ws.on('message', (data: Buffer | string) => {
-    try {
-      const msg = JSON.parse(data.toString());
-      if (msg.room) {
-        clientInfo.room = msg.room;
-      }
-      if (msg.userId) clientInfo.userId = msg.userId;
-      if (msg.userName) clientInfo.userName = msg.userName;
-      if (msg.userColor) clientInfo.userColor = msg.userColor;
-
-      if (msg.type === 'change' && msg.code !== undefined) {
-        roomCodes.set(clientInfo.room, {
-          code: msg.code,
-          lastUpdated: Date.now(),
-        });
-      }
-
-      // Broadcast to other clients in the same room
-      const payload = JSON.stringify(msg);
-      for (const [otherWs, info] of clients.entries()) {
-        if (otherWs !== ws && info.room === clientInfo.room && otherWs.readyState === WebSocket.OPEN) {
-          otherWs.send(payload);
+    const walk = (dir: string, rel: string) => {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const e of entries) {
+        if (Object.keys(files).length >= MAX_FILES) return;
+        if (e.name.startsWith('.') || e.name === 'node_modules' || e.name === 'target' || e.name === 'dist') continue;
+        const full = path.join(dir, e.name);
+        const relPath = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) {
+          walk(full, relPath);
+        } else if (e.isFile()) {
+          const ext = path.extname(e.name).toLowerCase();
+          if (TEXT_EXTS.includes(ext)) {
+            try {
+              files[relPath] = fs.readFileSync(full, 'utf-8');
+            } catch (err) {
+              console.warn(`Could not read ${full}:`, err);
+            }
+          }
         }
       }
-    } catch (e) {
-      console.error('Error handling WS message:', e);
-    }
-  });
+    };
 
-  ws.on('close', () => {
-    // Notify room of departure
-    const departureMsg = JSON.stringify({
-      type: 'leave',
-      userId: clientInfo.userId,
-      userName: clientInfo.userName,
-      room: clientInfo.room,
+    walk(cleanPath, '');
+    const folderName = path.basename(cleanPath) || cleanPath;
+    res.json({
+      success: true,
+      name: folderName,
+      root: cleanPath,
+      files,
     });
-
-    clients.delete(ws);
-
-    for (const [otherWs, info] of clients.entries()) {
-      if (info.room === clientInfo.room && otherWs.readyState === WebSocket.OPEN) {
-        otherWs.send(departureMsg);
-      }
-    }
-  });
-});
-
-// REST API
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', activeUsers: clients.size, time: new Date().toISOString() });
-});
-
-// Rooms status
-app.get('/api/rooms', (req, res) => {
-  const rooms: Record<string, number> = {};
-  for (const info of clients.values()) {
-    rooms[info.room] = (rooms[info.room] || 0) + 1;
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || String(err) });
   }
-  res.json({ rooms });
+});
+
+// Filesystem helper endpoint for saving files to local mod folder
+app.post('/api/fs/save-file', (req, res) => {
+  try {
+    const { root, relPath, content } = req.body;
+    if (!root || !relPath) {
+      return res.status(400).json({ success: false, error: 'Missing root or relPath' });
+    }
+    const cleanRoot = String(root).replace(/^["']|["']$/g, '').trim();
+    const full = path.join(cleanRoot, relPath);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, String(content), 'utf-8');
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || String(err) });
+  }
 });
 
 // Dev server vs Production setup

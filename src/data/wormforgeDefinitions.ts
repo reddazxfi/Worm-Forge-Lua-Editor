@@ -99,6 +99,27 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
     scope: 'global',
     example: 'if msg == wa.msg.IMPACT then ... end',
   },
+  {
+    name: 'wa.version',
+    type: 'string',
+    description: 'WormForge / wkLua version string ("20260924-v0.7.1").',
+    scope: 'global',
+    example: 'wa.log("Running engine " .. wa.version)',
+  },
+  {
+    name: 'wa.cavern.ceiling_y',
+    type: 'int | nil',
+    description: 'World Y position of cavern ceiling in 16.16 fixed point if current map is an enclosed cavern, or nil if open sky.',
+    scope: 'global',
+    example: 'if wa.cavern.ceiling_y then wa.log("Enclosed cavern roof at " .. tostring(wa.cavern.ceiling_y // PX)) end',
+  },
+  {
+    name: 'wa.attribution',
+    type: 'table',
+    description: 'Attribution tracking state for deaths, weapon deals, and last-attacker records.',
+    scope: 'global',
+    example: 'local last_hit = wa.attribution[victim.id]',
+  },
 ];
 
 export const BUILTIN_ENUMERATIONS: EnumDef[] = [
@@ -200,48 +221,96 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   },
   {
     name: 'wa.weapons.replace',
-    parameters: [{ name: 'spec', type: 'table', description: 'Table of weapon parameters, hooks, and sprites' }],
+    parameters: [
+      { name: 'spec', type: 'table', description: 'Table of weapon parameters: weapon, name, copy_from, icon/weapon_icon, params (mask=true, damage, retreat_time, depth), on_fire, etc.' }
+    ],
     returnType: 'void',
-    description: 'Overlays a stock weapon slot with custom behaviors, animations, and Lua logic.',
+    description: 'Overlays a stock weapon slot with custom behaviors, animations, and Lua logic. Supports `weapon_icon` / `icon` for HUD panels, and `params = { mask = true }` where mask automatically sets mask based on PNG/Gif accurately (Gifs update their mask every frame. STC).',
     example: `wa.weapons.replace({
-  weapon = "bazooka",
-  name = "Ice Rocket",
-  copy_from = "bazooka",
-  params = { damage = 65, gravity_pct = 50 },
+  weapon = "mortar",
+  name = "Claymore",
+  weapon_icon = "sprites/icon_claymore.png",
+  params = { mask = true, depth = 0x180000 },
   on_fire = function(fire)
-    wa.log("Fired from " .. tostring(fire.x))
+    -- Fire logic
   end
 })`,
   },
   {
     name: 'wa.weapons.register',
-    parameters: [{ name: 'spec', type: 'table', description: 'Registration spec with id and based_on slot' }],
+    parameters: [{ name: 'spec', type: 'table', description: 'Registration spec with id, based_on slot, icon/weapon_icon, and name' }],
     returnType: 'void',
-    description: 'Registers a named weapon that maps onto a stock based_on slot.',
+    description: 'Registers a named weapon that maps onto a stock based_on slot, with optional weapon_icon for weapon panels.',
     example: `wa.weapons.register({
   id = "my_pack.super_missile",
   based_on = "bazooka",
+  weapon_icon = "sprites/icon_missile.png",
   name = "Super Missile",
 })`,
   },
   {
     name: 'wa.actors.spawn',
-    parameters: [{ name: 'spec', type: 'table', description: 'Spawn configuration table' }],
+    parameters: [
+      { name: 'spec', type: 'table', description: 'Spawn configuration table: sprite, x, y, vx, vy, gravity, collide, mask (bool: automatically sets mask based on PNG/Gif accurately. Gifs update their mask every frame. STC), origin, owner, on, persist' }
+    ],
     returnType: 'ActorHandle',
-    description: 'Spawns a native LuaActor into the world. Returns an ActorHandle object.',
+    description: 'Spawns a native LuaActor into the world. If `mask = true`, automatically sets mask based on PNG/Gif accurately. Gifs update their mask every frame. STC.',
     example: `local a = wa.actors.spawn({
-  sprite = "sprites/turret_base",
+  sprite = "sprites/blade.gif",
+  mask = true, -- automatically sets mask based on PNG/Gif accurately. Gifs update their mask every frame. STC.
   x = worm.x,
   y = worm.y,
   vx = 0, vy = 0,
-  gravity = true,
-  collide = true,
-  origin = "bottom",
+  gravity = false,
+  origin = "center",
   owner = worm,
   on = function(a, ev)
-    if ev.land then a:explode({ damage = 40 }) end
+    -- actor loop
   end
 })`,
+  },
+  {
+    name: 'wa.gfx.draw_quad',
+    parameters: [
+      { name: 'opts', type: 'table', description: '{ x1, y1, x2, y2, x3, y3, x4, y4, u1, v1, u2, v2, color, tint, texture, blend, depth }' }
+    ],
+    returnType: 'void',
+    description: 'Draws an arbitrary textured or colored 2D quad in the GPU render pipeline with 4 vertices, UV mapping, color tint, and blend modes.',
+    example: `wa.gfx.draw_quad({
+  x1 = 100, y1 = 200,
+  x2 = 180, y2 = 200,
+  x3 = 180, y3 = 240,
+  x4 = 100, y4 = 240,
+  texture = "sprites/shield_flare.png",
+  blend = "add"
+})`,
+  },
+  {
+    name: 'wa.hud.draw_quad',
+    parameters: [
+      { name: 'opts', type: 'table', description: '{ x1, y1, x2, y2, x3, y3, x4, y4, color, tint, texture, blend }' }
+    ],
+    returnType: 'void',
+    description: 'Draws a HUD-space quad primitive during wa.on.hud presentation render passes.',
+    example: `wa.hud.draw_quad({ x1 = 10, y1 = 10, x2 = 100, y2 = 10, x3 = 100, y3 = 40, x4 = 10, y4 = 40, color = 0xFF00FF })`,
+  },
+  {
+    name: 'wa.cavern.is_cavern',
+    parameters: [],
+    returnType: 'bool',
+    description: 'Returns true if current map is an enclosed cavern (ceiling without open sky). Used by cavern-aware Highlander mods to adapt air weapons.',
+    example: 'if wa.cavern.is_cavern() then wa.log("Cavern detected: disabling open-sky air strikes.") end',
+  },
+  {
+    name: 'wa.ammo.set_absolute',
+    parameters: [
+      { name: 'worm', type: 'table', description: 'target worm or team' },
+      { name: 'weapon', type: 'string', description: 'weapon name' },
+      { name: 'count', type: 'int', description: 'absolute ammo count' },
+    ],
+    returnType: 'void',
+    description: 'Absolute ammo API: directly sets weapon ammo count to an absolute value, resolving team ammo-row sync quirks.',
+    example: 'wa.ammo.set_absolute(worm, "bazooka", 5)',
   },
   {
     name: 'wa.cursor.spawn',
@@ -552,6 +621,18 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'facing', kind: 'variable', returnType: 'int (-1 | 1)', description: 'Horizontal orientation (-1 = left, 1 = right)' },
       { name: 'owner', kind: 'property', returnType: 'WormHandle', description: 'Worm that spawned or owns this actor' },
       { name: 'kind', kind: 'property', returnType: 'string', description: 'Kind name string (e.g., "sentry", "casing")' },
+      { name: 'mask', kind: 'property', returnType: 'bool', description: 'When true, automatically sets mask based on PNG/Gif accurately. Gifs update their mask every frame. STC.' },
+      { name: 'hp', kind: 'variable', returnType: 'int', description: 'Custom health points for destructible actors' },
+      {
+        name: 'draw_quad',
+        kind: 'method',
+        parameters: [
+          { name: 'opts', type: 'table', description: '{ x1, y1, x2, y2, x3, y3, x4, y4, u1, v1, u2, v2, color, tint, texture, blend, depth }' },
+        ],
+        returnType: 'void',
+        description: 'Draws an arbitrary textured or shaded 2D quad in the GPU render pipeline with custom vertices, UV texture mapping, perspective skewing, and blend modes.',
+        example: 'a:draw_quad({ x1 = -20, y1 = -20, x2 = 20, y2 = -20, x3 = 20, y3 = 20, x4 = -20, y4 = 20, texture = "sprites/shield_flare.png", blend = "add" })',
+      },
       {
         name: 'gravity',
         kind: 'method',
@@ -728,12 +809,35 @@ export const BUILTIN_CLASSES: ClassDef[] = [
         returnType: 'int',
         description: 'Reads or modifies team ammunition for the given weapon.',
       },
+      { name: 'mask', kind: 'property', returnType: 'bool', description: 'When true, automatically sets mask based on PNG/Gif accurately. Gifs update their mask every frame. STC.' },
       {
         name: 'hurt',
         kind: 'method',
         parameters: [{ name: 'amount', type: 'int', description: 'Damage to subtract' }],
         returnType: 'void',
         description: 'Applies hit damage directly without knockback impulse.',
+      },
+      {
+        name: 'ammo_absolute',
+        kind: 'method',
+        parameters: [
+          { name: 'weaponName', type: 'string', description: 'Stock weapon name' },
+          { name: 'count', type: 'int', description: 'Absolute ammunition count to set' },
+        ],
+        returnType: 'int',
+        description: 'WormForge 0.7 Absolute Ammo API: Sets weapon ammo count directly to an exact absolute value without team ammo-row delta issues.',
+        example: 'worm:ammo_absolute("bazooka", 3)',
+      },
+      {
+        name: 'inventory',
+        kind: 'method',
+        parameters: [
+          { name: 'weaponName', type: 'string', description: 'Weapon name to query or give' },
+          { name: 'count', type: 'int', optional: true, description: 'Optional amount to set or add' },
+        ],
+        returnType: 'int',
+        description: 'WormForge 0.7.1 Personal Inventory: Reads or alters personal per-worm arsenal for specialist worms, loot drops, and Highlander stolen weapons.',
+        example: 'local count = worm:inventory("homing_missile", 1)',
       },
     ],
   },

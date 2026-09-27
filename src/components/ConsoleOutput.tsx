@@ -16,6 +16,7 @@ interface ConsoleOutputProps {
   onSelectDiagnostic: (diag: SyntaxDiagnostic) => void;
   onClearLogs: () => void;
   hasRunCheck: boolean;
+  isLight?: boolean;
 }
 
 export const ConsoleOutput: React.FC<ConsoleOutputProps> = ({
@@ -24,6 +25,7 @@ export const ConsoleOutput: React.FC<ConsoleOutputProps> = ({
   onSelectDiagnostic,
   onClearLogs,
   hasRunCheck,
+  isLight = false,
 }) => {
   const [filter, setFilter] = React.useState<'all' | 'errors' | 'warnings'>('all');
 
@@ -37,21 +39,37 @@ export const ConsoleOutput: React.FC<ConsoleOutputProps> = ({
   });
 
   return (
-    <div className="h-full flex flex-col bg-[#14171c] text-xs font-mono select-text">
+    <div
+      className={`h-full flex flex-col text-xs font-mono select-text transition-colors ${
+        isLight ? 'bg-white text-slate-800' : 'bg-[#14171c] text-[#e0e6ed]'
+      }`}
+    >
       {/* Console Top Toolbar */}
-      <div className="p-1.5 px-2 bg-[#171b21] border-b border-[#242932] flex items-center justify-between">
+      <div
+        className={`p-1.5 px-2 border-b flex items-center justify-between transition-colors ${
+          isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#171b21] border-[#242932]'
+        }`}
+      >
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 text-[#8b9cb0] font-sans font-semibold text-[11px] uppercase tracking-wider">
-            <Terminal className="w-3.5 h-3.5 text-amber-400" />
+          <div
+            className={`flex items-center gap-1 font-sans font-semibold text-[11px] uppercase tracking-wider ${
+              isLight ? 'text-slate-600' : 'text-[#8b9cb0]'
+            }`}
+          >
+            <Terminal className="w-3.5 h-3.5 text-amber-500" />
             <span>Syntax &amp; Parser Output</span>
           </div>
 
           <div className="flex items-center gap-1 ml-2 font-sans text-[11px]">
             <button
               onClick={() => setFilter('all')}
-              className={`px-1.5 py-0.5 rounded ${
+              className={`px-1.5 py-0.5 rounded transition-colors ${
                 filter === 'all'
-                  ? 'bg-[#29323f] text-[#e0e6ed] font-medium'
+                  ? isLight
+                    ? 'bg-slate-200 text-slate-900 font-semibold'
+                    : 'bg-[#29323f] text-[#e0e6ed] font-medium'
+                  : isLight
+                  ? 'text-slate-500 hover:text-slate-800'
                   : 'text-[#6f7e91] hover:text-[#9fb0c5]'
               }`}
             >
@@ -59,24 +77,32 @@ export const ConsoleOutput: React.FC<ConsoleOutputProps> = ({
             </button>
             <button
               onClick={() => setFilter('errors')}
-              className={`px-1.5 py-0.5 rounded flex items-center gap-1 ${
+              className={`px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors ${
                 filter === 'errors'
-                  ? 'bg-rose-500/20 text-rose-300 font-medium'
+                  ? isLight
+                    ? 'bg-rose-100 text-rose-800 font-semibold'
+                    : 'bg-rose-500/20 text-rose-300 font-medium'
+                  : isLight
+                  ? 'text-slate-500 hover:text-rose-600'
                   : 'text-[#6f7e91] hover:text-rose-400'
               }`}
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
               Errors ({errors.length})
             </button>
             <button
               onClick={() => setFilter('warnings')}
-              className={`px-1.5 py-0.5 rounded flex items-center gap-1 ${
+              className={`px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors ${
                 filter === 'warnings'
-                  ? 'bg-amber-500/20 text-amber-300 font-medium'
+                  ? isLight
+                    ? 'bg-amber-100 text-amber-800 font-semibold'
+                    : 'bg-amber-500/20 text-amber-300 font-medium'
+                  : isLight
+                  ? 'text-slate-500 hover:text-amber-600'
                   : 'text-[#6f7e91] hover:text-amber-400'
               }`}
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
               Warn ({warnings.length})
             </button>
           </div>
@@ -85,7 +111,11 @@ export const ConsoleOutput: React.FC<ConsoleOutputProps> = ({
         <button
           onClick={onClearLogs}
           title="Clear console output"
-          className="p-1 rounded text-[#6a798c] hover:text-[#cfdbe8] hover:bg-[#20252e] transition-colors"
+          className={`p-1 rounded transition-colors ${
+            isLight
+              ? 'text-slate-400 hover:text-slate-800 hover:bg-slate-200'
+              : 'text-[#6a798c] hover:text-[#cfdbe8] hover:bg-[#20252e]'
+          }`}
         >
           <Trash2 className="w-3 h-3" />
         </button>

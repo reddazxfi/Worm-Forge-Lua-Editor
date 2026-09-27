@@ -74,38 +74,20 @@ export interface ModFolderInfo {
   name: string;
   version: string;
   author: string;
+  category?: 'weapons' | 'gameplay' | 'rules';
   description?: string;
   replacesSlot?: string;
+  exclusiveGroup?: string;
+  isExclusiveWarning?: string;
+  installed?: boolean;
+  enabled?: boolean;
+  isOnlineAvailable?: boolean;
   files: ModFileInfo[];
   declaredMethods: string[];
   declaredVariables: string[];
   customClasses: string[];
   hooks: string[];
-}
-
-export interface CollabUser {
-  id: string;
-  name: string;
-  color: string;
-  cursor?: { line: number; column: number };
-  selection?: { startLine: number; startCol: number; endLine: number; endCol: number };
-  activeFile?: string;
-  lastActive: number;
-}
-
-export interface CollabMessage {
-  type: 'init' | 'join' | 'leave' | 'change' | 'cursor' | 'chat' | 'sync_request' | 'state';
-  userId?: string;
-  userName?: string;
-  userColor?: string;
-  room?: string;
-  file?: string;
-  code?: string;
-  version?: number;
-  cursor?: { line: number; column: number };
-  selection?: { startLine: number; startCol: number; endLine: number; endCol: number };
-  chatMsg?: { id: string; sender: string; text: string; time: string; color: string };
-  users?: CollabUser[];
+  tags?: string[];
 }
 
 export interface ParsedSymbolTree {
