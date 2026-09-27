@@ -102,3 +102,30 @@ export async function saveModFile(root: string, rel: string, content: string): P
   await w.write(content);
   await w.close();
 }
+
+// "Save As": native dialog on desktop, browser download fallback.
+export async function saveFileAs(suggestedName: string, content: string): Promise<string | null> {
+  if (isDesktop()) {
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+    const ext = suggestedName.includes('.') ? suggestedName.split('.').pop() : undefined;
+    const path = await save({
+      defaultPath: suggestedName,
+      filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : undefined,
+    });
+    if (!path) return null; // user cancelled
+    await writeTextFile(path, content);
+    return path;
+  }
+  // Browser fallback: blob download.
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = suggestedName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  return suggestedName;
+}

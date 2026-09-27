@@ -43,7 +43,7 @@ import { EXISTING_MODS } from './data/existingMods';
 import { INITIAL_TEMPLATE } from './data/templates';
 import { parseAndValidate } from './services/parser';
 import { collabService } from './services/collab';
-import { openModFolder, saveModFile, canOpenFolders } from './services/modFolder';
+import { openModFolder, saveModFile, saveFileAs, canOpenFolders } from './services/modFolder';
 
 export default function App() {
   // Files State
@@ -383,17 +383,14 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  // Export current file
-  const handleExportFile = () => {
-    const blob = new Blob([activeCode], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = activeFile;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  // Save As: native dialog on desktop, browser download fallback
+  const handleExportFile = async () => {
+    try {
+      const saved = await saveFileAs(activeFile, activeCode);
+      if (saved) addLog(`Saved "${activeFile}" as ${saved}.`, 'success');
+    } catch (e: any) {
+      addLog(`Save As failed: ${e?.message ?? String(e)}`, 'error');
+    }
   };
 
   // Import local file
@@ -606,10 +603,10 @@ export default function App() {
           <button
             onClick={handleExportFile}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-[#202631] hover:bg-[#2b3341] text-[#93a6bd] hover:text-[#dce7f3] border border-[#2b3340]"
-            title="Export current script"
+            title="Save As…"
           >
             <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Export</span>
+            <span className="hidden sm:inline">Save As</span>
           </button>
         </div>
       </div>
