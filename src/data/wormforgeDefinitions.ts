@@ -102,7 +102,7 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.version',
     type: 'string',
-    description: 'WormForge / wkLua version string ("20260924-v0.7.1").',
+    description: 'WormForge / wkLua version string ("20260927-v0.8.0").',
     scope: 'global',
     example: 'wa.log("Running engine " .. wa.version)',
   },
@@ -605,6 +605,36 @@ end)`,
     description: 'Returns the namespaced sprite key (`mod_id:path`) for a pack sprite, for use with a:look or spawn.sprite.',
     example: 'a:look(wa.sprites.key("sprites/saw.png"))',
   },
+  {
+    name: 'wa.draw.quad',
+    parameters: [
+      { name: 'opts', type: 'table', description: '{ points = { {x,y}, {x,y}, {x,y}, {x,y} }, color = 0xRRGGBBAA, sprite = "sprites/x", blend = "add", depth = 0x10000 }' }
+    ],
+    returnType: 'void',
+    description: 'Freeform Draw Pass (0.8): Issues arbitrary world-space GPU quads each rendered frame inside wa.on.draw for laser rays, beams, ribbons, and UI chrome.',
+    example: 'wa.draw.quad({ points = { {x1, y1}, {x2, y2}, {x3, y3}, {x4, y4} }, sprite = "laser.png", blend = "add" })',
+  },
+  {
+    name: 'wa.on.draw',
+    parameters: [{ name: 'callback', type: 'function', description: 'function() called once per rendered frame after simulation' }],
+    returnType: 'void',
+    description: 'WormForge 0.8 Freeform Draw Pass: Runs once per Present to draw world-space GPU quads (wa.draw.quad) and UI chrome. wa.random is forbidden inside this callback.',
+    example: 'wa.on.draw(function()\n  wa.draw.quad({ points = { ... }, blend = "add" })\nend)',
+  },
+  {
+    name: 'wa.on.contact',
+    parameters: [{ name: 'callback', type: 'function', description: 'function(worm, other, c) called on physical contact' }],
+    returnType: 'void',
+    description: 'WormForge 0.8 Contact & Flight Callback: Fires on worm↔entity contact after simulation frame. c.vx and c.vy contain pre-impact velocity (16.16), c.flags holds WA contact bits.',
+    example: 'wa.on.contact(function(worm, other, c)\n  wa.log("Contact with " .. tostring(other.kind) .. " at speed " .. c.vx)\nend)',
+  },
+  {
+    name: 'wa.weapons.retarget',
+    parameters: [{ name: 'spec', type: 'table', description: '{ weapon = "bazooka", sprite = "banana", cluster = "cluster_sprite" }' }],
+    returnType: 'void',
+    description: 'WormForge 0.7.4+ Runtime Flight Sprite Retarget: Swaps a weapon slot\'s in-flight body graphic (and optional secondary cluster sprite) dynamically after the weapon table is live.',
+    example: 'wa.weapons.retarget({ weapon = "bazooka", sprite = "sprites/custom_missile.png" })',
+  },
 ];
 
 export const BUILTIN_CLASSES: ClassDef[] = [
@@ -839,6 +869,28 @@ export const BUILTIN_CLASSES: ClassDef[] = [
         description: 'WormForge 0.7.1 Personal Inventory: Reads or alters personal per-worm arsenal for specialist worms, loot drops, and Highlander stolen weapons.',
         example: 'local count = worm:inventory("homing_missile", 1)',
       },
+      {
+        name: 'clear_keys',
+        kind: 'method',
+        parameters: [],
+        returnType: 'void',
+        description: 'WormForge 0.8 Input API: Consumes and clears buffered keyboard inputs on this worm for custom flight physics (e.g. Helicopter).',
+        example: 'worm:clear_keys()',
+      },
+      {
+        name: 'set_state',
+        kind: 'method',
+        parameters: [{ name: 'state', type: 'int', description: 'WA state ID (e.g. 0x7E airborne)' }],
+        returnType: 'void',
+        description: 'Sets the physical action/animation state of this worm.',
+        example: 'worm:set_state(0x7E)',
+      },
+      { name: 'aim', kind: 'property', returnType: 'float', description: 'Live aim fraction: 0 straight down -> 0.5 level -> 1 straight up across 180° sweep.' },
+      { name: 'aiming', kind: 'property', returnType: 'bool', description: 'True while worm is actively in standing-with-weapon or charging state (WS_AIMING / WS_SETPOWER).' },
+      { name: 'facing', kind: 'property', returnType: 'int', description: 'Facing direction: -1 (left) or 1 (right).' },
+      { name: 'fuel', kind: 'property', returnType: 'int', description: 'Flight or jetpack fuel remaining (0..100).' },
+      { name: 'keys', kind: 'property', returnType: 'table', description: 'Current keys held by this worm.' },
+      { name: 'body_visible', kind: 'property', returnType: 'bool', description: 'Controls whether the stock worm body renders during flight or vehicle possession.' },
     ],
   },
 ];

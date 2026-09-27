@@ -692,7 +692,7 @@ export function parseAndValidate(code: string): {
             diagnostics.push({
               line: right.line,
               column: right.column,
-              message: `Unknown WormEntity method "${method}". Valid methods: carry, drop, equip, ammo, hurt, ammo_absolute, inventory`,
+              message: `Unknown WormEntity method "${method}". Valid methods: carry, drop, equip, ammo, hurt, ammo_absolute, inventory, clear_keys, set_state`,
               severity: 'warning',
               rule: 'worm-api',
             });

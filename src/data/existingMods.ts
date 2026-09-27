@@ -523,7 +523,7 @@ Autonomous deployable sentry turret with real-time target tracking and custom gr
   {
     id: 'gameplay.highlander.verbs',
     name: 'Highlander (Verb-Based Pack)',
-    version: '0.7.1',
+    version: '0.8.0',
     author: 'WormForge Team',
     category: 'gameplay',
     exclusiveGroup: 'highlander',
@@ -531,7 +531,7 @@ Autonomous deployable sentry turret with real-time target tracking and custom gr
     installed: true,
     enabled: true,
     replacesSlot: 'none (rules)',
-    description: 'Highlander gameplay rules using WormForge 0.7.1 high-level verbs: no weapon-slot claim, deals/steals stock weapons on kills, cavern-aware subterranean fallback, and absolute ammo management.',
+    description: 'Highlander gameplay rules using WormForge 0.7.4 high-level verbs: no weapon-slot claim, deals/steals stock weapons on kills, cavern-aware subterranean fallback, and absolute ammo management.',
     declaredMethods: ['onTurnStart', 'onWormDeath', 'adaptForCavern'],
     declaredVariables: ['PX', 'inv', 'is_cavern', 'KILL_REWARD_WEAPONS'],
     customClasses: ['HighlanderRules'],
@@ -543,7 +543,7 @@ Autonomous deployable sentry turret with real-time target tracking and custom gr
         name: 'highlander.lua',
         language: 'lua',
         content: `-- Highlander (Verb-Based Pack)
--- WormForge 0.7.1 — Per-worm inventories & rule events
+-- WormForge 0.7.4 — Per-worm inventories & rule events
 -- Rules:
 -- 1. No weapon slot claim (pure rules mod, leaves weapon slots untouched).
 -- 2. Deal/steal stock weapons on kills with conservative combat attribution.
