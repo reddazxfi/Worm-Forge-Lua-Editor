@@ -1,0 +1,8 @@
+{
+  "name": "WormForge Code Studio",
+  "description": "Dedicated code editor, mod package manager, and syntax checker for WormForge Lua modding with engine verbs, AST inspector, and stock weapon slot tooling.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

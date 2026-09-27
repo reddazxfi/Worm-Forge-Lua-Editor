@@ -2,7 +2,7 @@
   "name": "wormforge-code-editor",
   "private": true,
   "version": "1.0.0",
-  "description": "WormForge Lua Code Editor with Real-Time Collaboration and Engine Verbs",
+  "description": "WormForge Lua Code Editor with Engine Verbs and AST Inspector",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -23,8 +23,7 @@
     "lucide-react": "^0.546.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^6.3.5",
-    "ws": "^8.18.3"
+    "vite": "^6.3.5"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.5.0",
@@ -32,7 +31,6 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.1",
-    "@types/ws": "^8.18.1",
     "tailwindcss": "^4.1.11",
     "tsx": "^4.20.3",
     "typescript": "~5.8.3"
