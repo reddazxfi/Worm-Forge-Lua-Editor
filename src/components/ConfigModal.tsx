@@ -16,7 +16,7 @@ import {
   Database,
 } from 'lucide-react';
 import { EditorConfig, DEFAULT_CONFIG, exportConfigAsIni, parseIniConfig } from '../services/config';
-import { cleanFolderPath, loadFolderFromPath } from '../services/modFolder';
+import { cleanFolderPath, loadFolderFromPath, pickFolder, isDesktop } from '../services/modFolder';
 import { ModFolderInfo } from '../types/wormforge';
 
 interface ConfigModalProps {
@@ -40,6 +40,30 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
   if (!isOpen) return null;
 
   const isLight = config.theme === 'light';
+
+  const handleBrowseFolder = async () => {
+    try {
+      const picked = await pickFolder();
+      if (!picked) return;
+      onUpdateConfig({ ...config, autoLoadFolder: picked });
+      setTestStatus({ type: 'loading', msg: `Scanning "${picked}"...` });
+      const res = await loadFolderFromPath(picked);
+      if (!res) {
+        setTestStatus({ type: 'error', msg: 'Could not access folder.' });
+        return;
+      }
+      const count = Object.keys(res.files).length;
+      setTestStatus({
+        type: 'success',
+        msg: `Found ${count} mod file(s) in "${res.name}"!`,
+      });
+    } catch (err: any) {
+      setTestStatus({
+        type: 'error',
+        msg: err?.message || String(err),
+      });
+    }
+  };
 
   const handleTestFolder = async () => {
     const raw = config.autoLoadFolder;
@@ -288,18 +312,35 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                 <label className={`text-[11px] font-medium ${isLight ? 'text-slate-700' : 'text-[#a2b4c7]'}`}>
                   Auto-Open Mod Directory (Disk path):
                 </label>
-                <button
-                  type="button"
-                  onClick={handleTestFolder}
-                  className={`text-[10.5px] px-2 py-0.5 rounded font-mono border flex items-center gap-1 transition-colors ${
-                    isLight
-                      ? 'bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-900'
-                      : 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/40 text-amber-300'
-                  }`}
-                >
-                  <Search className="w-3 h-3" />
-                  <span>Test / Scan Path</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {isDesktop() && (
+                    <button
+                      type="button"
+                      onClick={handleBrowseFolder}
+                      className={`text-[10.5px] px-2 py-0.5 rounded font-mono border flex items-center gap-1 transition-colors ${
+                        isLight
+                          ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
+                          : 'bg-[#252d3a] hover:bg-[#313b4c] border-[#384354] text-[#cfdbe8]'
+                      }`}
+                      title="Select folder using native Windows picker"
+                    >
+                      <FolderOpen className="w-3 h-3 text-amber-500" />
+                      <span>Browse...</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleTestFolder}
+                    className={`text-[10.5px] px-2 py-0.5 rounded font-mono border flex items-center gap-1 transition-colors ${
+                      isLight
+                        ? 'bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-900'
+                        : 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/40 text-amber-300'
+                    }`}
+                  >
+                    <Search className="w-3 h-3" />
+                    <span>Test / Scan Path</span>
+                  </button>
+                </div>
               </div>
 
               <div className="relative">

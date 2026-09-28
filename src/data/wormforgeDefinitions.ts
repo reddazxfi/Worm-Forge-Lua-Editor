@@ -102,7 +102,7 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.version',
     type: 'string',
-    description: 'WormForge / wkLua version string ("20260927-v0.8.0").',
+    description: 'WormForge / wkLua version string ("20260927-v0.8.1.2").',
     scope: 'global',
     example: 'wa.log("Running engine " .. wa.version)',
   },
@@ -222,18 +222,22 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.weapons.replace',
     parameters: [
-      { name: 'spec', type: 'table', description: 'Table of weapon parameters: weapon, name, copy_from, icon/weapon_icon, params (mask=true, damage, retreat_time, depth), on_fire, etc.' }
+      { name: 'spec', type: 'table', description: 'Table of weapon parameters: weapon, name, copy_from (or wep = "file.wep"), patch = { [offset] = value }, sprite_overrides, on_select, eat_fire, panel_icon, sprite, worm_sprites, params, on_fire' }
     ],
     returnType: 'void',
-    description: 'Overlays a stock weapon slot with custom behaviors, animations, and Lua logic. Supports `weapon_icon` / `icon` for HUD panels, and `params = { mask = true }` where mask automatically sets mask based on PNG/Gif accurately (Gifs update their mask every frame. STC).',
+    description: 'Overlays a stock weapon slot with custom behaviors, animations, and Lua logic. WormForge 0.8.1+ supports firing borrowing via `copy_from` or `wep = "file.wep"`, readable dword diffs via `patch = { [0x50] = 70 }`, `sprite_overrides = { wsvbd = "sprites/trail" }`, `eat_fire = true`, and `on_select = { cursor = true }`.',
     example: `wa.weapons.replace({
-  weapon = "mortar",
-  name = "Claymore",
-  weapon_icon = "sprites/icon_claymore.png",
-  params = { mask = true, depth = 0x180000 },
-  on_fire = function(fire)
-    -- Fire logic
-  end
+  weapon = "bazooka",
+  copy_from = "bazooka",
+  name = "Heavy Bazooka",
+  patch = {
+    [0x50] = 75,       -- Damage: 75 HP
+    [0x54] = 60,       -- Blast radius: 60 px
+    [0x70] = 80,       -- Gravity: 80%
+    [0x1C] = 3000,     -- Retreat time: 3000 ms
+  },
+  panel_icon = "bazooka",
+  sprite = "sprites/flight.png",
 })`,
   },
   {
@@ -635,9 +639,58 @@ end)`,
     description: 'WormForge 0.7.4+ Runtime Flight Sprite Retarget: Swaps a weapon slot\'s in-flight body graphic (and optional secondary cluster sprite) dynamically after the weapon table is live.',
     example: 'wa.weapons.retarget({ weapon = "bazooka", sprite = "sprites/custom_missile.png" })',
   },
+  {
+    name: 'wa.weapons.launch',
+    parameters: [
+      {
+        name: 'spec',
+        type: 'table',
+        description: '{ weapon = "bazooka", owner = worm.id, x = x, y = y, vx = vx, vy = vy, damage = 50, fuse = 3000, sprite = 49, sound = "shoot", explode_into = "cluster", countdown = true, explode_on_space = true }',
+      },
+    ],
+    returnType: 'int',
+    description: 'WormForge 0.8.1.2 Native Projectile Launch: Spawns an authentic engine MissileEntity directly from a weapon slot\'s fire parameters. Lockstep, wind, trail, and collision stay native WA. Returns the spawned missile ID.',
+    example: 'local missile_id = wa.weapons.launch({ weapon = "bazooka", owner = worm.id, x = worm.x, y = worm.y - 16 * 65536, vx = 5 * 65536, vy = -8 * 65536, damage = 60 })',
+  },
+  {
+    name: 'wa.world.gravity',
+    parameters: [],
+    returnType: 'float',
+    description: 'WormForge 0.8.1.2 Base World Gravity: Returns WA\'s base landscape gravity (CollisionManager+0x22C in 16.16 fixed-point) before per-object scaling factors.',
+    example: 'local g = wa.world.gravity()',
+  },
+  {
+    name: 'wa.world.wind',
+    parameters: [],
+    returnType: 'float',
+    description: 'WormForge 0.8.1.2 Base World Wind: Returns WA\'s live turn wind force (CollisionManager+0x230 in 16.16 fixed-point) before per-object aerodynamic factors.',
+    example: 'local wind = wa.world.wind()',
+  },
+  {
+    name: 'wa.on.missile_frame',
+    parameters: [{ name: 'callback', type: 'function', description: 'function(m) called each frame for active projectiles' }],
+    returnType: 'void',
+    description: 'WormForge 0.8.1.2 Missile Frame Hook: Ticked every frame for active in-flight projectiles. Allows inspecting physics and writing m.sprite to dynamically swap or hide flight graphics (e.g. m.sprite = 0 for custom Lua quad/actor rendering).',
+    example: 'wa.on.missile_frame(function(m)\n  if m.weapon == "chilli_bomb" then m.sprite = 0 end\nend)',
+  },
 ];
 
 export const BUILTIN_CLASSES: ClassDef[] = [
+  {
+    name: 'MissileEntity',
+    description: 'Live in-flight weapon projectile entity passed to wa.on.missile_frame.',
+    syntaxExample: 'wa.on.missile_frame(function(m)\n  m.sprite = 0 -- hide stock flight sprite\nend)',
+    members: [
+      { name: 'id', kind: 'property', returnType: 'int', description: 'Unique missile instance ID' },
+      { name: 'weapon', kind: 'property', returnType: 'string', description: 'Weapon slot name or ID' },
+      { name: 'owner', kind: 'property', returnType: 'int', description: 'Worm ID that fired this missile' },
+      { name: 'x', kind: 'property', returnType: 'int', description: 'Current X in 16.16 fixed point' },
+      { name: 'y', kind: 'property', returnType: 'int', description: 'Current Y in 16.16 fixed point' },
+      { name: 'vx', kind: 'property', returnType: 'int', description: 'Current horizontal velocity in 16.16 fixed point' },
+      { name: 'vy', kind: 'property', returnType: 'int', description: 'Current vertical velocity in 16.16 fixed point' },
+      { name: 'sprite', kind: 'variable', returnType: 'int', description: 'Active blit sprite ID (MissileEntity+0x2EC). Writable! Set to 0 to suppress stock sprite drawing for custom Lua rendering.' },
+    ],
+  },
   {
     name: 'LuaActor',
     description: 'Custom game entity with physics, animation, collision, and brain logic (ActorHandle).',
@@ -894,3 +947,81 @@ export const BUILTIN_CLASSES: ClassDef[] = [
     ],
   },
 ];
+
+export interface WeaponTableOffset {
+  offset: number;
+  hex: string;
+  name: string;
+  category: 'Fire mode' | 'Handling' | 'Flight' | 'Explosion' | 'Homing' | 'Clusters' | 'General';
+  description: string;
+  unit?: string;
+}
+
+export const WA_WEAPON_TABLE_OFFSETS: Record<number, WeaponTableOffset> = {
+  0x14: { offset: 0x14, hex: '0x14', name: 'Shots per turn', category: 'Handling', description: 'Maximum shots allowed in a single turn before retreating.' },
+  0x1C: { offset: 0x1C, hex: '0x1C', name: 'Retreat time', category: 'Handling', unit: 'ms', description: 'Retreat timer duration in milliseconds after weapon release.' },
+  0x34: { offset: 0x34, hex: '0x34', name: 'Hold pose / firing flow', category: 'Fire mode', description: '1=Bazooka shoulder, 3=Grenade pitch, 12=Target click then fire (Homing Missile).' },
+  0x3C: { offset: 0x3C, hex: '0x3C', name: 'Pellets per shot', category: 'Flight', description: 'Number of simultaneous primary projectile pellets spawned.' },
+  0x4C: { offset: 0x4C, hex: '0x4C', name: 'Explosion bias', category: 'Explosion', description: 'Downward pixel offset bias for crater explosion center.' },
+  0x50: { offset: 0x50, hex: '0x50', name: 'Damage', category: 'Explosion', description: 'Direct/epicenter blast damage inflicted in hit points.' },
+  0x54: { offset: 0x54, hex: '0x54', name: 'Blast radius', category: 'Explosion', description: 'Terrain crater and impulse shockwave radius in pixels.' },
+  0x60: { offset: 0x60, hex: '0x60', name: 'Flight sprite id', category: 'Flight', description: 'Stock sprite ID for in-flight body (e.g. 49=bullet, 48=missile).' },
+  0x68: { offset: 0x68, hex: '0x68', name: 'Flight flags', category: 'Flight', description: 'Bitmask controlling rotation, particle trails, and flight behavior.' },
+  0x6C: { offset: 0x6C, hex: '0x6C', name: 'Trail effect', category: 'Flight', description: 'Stock particle/trail effect ID attached to projectile tail.' },
+  0x70: { offset: 0x70, hex: '0x70', name: 'Gravity %', category: 'Flight', description: 'Gravitational acceleration multiplier (100 = normal 100%).' },
+  0x74: { offset: 0x74, hex: '0x74', name: 'Wind %', category: 'Flight', description: 'Wind sensitivity factor (0 = unaffected, 100 = 100% wind).' },
+  0x78: { offset: 0x78, hex: '0x78', name: 'Bounce %', category: 'Flight', description: 'Restitution coefficient when impacting solid terrain.' },
+  0x7C: { offset: 0x7C, hex: '0x7C', name: 'Bounce extra', category: 'Flight', description: 'Secondary bounce damping factor.' },
+  0x80: { offset: 0x80, hex: '0x80', name: 'Unknown 0x80', category: 'Flight', description: 'Internal collision / sound trigger parameter.' },
+  0x84: { offset: 0x84, hex: '0x84', name: 'Friction %', category: 'Flight', description: 'Surface rolling resistance and sliding friction.' },
+  0x88: { offset: 0x88, hex: '0x88', name: 'Default fuse', category: 'Explosion', unit: 'ms', description: 'Initial timer fuse set when weapon is armed.' },
+  0x8C: { offset: 0x8C, hex: '0x8C', name: 'Fuse / lifetime', category: 'Explosion', unit: 'ms', description: 'Maximum flight lifetime before mandatory detonation.' },
+  0x90: { offset: 0x90, hex: '0x90', name: 'Alt sprite (+65536 flag)', category: 'Flight', description: 'Secondary animation sheet flag and bank select.' },
+  0x94: { offset: 0x94, hex: '0x94', name: 'Glow enable', category: 'Flight', description: '1=Enable additive luminous halo around projectile.' },
+  0x98: { offset: 0x98, hex: '0x98', name: 'Glow sprite id', category: 'Flight', description: 'Stock sprite ID for halo/glow.' },
+  0x9C: { offset: 0x9C, hex: '0x9C', name: 'Glow time', category: 'Flight', unit: 'ms', description: 'Glow decay pulse duration.' },
+  0xA0: { offset: 0xA0, hex: '0xA0', name: 'Space key controls it', category: 'Flight', description: '1=Space key detonates, accelerates, or triggers mid-air action.' },
+  0xA4: { offset: 0xA4, hex: '0xA4', name: 'Body type', category: 'Flight', description: '0=Standard ballistic projectile, 1=Homing seeker.' },
+  0xA8: { offset: 0xA8, hex: '0xA8', name: 'Render size', category: 'Flight', description: '16.16 fixed-point render scale (0x400000 = 64.00 px).' },
+  0xAC: { offset: 0xAC, hex: '0xAC', name: 'Burn / alt sprite id', category: 'Homing', description: 'Exhaust flame or tracking sprite (e.g. 58=hmissil1).' },
+  0xB0: { offset: 0xB0, hex: '0xB0', name: 'Homing strength', category: 'Homing', description: 'Seeker steering impulse toward target crosshair.' },
+  0xB4: { offset: 0xB4, hex: '0xB4', name: 'Homing sprite / param', category: 'Homing', description: 'Target reticle attachment parameter.' },
+  0xB8: { offset: 0xB8, hex: '0xB8', name: 'Turn rate', category: 'Homing', description: 'Angular rotation rate limit during seeker flight.' },
+  0xBC: { offset: 0xBC, hex: '0xBC', name: 'Acceleration', category: 'Homing', description: 'Forward thrust acceleration added per frame.' },
+  0xC0: { offset: 0xC0, hex: '0xC0', name: 'Speed', category: 'Homing', description: 'Maximum terminal velocity for homing flight.' },
+  0xC4: { offset: 0xC4, hex: '0xC4', name: 'Homing lock mode', category: 'Homing', description: '0=Off, 1=Lock on target crosshair.' },
+  0xC8: { offset: 0xC8, hex: '0xC8', name: 'Arm delay', category: 'Homing', unit: 'ms', description: 'Launch ballistic coast delay before homing activates.' },
+  0xCC: { offset: 0xCC, hex: '0xCC', name: 'Homing duration', category: 'Homing', unit: 'ms', description: 'Active rocket motor tracking burn duration.' },
+  0xF4: { offset: 0xF4, hex: '0xF4', name: 'Payload param 0xF4', category: 'Clusters', description: 'Internal cluster payload trigger mode.' },
+  0xF8: { offset: 0xF8, hex: '0xF8', name: 'Cluster count', category: 'Clusters', description: 'Number of sub-munitions or cluster pellets ejected.' },
+  0xFC: { offset: 0xFC, hex: '0xFC', name: 'Eject speed', category: 'Clusters', description: 'Initial velocity imparted to ejected cluster pellets.' },
+  0x100: { offset: 0x100, hex: '0x100', name: 'Eject power', category: 'Clusters', description: 'Radial explosive impulse for cluster spray.' },
+  0x108: { offset: 0x108, hex: '0x108', name: 'Eject spread °', category: 'Clusters', description: 'Spread arc angle in degrees (e.g. 45° or 90°).' },
+  0x10C: { offset: 0x10C, hex: '0x10C', name: 'Bit collision radius', category: 'Clusters', description: '16.16 fixed-point hit radius for secondary bits.' },
+  0x110: { offset: 0x110, hex: '0x110', name: 'Bit explosion bias', category: 'Clusters', description: 'Downward crater offset for cluster explosions.' },
+  0x114: { offset: 0x114, hex: '0x114', name: 'Bit damage', category: 'Clusters', description: 'Damage HP inflicted per cluster pellet.' },
+  0x118: { offset: 0x118, hex: '0x118', name: 'Bit blast radius', category: 'Clusters', description: 'Crater and blast shockwave radius per pellet in px.' },
+  0x124: { offset: 0x124, hex: '0x124', name: 'Bit sprite id', category: 'Clusters', description: 'Stock sprite ID used for cluster pellets.' },
+  0x128: { offset: 0x128, hex: '0x128', name: 'Bit on touching land', category: 'Clusters', description: '0=Sits where it lands, 1=Bounces like grenade.' },
+  0x130: { offset: 0x130, hex: '0x130', name: 'Bit trail', category: 'Clusters', description: 'Smoke or particle trail ID attached to cluster pellets.' },
+  0x134: { offset: 0x134, hex: '0x134', name: 'Bit gravity %', category: 'Clusters', description: 'Gravity multiplier for cluster pellets.' },
+  0x138: { offset: 0x138, hex: '0x138', name: 'Bit wind %', category: 'Clusters', description: 'Wind factor for cluster pellets.' },
+  0x13C: { offset: 0x13C, hex: '0x13C', name: 'Bit bounce %', category: 'Clusters', description: 'Restitution bounce percentage for cluster pellets.' },
+  0x148: { offset: 0x148, hex: '0x148', name: 'Bit friction %', category: 'Clusters', description: 'Ground friction for rolling cluster pellets.' },
+  0x14C: { offset: 0x14C, hex: '0x14C', name: 'Bit default fuse', category: 'Clusters', unit: 'ms', description: 'Cluster pellet fuse timer.' },
+  0x150: { offset: 0x150, hex: '0x150', name: 'Bit fuse / lifetime', category: 'Clusters', unit: 'ms', description: 'Maximum lifetime of cluster pellets.' },
+  0x164: { offset: 0x164, hex: '0x164', name: 'Bit Space key controls', category: 'Clusters', description: '1=Space key detonates pellets in flight.' },
+  0x168: { offset: 0x168, hex: '0x168', name: 'Bit body type', category: 'Clusters', description: '0=Not a flying body, 2=Standard ballistic.' },
+  0x16C: { offset: 0x16C, hex: '0x16C', name: 'Bit render size', category: 'Clusters', description: 'Fixed-point render scale for cluster pellets.' },
+  0x170: { offset: 0x170, hex: '0x170', name: 'Bit burn / alt sprite id', category: 'Clusters', description: 'Pellet exhaust/flame sprite.' },
+  0x174: { offset: 0x174, hex: '0x174', name: 'Bit homing strength', category: 'Clusters', description: 'Cluster pellet seeker turning strength.' },
+  0x178: { offset: 0x178, hex: '0x178', name: 'Bit homing sprite / param', category: 'Clusters', description: 'Cluster seeker parameter.' },
+  0x17C: { offset: 0x17C, hex: '0x17C', name: 'Bit turn rate', category: 'Clusters', description: 'Cluster pellet homing turn rate.' },
+  0x180: { offset: 0x180, hex: '0x180', name: 'Bit acceleration', category: 'Clusters', description: 'Cluster pellet forward acceleration.' },
+  0x184: { offset: 0x184, hex: '0x184', name: 'Bit speed', category: 'Clusters', description: 'Cluster pellet maximum speed.' },
+  0x18C: { offset: 0x18C, hex: '0x18C', name: 'Bit arm delay', category: 'Clusters', unit: 'ms', description: 'Cluster pellet homing arm delay.' },
+  0x190: { offset: 0x190, hex: '0x190', name: 'Bit homing duration', category: 'Clusters', unit: 'ms', description: 'Cluster pellet homing fuel burn duration.' },
+  0x1C8: { offset: 0x1C8, hex: '0x1C8', name: 'Power / crate weight %', category: 'Handling', description: 'Relative probability weight in weapon crates.' },
+  0x1CC: { offset: 0x1CC, hex: '0x1CC', name: 'Secondary weight', category: 'Handling', description: 'Secondary crate distribution weight.' },
+};
+

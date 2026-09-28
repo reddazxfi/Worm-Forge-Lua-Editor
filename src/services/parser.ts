@@ -5,7 +5,7 @@ import {
   ClassDef,
   ParsedSymbolTree,
 } from '../types/wormforge';
-import { BUILTIN_CLASSES, BUILTIN_ENUMERATIONS, BUILTIN_FUNCTIONS, BUILTIN_VARIABLES } from '../data/wormforgeDefinitions';
+import { BUILTIN_CLASSES, BUILTIN_ENUMERATIONS, BUILTIN_FUNCTIONS, BUILTIN_VARIABLES, WA_WEAPON_TABLE_OFFSETS } from '../data/wormforgeDefinitions';
 
 export interface Token {
   type:
@@ -697,6 +697,46 @@ export function parseAndValidate(code: string): {
               rule: 'worm-api',
             });
           }
+        } else if (left.value === 'm' || left.value === 'missile') {
+          const missileClass = BUILTIN_CLASSES.find((c) => c.name === 'MissileEntity');
+          if (missileClass && !missileClass.members.some((m) => m.name === method)) {
+            diagnostics.push({
+              line: right.line,
+              column: right.column,
+              message: `Unknown MissileEntity method "${method}". MissileEntity properties include: id, weapon, owner, x, y, vx, vy, sprite`,
+              severity: 'warning',
+              rule: 'missile-api',
+            });
+          }
+        }
+      }
+    }
+
+    // Check for weapon patch offsets: e.g. [0x50] = 70
+    if (t.value === '[' && meaningfulTokens[idx + 1]?.type === 'number' && meaningfulTokens[idx + 2]?.value === ']') {
+      const numTok = meaningfulTokens[idx + 1];
+      const rawNum = numTok.value;
+      const offsetVal = rawNum.startsWith('0x') || rawNum.startsWith('0X')
+        ? parseInt(rawNum, 16)
+        : parseInt(rawNum, 10);
+
+      if (!isNaN(offsetVal)) {
+        const known = WA_WEAPON_TABLE_OFFSETS[offsetVal];
+        if (known) {
+          extractedVariables.push({
+            name: `patch[${known.hex}]`,
+            type: 'dword',
+            description: `${known.name} (${known.category}): ${known.description}${known.unit ? ` [${known.unit}]` : ''}`,
+            scope: 'module',
+          });
+        } else if (offsetVal > 0x1CC || offsetVal < 0x0C) {
+          diagnostics.push({
+            line: numTok.line,
+            column: numTok.column,
+            message: `Weapon Table Offset Warning: "${rawNum}" is outside standard 0x1D0 record bounds (offsets span 0x0C to 0x1CC).`,
+            severity: 'warning',
+            rule: 'weapon-patch-offset',
+          });
         }
       }
     }

@@ -1,7 +1,7 @@
 [package]
 name = "wormforge-code-editor"
 version = "1.0.0"
-description = "WormForge Lua Code Editor with Real-Time Collaboration and Engine Verbs"
+description = "WormForge Lua Code Editor with Engine Verbs and AST Inspector"
 authors = ["LucianoWorms"]
 edition = "2021"
 

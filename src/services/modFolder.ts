@@ -32,6 +32,16 @@ export function cleanFolderPath(p: string): string {
 
 let browserRoot: any = null; // FileSystemDirectoryHandle in browser mode
 
+export async function pickFolder(): Promise<string | null> {
+  if (isDesktop()) {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const picked = await open({ directory: true, multiple: false, recursive: true });
+    if (!picked || Array.isArray(picked)) return null;
+    return picked as string;
+  }
+  return null;
+}
+
 export async function openModFolder(): Promise<OpenedFolder | null> {
   return isDesktop() ? openDesktop() : openBrowser();
 }
@@ -45,7 +55,23 @@ export async function loadFolderFromPath(rawPath: string): Promise<OpenedFolder 
   if (!clean) return null;
 
   if (isDesktop()) {
-    return loadDesktopPath(clean);
+    try {
+      return await loadDesktopPath(clean);
+    } catch (err: any) {
+      // If dev server or local Node API is active alongside Tauri, try server fallback
+      try {
+        const res = await fetch(`/api/fs/scan-folder?path=${encodeURIComponent(clean)}`);
+        const data = await res.json();
+        if (res.ok && data.success) {
+          return {
+            name: data.name || baseName(clean),
+            root: data.root || clean,
+            files: data.files || {},
+          };
+        }
+      } catch {}
+      throw err;
+    }
   }
 
   // Web / Server-side fallback: call backend /api/fs/scan-folder
@@ -69,12 +95,18 @@ async function loadDesktopPath(cleanPath: string): Promise<OpenedFolder> {
   const { readDir, readTextFile } = await import('@tauri-apps/plugin-fs');
   const files: Record<string, string> = {};
 
+  const isWin = cleanPath.includes('\\') || /^[a-zA-Z]:/.test(cleanPath);
+  const sep = isWin ? '\\' : '/';
+  const normalizedRoot = isWin
+    ? cleanPath.replace(/\//g, '\\').replace(/\\+$/, '')
+    : cleanPath.replace(/\\/g, '/').replace(/\/+$/, '');
+
   const walk = async (dir: string, rel: string) => {
     const entries = await readDir(dir);
     for (const e of entries) {
       if (Object.keys(files).length >= MAX_FILES) return;
       const relPath = rel ? `${rel}/${e.name}` : e.name;
-      const full = `${dir}/${e.name}`;
+      const full = `${dir}${sep}${e.name}`;
       if (e.isDirectory) {
         if (!SKIP_DIRS.has(e.name)) await walk(full, relPath);
       } else if (e.isFile && isTextFile(e.name)) {
@@ -83,8 +115,8 @@ async function loadDesktopPath(cleanPath: string): Promise<OpenedFolder> {
     }
   };
 
-  await walk(cleanPath, '');
-  return { name: baseName(cleanPath), root: cleanPath, files };
+  await walk(normalizedRoot, '');
+  return { name: baseName(normalizedRoot), root: normalizedRoot, files };
 }
 
 async function openDesktop(): Promise<OpenedFolder | null> {
@@ -96,12 +128,18 @@ async function openDesktop(): Promise<OpenedFolder | null> {
   const root = picked as string;
   const files: Record<string, string> = {};
 
+  const isWin = root.includes('\\') || /^[a-zA-Z]:/.test(root);
+  const sep = isWin ? '\\' : '/';
+  const normalizedRoot = isWin
+    ? root.replace(/\//g, '\\').replace(/\\+$/, '')
+    : root.replace(/\\/g, '/').replace(/\/+$/, '');
+
   const walk = async (dir: string, rel: string) => {
     const entries = await readDir(dir);
     for (const e of entries) {
       if (Object.keys(files).length >= MAX_FILES) return;
       const relPath = rel ? `${rel}/${e.name}` : e.name;
-      const full = `${dir}/${e.name}`;
+      const full = `${dir}${sep}${e.name}`;
       if (e.isDirectory) {
         if (!SKIP_DIRS.has(e.name)) await walk(full, relPath);
       } else if (e.isFile && isTextFile(e.name)) {
@@ -109,8 +147,8 @@ async function openDesktop(): Promise<OpenedFolder | null> {
       }
     }
   };
-  await walk(root, '');
-  return { name: baseName(root), root, files };
+  await walk(normalizedRoot, '');
+  return { name: baseName(normalizedRoot), root: normalizedRoot, files };
 }
 
 async function openBrowser(): Promise<OpenedFolder | null> {
@@ -145,13 +183,23 @@ async function openBrowser(): Promise<OpenedFolder | null> {
 export async function saveModFile(root: string, rel: string, content: string): Promise<void> {
   if (isDesktop()) {
     const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
+    const isWin = root.includes('\\') || /^[a-zA-Z]:/.test(root);
+    const sep = isWin ? '\\' : '/';
+    const normalizedRoot = isWin
+      ? root.replace(/\//g, '\\').replace(/\\+$/, '')
+      : root.replace(/\\/g, '/').replace(/\/+$/, '');
     const parts = rel.split('/');
     if (parts.length > 1) {
+      const sub = isWin ? parts.slice(0, -1).join('\\') : parts.slice(0, -1).join('/');
+      const fullSub = `${normalizedRoot}${sep}${sub}`;
       try {
-        await mkdir(`${root}/${parts.slice(0, -1).join('/')}`, { recursive: true });
+        await mkdir(fullSub, { recursive: true });
       } catch {}
     }
-    await writeTextFile(`${root}/${rel}`, content);
+    const fullFile = isWin
+      ? `${normalizedRoot}\\${parts.join('\\')}`
+      : `${normalizedRoot}/${rel}`;
+    await writeTextFile(fullFile, content);
     return;
   }
   if (browserRoot) {
