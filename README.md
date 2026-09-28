@@ -90,10 +90,11 @@ before building. 🌐
 
 ## ⚠️ Known Limitations
 
+- Parser is fake (will not properly detect errors)
+- Crashes when doing worm.1111 or any number after the dot.
 - Built with heavy AI assistance (vibecoded). Expect rough edges.
-- The API sidebar and autocomplete follow engine 0.7.2 and may lag behind newer engine versions.
+- The API sidebar and autocomplete follow engine 0.8.12 and may lag behind newer engine versions.
 - Parser safeguards are limited: unknown-method checks only cover common receivers (`a`, `actor`, `worm`).
-- The desktop build has no bundled collaboration server; set `VITE_COLLAB_URL` to use one.
 
 ---
 
