@@ -5,6 +5,7 @@ import {
   Settings,
   ChevronDown,
   Layers,
+  LayoutGrid,
 } from 'lucide-react';
 
 interface StudioHeaderProps {
@@ -14,6 +15,9 @@ interface StudioHeaderProps {
   onCloseFile: (file: string) => void;
   onLoadTemplate: (templateId: string) => void;
   onOpenConfig: () => void;
+  // Shown only when a mods root is configured. Lets the user get back to the
+  // mods grid from the editor without opening Config.
+  onOpenModsList?: () => void;
   isLight?: boolean;
 }
 
@@ -24,6 +28,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   onCloseFile,
   onLoadTemplate,
   onOpenConfig,
+  onOpenModsList,
   isLight = false,
 }) => {
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
@@ -174,6 +179,23 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
               </div>
             )}
           </div>
+
+          {/* Mods Grid Button - only when a mods root is configured, so it never
+              appears for users who have not opted into the feature. */}
+          {onOpenModsList && (
+            <button
+              onClick={onOpenModsList}
+              title="Back to mods list"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded font-medium border transition-colors shadow-xs ${
+                isLight
+                  ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+                  : 'bg-[#20252e] hover:bg-[#2a313d] text-[#c9d7e6] border-[#2e3745]'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5 text-amber-500" />
+              <span>Mods</span>
+            </button>
+          )}
 
           {/* Config / Settings Button */}
           <button

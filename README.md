@@ -5,12 +5,8 @@
 WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully crafted** code editor designed to **empower** modders to **unlock** the full potential of the WormForge scripting engine. Whether you're a seasoned modder or just getting started, our **cutting-edge** toolkit has you covered. ✨
 
 ---
-## 🔗 Links
-- Main Repo
-📁[WormForge Repo](https://github.com/ropahektic/WormForge)
 
-- Web App (Hosted in Google AI Studio)
-🌐[Online App](https://wormforge-code-editor.ai.studio/)
+📁[WormForge Repo](https://github.com/ropahektic/WormForge)
 
 ---
 

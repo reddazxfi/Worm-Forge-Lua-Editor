@@ -44,11 +44,11 @@ interface UpperCornerTreeProps {
 }
 
 export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
-  variables,
-  enumerations,
-  functions,
-  classes,
-  existingMods,
+  variables = [],
+  enumerations = [],
+  functions = [],
+  classes = [],
+  existingMods = [],
   workspaceName,
   workspaceFiles,
   dirtyFiles = [] as string[],
@@ -61,18 +61,30 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
   isLight = false,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Every section starts collapsed so a large mod folder does not bury the
+  // editor behind a wall of API entries on init.
   const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({
-    variables: true,
+    workspace: false,
+    variables: false,
     enumerations: false,
-    functions: true,
-    classes: true,
-    mods: true,
+    functions: false,
+    classes: false,
+    mods: false,
   });
   const [openSubNodes, setOpenSubNodes] = useState<Record<string, boolean>>({
     'class_LuaActor': false,
     'class_WormEntity': false,
   });
+  // Subfolders default to collapsed (see the `?? false` reads below).
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
+
+  // While searching, force sections open so matches are actually visible
+  // instead of hiding behind collapsed parents.
+  const isSearching = searchTerm.trim().length > 0;
+  const isNodeOpen = (key: string) => isSearching || !!openNodes[key];
+  const isSubNodeOpen = (key: string) => isSearching || !!openSubNodes[key];
+  const isFolderOpen = (key: string) => isSearching || !!openFolders[key];
 
   const toggleNode = (node: string) => {
     setOpenNodes((prev) => ({ ...prev, [node]: !prev[node] }));
@@ -120,28 +132,34 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
   };
 
   // Filter items if search is active
-  const filteredVars = variables.filter((v) =>
+  const safeVars = variables || [];
+  const safeEnums = enumerations || [];
+  const safeFuncs = functions || [];
+  const safeClasses = classes || [];
+  const safeMods = existingMods || [];
+
+  const filteredVars = safeVars.filter((v) =>
     v.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  const filteredEnums = enumerations.filter(
+  const filteredEnums = safeEnums.filter(
     (e) =>
       e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.values.some((v) => v.name.toLowerCase().includes(searchTerm.toLowerCase()))
+      (e.values && e.values.some((v) => v.name.toLowerCase().includes(searchTerm.toLowerCase())))
   );
-  const filteredFuncs = functions.filter((f) =>
+  const filteredFuncs = safeFuncs.filter((f) =>
     f.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  const filteredClasses = classes.filter(
+  const filteredClasses = safeClasses.filter(
     (c) =>
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.members.some((m) => m.name.toLowerCase().includes(searchTerm.toLowerCase()))
+      (c.members && c.members.some((m) => m.name.toLowerCase().includes(searchTerm.toLowerCase())))
   );
-  const filteredMods = existingMods.filter(
+  const filteredMods = safeMods.filter(
     (m) =>
       m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       m.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      m.declaredMethods.some((dm) => dm.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      m.declaredVariables.some((dv) => dv.toLowerCase().includes(searchTerm.toLowerCase()))
+      (m.declaredMethods && m.declaredMethods.some((dm) => dm.toLowerCase().includes(searchTerm.toLowerCase()))) ||
+      (m.declaredVariables && m.declaredVariables.some((dv) => dv.toLowerCase().includes(searchTerm.toLowerCase())))
   );
 
   return (
@@ -191,20 +209,33 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
         {/* Opened mod folder */}
         {workspaceFiles && workspaceFiles.length > 0 && (
           <div className="mb-2">
-            <div className="flex items-center justify-between py-1 px-1.5 text-emerald-400 font-semibold border-b border-[#262c35] mb-1">
+            <div
+              onClick={() => toggleNode('workspace')}
+              title={isNodeOpen('workspace') ? 'Collapse folder' : 'Expand folder'}
+              className={`flex items-center justify-between py-1 px-1.5 text-emerald-400 font-semibold border-b border-[#262c35] mb-1 rounded cursor-pointer transition-colors ${
+                isLight ? 'hover:bg-slate-200' : 'hover:bg-[#1f242c]'
+              }`}
+            >
               <div className="flex items-center gap-1.5 truncate">
+                {isNodeOpen('workspace') ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-[#67778b] shrink-0" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-[#67778b] shrink-0" />
+                )}
                 <FolderOpen className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <span className="truncate">{workspaceName || 'Workspace'} ({workspaceFiles.length})</span>
               </div>
-              <span className="text-[10px] text-[#697c91] font-sans">
+              <span className="text-[10px] text-[#697c91] font-sans shrink-0">
                 {Object.keys(groupedWorkspace.folders).length} mod subfolder{Object.keys(groupedWorkspace.folders).length === 1 ? '' : 's'}
               </span>
             </div>
 
+            {isNodeOpen('workspace') && (
+            <>
             {/* Subfolders (each mod in its own collapsible folder) */}
             <div className="space-y-0.5">
               {Object.entries(groupedWorkspace.folders).map(([folderName, folderFiles]) => {
-                const isExpanded = openFolders[folderName] ?? false;
+                const isExpanded = isFolderOpen(folderName);
                 const filteredFolderFiles = folderFiles.filter((f) =>
                   f.toLowerCase().includes(searchTerm.toLowerCase())
                 );
@@ -297,6 +328,8 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
                   </div>
                 ))}
             </div>
+            </>
+            )}
           </div>
         )}
 
@@ -310,7 +343,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
                 : 'hover:bg-[#222730] text-[#8fa0b5] hover:text-[#d3e0f0]'
             }`}
           >
-            {openNodes.mods ? (
+            {isNodeOpen('mods') ? (
               <ChevronDown className="w-3.5 h-3.5 text-[#67778b]" />
             ) : (
               <ChevronRight className="w-3.5 h-3.5 text-[#67778b]" />
@@ -319,7 +352,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
             <span>Existing Mods ({filteredMods.length})</span>
           </div>
 
-          {openNodes.mods && (
+          {isNodeOpen('mods') && (
             <div
               className={`pl-4 ml-1.5 border-l space-y-0.5 mt-0.5 ${
                 isLight ? 'border-slate-200' : 'border-[#262c35]'
@@ -415,7 +448,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
                 : 'hover:bg-[#222730] text-[#8fa0b5] hover:text-[#d3e0f0]'
             }`}
           >
-            {openNodes.variables ? (
+            {isNodeOpen('variables') ? (
               <ChevronDown className="w-3.5 h-3.5 text-[#67778b]" />
             ) : (
               <ChevronRight className="w-3.5 h-3.5 text-[#67778b]" />
@@ -424,7 +457,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
             <span>Variables ({filteredVars.length})</span>
           </div>
 
-          {openNodes.variables && (
+          {isNodeOpen('variables') && (
             <div
               className={`pl-4 ml-1.5 border-l space-y-0.5 mt-0.5 ${
                 isLight ? 'border-slate-200' : 'border-[#262c35]'
@@ -464,7 +497,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
                 : 'hover:bg-[#222730] text-[#8fa0b5] hover:text-[#d3e0f0]'
             }`}
           >
-            {openNodes.enumerations ? (
+            {isNodeOpen('enumerations') ? (
               <ChevronDown className="w-3.5 h-3.5 text-[#67778b]" />
             ) : (
               <ChevronRight className="w-3.5 h-3.5 text-[#67778b]" />
@@ -473,7 +506,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
             <span>Enumerations ({filteredEnums.length})</span>
           </div>
 
-          {openNodes.enumerations && (
+          {isNodeOpen('enumerations') && (
             <div
               className={`pl-4 ml-1.5 border-l space-y-0.5 mt-0.5 ${
                 isLight ? 'border-slate-200' : 'border-[#262c35]'
@@ -513,7 +546,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
                 : 'hover:bg-[#222730] text-[#8fa0b5] hover:text-[#d3e0f0]'
             }`}
           >
-            {openNodes.functions ? (
+            {isNodeOpen('functions') ? (
               <ChevronDown className="w-3.5 h-3.5 text-[#67778b]" />
             ) : (
               <ChevronRight className="w-3.5 h-3.5 text-[#67778b]" />
@@ -522,7 +555,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
             <span>Functions ({filteredFuncs.length})</span>
           </div>
 
-          {openNodes.functions && (
+          {isNodeOpen('functions') && (
             <div
               className={`pl-4 ml-1.5 border-l space-y-0.5 mt-0.5 ${
                 isLight ? 'border-slate-200' : 'border-[#262c35]'
@@ -559,7 +592,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
                 : 'hover:bg-[#222730] text-[#8fa0b5] hover:text-[#d3e0f0]'
             }`}
           >
-            {openNodes.classes ? (
+            {isNodeOpen('classes') ? (
               <ChevronDown className="w-3.5 h-3.5 text-[#67778b]" />
             ) : (
               <ChevronRight className="w-3.5 h-3.5 text-[#67778b]" />
@@ -568,14 +601,14 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
             <span>Classes ({filteredClasses.length})</span>
           </div>
 
-          {openNodes.classes && (
+          {isNodeOpen('classes') && (
             <div
               className={`pl-4 ml-1.5 border-l space-y-1 mt-0.5 ${
                 isLight ? 'border-slate-200' : 'border-[#262c35]'
               }`}
             >
               {filteredClasses.map((cls, cIdx) => {
-                const isSubOpen = openSubNodes[`class_${cls.name}`] ?? false;
+                const isSubOpen = isSubNodeOpen(`class_${cls.name}`);
                 return (
                   <div key={`cls_${cls.name}_${cIdx}`} className="space-y-0.5">
                     <div

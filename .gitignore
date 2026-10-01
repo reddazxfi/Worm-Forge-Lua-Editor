@@ -4,8 +4,16 @@ dist/
 coverage/
 .DS_Store
 *.log
+*.tsbuildinfo
 .env*
 !.env.example
 
+# Rust build output.
+# NOTE: src-tauri/Cargo.lock is deliberately NOT ignored - Rust convention is to
+# commit it for applications (only libraries ignore it). It is excluded from AI
+# context via .clineignore instead.
 src-tauri/target/
 src-tauri/gen/
+
+# Generated whole-repo snapshot. Regenerate on demand with: npx repomix
+repomix-output.xml

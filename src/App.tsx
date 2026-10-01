@@ -18,11 +18,14 @@ import {
 import { StudioHeader } from './components/StudioHeader';
 import { UpperCornerTree } from './components/UpperCornerTree';
 import { DocPane } from './components/DocPane';
-import { CodeEditor } from './components/CodeEditor';
+import { CodeEditor, CodeEditorHandle } from './components/CodeEditor';
 import { ConsoleOutput } from './components/ConsoleOutput';
 import { KeycodeModal } from './components/KeycodeModal';
 import { EngineAdditionModal } from './components/EngineAdditionModal';
 import { ConfigModal } from './components/ConfigModal';
+import { UnsavedChangesModal } from './components/UnsavedChangesModal';
+import { ModsListScreen, ModsListTile } from './components/ModsListScreen';
+import { CreateModModal } from './components/CreateModModal';
 
 import {
   ClassDef,
@@ -38,7 +41,7 @@ import {
 import { EXISTING_MODS } from './data/existingMods';
 import { INITIAL_TEMPLATE } from './data/templates';
 import { parseAndValidate } from './services/parser';
-import { openModFolder, saveModFile, saveFileAs, canOpenFolders, cleanFolderPath, loadFolderFromPath } from './services/modFolder';
+import { openModFolder, saveModFile, saveFileAs, canOpenFolders, cleanFolderPath, loadFolderFromPath, isDesktop, listModEntries, createModFolder } from './services/modFolder';
 import { EditorConfig, loadConfig, saveConfig } from './services/config';
 
 export default function App() {
@@ -46,19 +49,127 @@ export default function App() {
   const [config, setConfig] = useState<EditorConfig>(() => loadConfig());
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
-  // Files State
-  const [files, setFiles] = useState<Record<string, string>>({
-    'mod.lua': INITIAL_TEMPLATE,
-  });
-  const [openFiles, setOpenFiles] = useState<string[]>(['mod.lua']);
-  const [activeFile, setActiveFile] = useState<string>('mod.lua');
+  // Storage Keys for remembering last edited script and state
+  const STORAGE_FILES_KEY = 'wormforge_last_files';
+  const STORAGE_ACTIVE_FILE_KEY = 'wormforge_active_file';
+  const STORAGE_OPEN_FILES_KEY = 'wormforge_open_files';
+  const STORAGE_MOD_FOLDER_KEY = 'wormforge_mod_folder';
+  const STORAGE_SAVED_FILES_KEY = 'wormforge_saved_files';
 
-  // Opened mod folder (desktop app or Chromium browser)
-  const [modFolder, setModFolder] = useState<{ name: string; root: string } | null>(null);
-  const [savedFiles, setSavedFiles] = useState<Record<string, string>>({});
+  // Files State with auto-restore on init
+  const [files, setFiles] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_FILES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return { 'mod.lua': INITIAL_TEMPLATE };
+  });
+
+  const [activeFile, setActiveFile] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_ACTIVE_FILE_KEY);
+      const rawFiles = localStorage.getItem(STORAGE_FILES_KEY);
+      const parsedFiles = rawFiles ? JSON.parse(rawFiles) : null;
+      if (saved && parsedFiles && parsedFiles[saved] !== undefined) {
+        return saved;
+      }
+    } catch {}
+    return 'mod.lua';
+  });
+
+  const [openFiles, setOpenFiles] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_OPEN_FILES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return ['mod.lua'];
+  });
+
+  // Opened mod folder
+  const [modFolder, setModFolder] = useState<{ name: string; root: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_MOD_FOLDER_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
+
+  const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_SAVED_FILES_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
+
+  // Jump to Diagnostic Target Line/Column
+  const [jumpTarget, setJumpTarget] = useState<{ line: number; column: number; key: number } | null>(null);
+
+  // Imperative handle on the editor, used to insert snippets at the caret
+  const editorRef = useRef<CodeEditorHandle>(null);
+
+  // Set when a close was blocked because of unsaved changes
+  const [pendingClose, setPendingClose] = useState(false);
+
+  // ----- Mods-list launch screen state -----
+  // 'launchMode === modsList' + a configured root shows the grid instead of
+  // the editor on startup. Desktop only; see listModEntries().
+  const modsRootConfigured = !!cleanFolderPath(config.modsRootPath) && isDesktop();
+  const modsListEnabled =
+    config.launchMode === 'modsList' && !!cleanFolderPath(config.modsRootPath) && isDesktop();
+  const [showModsList, setShowModsList] = useState(false);
+  const [mods, setMods] = useState<ModsListTile[]>([]);
+  const [modsLoading, setModsLoading] = useState(false);
+  const [modsError, setModsError] = useState<string | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Active Code
   const activeCode = files[activeFile] || '';
+
+  // Persist files and active script across browser sessions
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_FILES_KEY, JSON.stringify(files));
+    } catch {}
+  }, [files]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_ACTIVE_FILE_KEY, activeFile);
+    } catch {}
+  }, [activeFile]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_OPEN_FILES_KEY, JSON.stringify(openFiles));
+    } catch {}
+  }, [openFiles]);
+
+  useEffect(() => {
+    try {
+      if (modFolder) {
+        localStorage.setItem(STORAGE_MOD_FOLDER_KEY, JSON.stringify(modFolder));
+      } else {
+        localStorage.removeItem(STORAGE_MOD_FOLDER_KEY);
+      }
+    } catch {}
+  }, [modFolder]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_SAVED_FILES_KEY, JSON.stringify(savedFiles));
+    } catch {}
+  }, [savedFiles]);
 
   // Engine Custom Classes state
   const [customClasses, setCustomClasses] = useState<ClassDef[]>([]);
@@ -216,6 +327,16 @@ export default function App() {
   useEffect(() => {
     runSyntaxCheck(activeCode, activeFile);
 
+    // 0. Mods-list launch mode takes precedence: show the grid and do NOT
+    //    auto-open anything behind it. Scoping the existing auto-load blocks
+    //    behind `if (modsListEnabled)` leaves their behaviour untouched when
+    //    the feature is off (launchMode defaults to 'lastFile').
+    if (modsListEnabled) {
+      setShowModsList(true);
+      refreshMods();
+      return;
+    }
+
     // 1. If an auto-load mod is specified in config, load it on startup
     if (config.autoLoadModId) {
       const found = EXISTING_MODS.find((m) => m.id === config.autoLoadModId);
@@ -252,12 +373,22 @@ export default function App() {
               return;
             }
             const first = names.find((n) => n.toLowerCase().endsWith('.lua')) ?? names[0];
+            // Reopen the file that was active last session, if it still exists
+            // in the folder. Falling straight to `first` would silently drop it.
+            let remembered: string | null = null;
+            try {
+              remembered = localStorage.getItem(STORAGE_ACTIVE_FILE_KEY);
+            } catch {}
+            const target =
+              remembered && Object.prototype.hasOwnProperty.call(res.files, remembered)
+                ? remembered
+                : first;
             setModFolder({ name: res.name, root: res.root });
             setSavedFiles(res.files);
             setFiles(res.files);
-            setOpenFiles([first]);
-            setActiveFile(first);
-            runSyntaxCheck(res.files[first] ?? '', first);
+            setOpenFiles([target]);
+            setActiveFile(target);
+            runSyntaxCheck(res.files[target] ?? '', target);
             setLogs((prev) => [
               ...prev,
               {
@@ -294,10 +425,13 @@ export default function App() {
   };
 
   // Insert Snippet into Code Editor
+  // Inserts at the caret via the editor's imperative handle, so a snippet lands
+  // where the user is working instead of at the bottom of the file.
   const handleInsertCode = (snippet: string) => {
-    const updated = activeCode + (activeCode.endsWith('\n') ? '' : '\n') + snippet + '\n';
-    handleCodeChange(updated);
-    runSyntaxCheck(updated);
+    const next = editorRef.current?.insertSnippet(snippet) ?? null;
+    if (next !== null) {
+      runSyntaxCheck(next);
+    }
     setLogs((prev) => [
       ...prev,
       {
@@ -364,17 +498,127 @@ export default function App() {
         return;
       }
       const first = names.find((n) => n.toLowerCase().endsWith('.lua')) ?? names[0];
-      setModFolder({ name: res.name, root: res.root });
-      setSavedFiles(res.files);
-      setFiles(res.files);
-      setOpenFiles([first]);
-      setActiveFile(first);
-      runSyntaxCheck(res.files[first] ?? '');
+      if (!first) return;
+      applyOpenedFolder(res);
       addLog(`Opened folder "${res.name}" (${names.length} file${names.length === 1 ? '' : 's'}).`, 'success');
     } catch (e: any) {
       addLog(`Failed to open folder: ${e?.message ?? String(e)}`, 'error');
     }
   };
+
+  /**
+   * Opens an already-resolved OpenedFolder into the editor. Shared by the
+   * normal "Open Folder" button and the mods-list tiles so both go through
+   * the exact same state transition (modFolder/savedFiles/files/openFiles/
+   * activeFile) rather than a second, drifting copy of it.
+   */
+  const applyOpenedFolder = useCallback(
+    (res: { name: string; root: string; files: Record<string, string> }) => {
+      const names = Object.keys(res.files).sort();
+      const first = names.find((n) => n.toLowerCase().endsWith('.lua')) ?? names[0];
+      setModFolder({ name: res.name, root: res.root });
+      setSavedFiles(res.files);
+      setFiles(res.files);
+      setOpenFiles([first]);
+      setActiveFile(first);
+      runSyntaxCheck(res.files[first] ?? '', first);
+    },
+    [runSyntaxCheck]
+  );
+
+  // ----- Mods-list launch screen handlers -----
+  const refreshMods = useCallback(async () => {
+    const root = cleanFolderPath(config.modsRootPath);
+    if (!root) {
+      setMods([]);
+      setModsError('No mods folder configured. Set one in Config.');
+      return;
+    }
+    setModsLoading(true);
+    setModsError(null);
+    try {
+      const entries = await listModEntries(root);
+      if (entries === null) {
+        setMods([]);
+        setModsError('Could not read the mods folder. Check the path in Config.');
+      } else {
+        setMods(entries as ModsListTile[]);
+      }
+    } catch (e: any) {
+      setMods([]);
+      setModsError(e?.message ?? String(e));
+    } finally {
+      setModsLoading(false);
+    }
+  }, [config.modsRootPath]);
+
+  // Show the grid and make sure it has fresh contents. Used by the header
+  // "Mods" button and by the config toggle.
+  const handleShowModsList = useCallback(() => {
+    setShowModsList(true);
+    refreshMods();
+  }, [refreshMods]);
+
+  // A mod tile is just a folder path, so reuse the existing path loader.
+  const handleOpenModTile = useCallback(
+    async (mod: ModsListTile) => {
+      if (dirtyFiles.length > 0 && !window.confirm('You have unsaved changes. Open another mod anyway?')) {
+        return;
+      }
+      try {
+        const res = await loadFolderFromPath(mod.path);
+        if (!res || Object.keys(res.files).length === 0) {
+          addLog(`Mod "${mod.id}" has no readable .lua/.toml files.`, 'warn');
+          return;
+        }
+        applyOpenedFolder(res);
+        setShowModsList(false);
+        addLog(`Opened mod "${mod.id}" from ${res.name} (${Object.keys(res.files).length} files).`, 'success');
+      } catch (e: any) {
+        addLog(`Failed to open mod "${mod.id}": ${e?.message ?? String(e)}`, 'error');
+      }
+    },
+    [dirtyFiles, applyOpenedFolder]
+  );
+
+  const handleCreateMod = useCallback(
+    async (modName: string, author: string) => {
+      const root = cleanFolderPath(config.modsRootPath);
+      if (!root) {
+        setCreateError('No mods folder configured. Set one in Config.');
+        return;
+      }
+      setIsCreating(true);
+      setCreateError(null);
+      try {
+        const modPath = await createModFolder(root, modName, author);
+        const res = await loadFolderFromPath(modPath);
+        if (res && Object.keys(res.files).length > 0) {
+          applyOpenedFolder(res);
+        }
+        setIsCreateOpen(false);
+        setShowModsList(false);
+        addLog(`Created mod "${modName}" in ${root}.`, 'success');
+        await refreshMods();
+      } catch (e: any) {
+        setCreateError(e?.message ?? String(e));
+      } finally {
+        setIsCreating(false);
+      }
+    },
+    [config.modsRootPath, applyOpenedFolder, refreshMods]
+  );
+
+  // React to the Config screen's "On Startup" toggle. The startup effect runs
+  // only once, so without this the toggle appears to do nothing until restart.
+  useEffect(() => {
+    if (modsListEnabled) {
+      handleShowModsList();
+    } else {
+      // Switching back to 'lastFile' must not strand the user on the grid.
+      setShowModsList(false);
+    }
+  }, [modsListEnabled, handleShowModsList]);
 
   const handleOpenWorkspaceFile = (name: string) => {
     if (!openFiles.includes(name)) {
@@ -384,8 +628,11 @@ export default function App() {
     runSyntaxCheck(files[name] ?? '');
   };
 
-  const saveFiles = async (fileNames: string[]) => {
-    if (!modFolder) return;
+  // Writes each file to disk. Returns the names that FAILED, so callers such as
+  // "Save and close" can refuse to close while data is still unsaved.
+  const saveFiles = async (fileNames: string[]): Promise<string[]> => {
+    if (!modFolder) return fileNames;
+    const failed: string[] = [];
     let savedCount = 0;
     const nextSaved = { ...savedFiles };
     for (const name of fileNames) {
@@ -396,6 +643,7 @@ export default function App() {
         nextSaved[name] = content;
         savedCount++;
       } catch (e: any) {
+        failed.push(name);
         addLog(`Failed to save ${name}: ${e?.message ?? String(e)}`, 'error');
       }
     }
@@ -403,6 +651,85 @@ export default function App() {
     if (savedCount > 0) {
       addLog(`Saved ${savedCount} file${savedCount === 1 ? '' : 's'} to "${modFolder.name}".`, 'success');
     }
+    return failed;
+  };
+
+  // ----- Unsaved changes guard -----
+  // Reuses `dirtyFiles` from above: a file counts as dirty when it differs from
+  // what we last wrote to disk. Without an open mod folder there is nothing on
+  // disk to compare against, so scratch files are never treated as unsaved.
+
+  // Keep the latest dirty list readable from the window close handler without
+  // re-subscribing on every keystroke.
+  const unsavedFilesRef = useRef<string[]>(dirtyFiles);
+  unsavedFilesRef.current = dirtyFiles;
+  const forceCloseRef = useRef(false);
+
+  const closeAppWindow = async () => {
+    try {
+      if (!isDesktop()) {
+        window.close();
+        return;
+      }
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      await getCurrentWindow().destroy();
+    } catch {}
+  };
+
+  // Browser: beforeunload is the only hook that can intercept a tab close.
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (unsavedFilesRef.current.length === 0) return;
+      e.preventDefault();
+      // Browsers ignore custom text here and show their own generic wording.
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
+
+  // Desktop: intercept the native window close so we can offer Save / Discard.
+  useEffect(() => {
+    if (!isDesktop()) return;
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    (async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const stop = await getCurrentWindow().onCloseRequested((event) => {
+          if (forceCloseRef.current || unsavedFilesRef.current.length === 0) return;
+          event.preventDefault();
+          setPendingClose(true);
+        });
+        if (disposed) stop();
+        else unlisten = stop;
+      } catch {}
+    })();
+
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  const handleSaveAndClose = async () => {
+    const failed = await saveFiles(unsavedFilesRef.current);
+    if (failed.length > 0) {
+      // Keep the window open so the user can retry or pick "Close without saving".
+      setPendingClose(false);
+      addLog(`Close cancelled: ${failed.length} file(s) could not be written to disk.`, 'error');
+      return;
+    }
+    forceCloseRef.current = true;
+    setPendingClose(false);
+    await closeAppWindow();
+  };
+
+  const handleDiscardAndClose = async () => {
+    forceCloseRef.current = true;
+    setPendingClose(false);
+    await closeAppWindow();
   };
 
   // Keyboard shortcut: Ctrl+S saves current file to disk
@@ -518,6 +845,12 @@ export default function App() {
   const warnCount = diagnostics.filter((d) => d.severity === 'warning').length;
   const isLight = config.theme === 'light';
 
+  // Mirror the theme onto <html> so index.css can theme the ::-webkit-scrollbar
+  // pseudo-elements, which cannot be reached from a React className.
+  useEffect(() => {
+    document.documentElement.classList.toggle('light', isLight);
+  }, [isLight]);
+
   // ----- Resizable GUI Mouse Handlers -----
   const handleStartSidebarResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -620,7 +953,7 @@ export default function App() {
 
   return (
     <div
-      className={`flex flex-col h-screen w-screen overflow-hidden select-none transition-colors ${
+      className={`relative flex flex-col h-screen w-screen overflow-hidden select-none transition-colors ${
         isLight ? 'bg-slate-100 text-slate-800' : 'bg-[#0e1115] text-[#cfdbe8]'
       }`}
     >
@@ -637,6 +970,7 @@ export default function App() {
         }}
         onLoadTemplate={handleLoadTemplate}
         onOpenConfig={() => setIsConfigModalOpen(true)}
+        onOpenModsList={modsRootConfigured ? handleShowModsList : undefined}
         isLight={isLight}
       />
 
@@ -858,9 +1192,9 @@ export default function App() {
             }`}
           >
             <UpperCornerTree
-              variables={symbols.variables}
-              enumerations={symbols.enums}
-              functions={symbols.functions}
+              variables={symbols.variables || []}
+              enumerations={symbols.enums || []}
+              functions={symbols.functions || []}
               classes={combinedClasses}
               existingMods={EXISTING_MODS}
               workspaceName={modFolder?.name}
@@ -932,6 +1266,7 @@ export default function App() {
           >
             <CodeEditor
               key={activeFile}
+              ref={editorRef}
               code={activeCode}
               onChange={handleCodeChange}
               diagnostics={diagnostics}
@@ -940,6 +1275,7 @@ export default function App() {
               fontSize={config.fontSize}
               lineHeight={config.lineHeight}
               theme={config.theme}
+              jumpTarget={jumpTarget}
             />
           </div>
 
@@ -967,6 +1303,12 @@ export default function App() {
               diagnostics={diagnostics}
               logs={logs}
               onSelectDiagnostic={(diag) => {
+                // Bump `key` every click so re-clicking the same diagnostic
+                // still re-triggers the jump inside the editor.
+                setJumpTarget({ line: diag.line, column: diag.column, key: Date.now() });
+                // On narrow screens the console hides the editor, so make the
+                // destination visible before scrolling to it.
+                if (window.innerWidth < 1024) setMobileTab('editor');
                 setLogs((prev) => [
                   ...prev,
                   {
@@ -1006,6 +1348,49 @@ export default function App() {
         config={config}
         onUpdateConfig={handleUpdateConfig}
         existingMods={EXISTING_MODS}
+      />
+      {/* Unsaved changes prompt shown when a close is attempted with dirty files */}
+      <UnsavedChangesModal
+        isOpen={pendingClose}
+        fileNames={dirtyFiles}
+        isLight={isLight}
+        onSaveAndClose={handleSaveAndClose}
+        onDiscardAndClose={handleDiscardAndClose}
+        onCancel={() => setPendingClose(false)}
+      />
+
+      {/* Mods-list launch screen. Rendered as a sibling overlay rather than by
+          wrapping the studio in a conditional, so no existing toolbar/tree/
+          editor markup is restructured - it simply covers it while active.
+          It covers the StudioHeader too and provides its own header bar
+          (Config / Create / Refresh), so no fragile pixel offset is needed.
+          The header's "Mods" button is what gets you FROM the editor back
+          here. */}
+      {showModsList && (
+        <div className="absolute inset-0 z-40 flex flex-col">
+          <ModsListScreen
+            mods={mods}
+            isLoading={modsLoading}
+            error={modsError}
+            isLight={isLight}
+            onOpenMod={handleOpenModTile}
+            onRefresh={refreshMods}
+            onCreateNew={() => {
+              setCreateError(null);
+              setIsCreateOpen(true);
+            }}
+            onOpenConfig={() => setIsConfigModalOpen(true)}
+          />
+        </div>
+      )}
+
+      <CreateModModal
+        isOpen={isCreateOpen}
+        isLight={isLight}
+        isBusy={isCreating}
+        error={createError}
+        onClose={() => setIsCreateOpen(false)}
+        onCreate={handleCreateMod}
       />
     </div>
   );

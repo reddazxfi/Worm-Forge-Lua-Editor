@@ -4,6 +4,13 @@ export interface EditorConfig {
   lineHeight: number; // relative, e.g. 1.3, 1.5, 1.8
   autoLoadFolder: string; // custom directory path
   autoLoadModId: string; // mod id to load on startup (e.g. "gameplay.highlander_full", "gameplay.kill_the_king", "")
+  // Folder containing one subfolder per mod, used by the mods-list launch screen.
+  // Empty = feature off.
+  modsRootPath: string;
+  // What happens on startup. 'lastFile' is today's behaviour; 'modsList' shows
+  // the mods grid instead of resuming. 'modsList' is desktop-only (see
+  // listModEntries) and is hidden from the UI in the browser.
+  launchMode: 'lastFile' | 'modsList';
   sidebarWidth: number; // px, e.g. 340
   treeHeightPercent: number; // %, e.g. 58
   consoleHeight: number; // px, e.g. 230
@@ -15,6 +22,8 @@ export const DEFAULT_CONFIG: EditorConfig = {
   lineHeight: 1.5,
   autoLoadFolder: '',
   autoLoadModId: '',
+  modsRootPath: '',
+  launchMode: 'lastFile',
   sidebarWidth: 340,
   treeHeightPercent: 58,
   consoleHeight: 220,
@@ -54,6 +63,8 @@ line_height = ${cfg.lineHeight}
 [Startup]
 auto_load_mod = ${cfg.autoLoadModId || 'none'}
 auto_load_folder = ${cfg.autoLoadFolder || ''}
+launch_mode = ${cfg.launchMode}
+mods_root_path = ${cfg.modsRootPath || ''}
 
 [Layout]
 sidebar_width = ${cfg.sidebarWidth}
@@ -84,6 +95,12 @@ export function parseIniConfig(iniText: string): Partial<EditorConfig> {
       result.autoLoadModId = val === 'none' ? '' : val;
     } else if (cleanKey === 'auto_load_folder') {
       result.autoLoadFolder = val;
+    } else if (cleanKey === 'mods_root_path') {
+      result.modsRootPath = val;
+    } else if (cleanKey === 'launch_mode') {
+      // Be lenient: an unknown value falls back to today's behaviour rather
+      // than putting the app into a state it cannot recover from.
+      if (val === 'modsList' || val === 'lastFile') result.launchMode = val;
     } else if (cleanKey === 'sidebar_width') {
       const n = parseInt(val, 10);
       if (!isNaN(n) && n >= 200 && n <= 700) result.sidebarWidth = n;

@@ -12,6 +12,7 @@
 }
 
 /* Custom Sleek Dark Theme Scrollbars */
+/* Dark values are the default so an un-themed element keeps today's look. */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -28,6 +29,21 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: #3e4b60;
+}
+
+/* Light theme scrollbars. Toggled by a `light` class on <html>, which App.tsx
+   sets from config.theme. Without this the dark bars above sit on light
+   surfaces. Slate values so they match the rest of the light palette. */
+html.light ::-webkit-scrollbar-track {
+  background: #f1f5f9; /* slate-100 */
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1; /* slate-300 */
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8; /* slate-400 */
 }
 
 /* Code editor line gutters and syntax styles */

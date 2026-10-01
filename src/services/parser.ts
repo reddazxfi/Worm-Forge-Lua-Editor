@@ -5,12 +5,13 @@ import {
   ClassDef,
   ParsedSymbolTree,
 } from '../types/wormforge';
+
+export type { SyntaxDiagnostic, ParsedSymbolTree };
 import {
   BUILTIN_CLASSES,
   BUILTIN_ENUMERATIONS,
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
-  //WA_WEAPON_TABLE,
 } from '../data/wormforgeDefinitions';
 
 export interface Token {
@@ -295,7 +296,7 @@ export function tokenize(code: string): { tokens: Token[]; diagnostics: SyntaxDi
       continue;
     }
 
-    // Numbers (hex: 0x10000, 0x1A, floats: 3.14, ints: 42)
+    // Numbers (hex: 0x10000, 0x1A, floats: 3.14, .5, ints: 42)
     if (/\d/.test(char) || (char === '.' && /\d/.test(code[i + 1] || ''))) {
       const start = i;
       const startCol = col;
@@ -310,14 +311,58 @@ export function tokenize(code: string): { tokens: Token[]; diagnostics: SyntaxDi
           col++;
         }
       } else {
-        let hasDot = char === '.';
-        while (i < code.length && (/[\d_]/.test(code[i]) || (!hasDot && code[i] === '.' && code[i + 1] !== '.'))) {
-          if (code[i] === '.') hasDot = true;
-          num += code[i];
+        let hasDot = false;
+        while (i < code.length) {
+          const c = code[i];
+          if (/[\d_]/.test(c)) {
+            num += c;
+            i++;
+            col++;
+          } else if (c === '.' && !hasDot && code[i + 1] !== '.') {
+            hasDot = true;
+            num += c;
+            i++;
+            col++;
+          } else {
+            break;
+          }
+        }
+      }
+
+      // Safeguard: Ensure i always advances
+      if (i === start) {
+        num = char;
+        i++;
+        col++;
+      }
+
+      // If a number is immediately followed by identifier characters without a separator (e.g. 1abc or 0x1G)
+      if (i < code.length && /[a-zA-Z_]/.test(code[i])) {
+        let suffix = '';
+        while (i < code.length && /[a-zA-Z0-9_]/.test(code[i])) {
+          suffix += code[i];
           i++;
           col++;
         }
+        const fullMalformed = num + suffix;
+        diagnostics.push({
+          line,
+          column: startCol,
+          message: `Syntax Error: malformed number or identifier starting with digit "${fullMalformed}". Identifiers in Lua cannot start with a number.`,
+          severity: 'error',
+          rule: 'malformed-number-identifier',
+        });
+        tokens.push({
+          type: 'unknown',
+          value: fullMalformed,
+          line,
+          column: startCol,
+          start,
+          end: i,
+        });
+        continue;
       }
+
       tokens.push({
         type: 'number',
         value: num,
@@ -403,7 +448,7 @@ export function tokenize(code: string): { tokens: Token[]; diagnostics: SyntaxDi
       continue;
     }
 
-    // Fallback unknown
+    // Unknown single character fallback
     tokens.push({
       type: 'unknown',
       value: char,
@@ -420,79 +465,65 @@ export function tokenize(code: string): { tokens: Token[]; diagnostics: SyntaxDi
 }
 
 export function parseAndValidate(code: string): {
+  tokens: Token[];
   diagnostics: SyntaxDiagnostic[];
   symbols: ParsedSymbolTree;
 } {
   const { tokens, diagnostics } = tokenize(code);
-  const meaningfulTokens = tokens.filter(
-    (t) => t.type !== 'whitespace' && t.type !== 'comment'
-  );
+  const meaningfulTokens = tokens.filter((t) => t.type !== 'whitespace' && t.type !== 'comment');
 
-  // Bracket and Block Balance Checking
+  // Structural Syntax Checks: Bracket Balance and Block Structure
   const bracketStack: { char: string; token: Token }[] = [];
-  interface BlockStackItem {
-    keyword: string;
-    token: Token;
-    waitingForDo?: boolean;
-  }
-  const blockStack: BlockStackItem[] = [];
+  const blockStack: { keyword: string; token: Token; waitingForDo?: boolean }[] = [];
 
   for (let idx = 0; idx < meaningfulTokens.length; idx++) {
     const t = meaningfulTokens[idx];
 
-    // Brackets
-    if (['(', '{', '['].includes(t.value)) {
-      bracketStack.push({ char: t.value, token: t });
-    } else if ([')', '}', ']'].includes(t.value)) {
-      const match = bracketStack.pop();
-      const expectedPair: Record<string, string> = { ')': '(', '}': '{', ']': '[' };
-      if (!match) {
-        diagnostics.push({
-          line: t.line,
-          column: t.column,
-          message: `Unexpected closing bracket "${t.value}" with no matching open bracket`,
-          severity: 'error',
-        });
-      } else if (match.char !== expectedPair[t.value]) {
-        diagnostics.push({
-          line: t.line,
-          column: t.column,
-          message: `Mismatched bracket: expected closing for "${match.char}" (line ${match.token.line}), but found "${t.value}"`,
-          severity: 'error',
-        });
+    // Bracket checks
+    if (t.type === 'punctuation') {
+      if (['(', '[', '{'].includes(t.value)) {
+        bracketStack.push({ char: t.value, token: t });
+      } else if ([')', ']', '}'].includes(t.value)) {
+        const last = bracketStack.pop();
+        const expected: { [key: string]: string } = { ')': '(', ']': '[', '}': '{' };
+        if (!last || last.char !== expected[t.value]) {
+          diagnostics.push({
+            line: t.line,
+            column: t.column,
+            message: `Mismatched closing bracket "${t.value}"`,
+            severity: 'error',
+          });
+        }
       }
     }
 
-    // Blocks
+    // Block checks
     if (t.type === 'keyword') {
-      if (t.value === 'for' || t.value === 'while') {
+      if (['function', 'if', 'repeat'].includes(t.value)) {
+        blockStack.push({ keyword: t.value, token: t });
+      } else if (['for', 'while'].includes(t.value)) {
         blockStack.push({ keyword: t.value, token: t, waitingForDo: true });
       } else if (t.value === 'do') {
         const top = blockStack[blockStack.length - 1];
         if (top && top.waitingForDo) {
           top.waitingForDo = false;
         } else {
-          // Standalone `do ... end` block
-          blockStack.push({ keyword: 'do', token: t, waitingForDo: false });
+          blockStack.push({ keyword: 'do', token: t });
         }
-      } else if (t.value === 'function' || t.value === 'if') {
-        blockStack.push({ keyword: t.value, token: t, waitingForDo: false });
-      } else if (t.value === 'repeat') {
-        blockStack.push({ keyword: 'repeat', token: t, waitingForDo: false });
       } else if (t.value === 'end') {
         const match = blockStack.pop();
         if (!match) {
           diagnostics.push({
             line: t.line,
             column: t.column,
-            message: 'Unexpected "end" with no matching block opener (function, if, do, while, for)',
+            message: 'Extraneous "end" without matching block opening',
             severity: 'error',
           });
         } else if (match.keyword === 'repeat') {
           diagnostics.push({
             line: t.line,
             column: t.column,
-            message: '"repeat" block must be closed with "until", not "end"',
+            message: '"repeat" block must be terminated with "until", not "end"',
             severity: 'error',
           });
         } else if (match.waitingForDo) {
@@ -564,7 +595,6 @@ export function parseAndValidate(code: string): {
           } as any);
         }
       } else if (next && next.type === 'identifier') {
-        // Collect multiple locals like: local a, b, c
         let k = idx + 1;
         while (k < meaningfulTokens.length && meaningfulTokens[k].type === 'identifier') {
           const varName = meaningfulTokens[k].value;
@@ -613,7 +643,7 @@ export function parseAndValidate(code: string): {
       }
     }
 
-    // Arrow Operator Check: '->' is NOT valid Lua in WormForge (only used in PX internal notes)
+    // Arrow Operator Check: '->' is NOT valid Lua in WormForge
     if (t.type === 'arrow' || t.value === '->') {
       const leftTok = meaningfulTokens[idx - 1];
       const rightTok = meaningfulTokens[idx + 1];
@@ -630,47 +660,67 @@ export function parseAndValidate(code: string): {
     }
 
     // Custom Class & Namespace Member extraction via '.' or ':'
-    if ((t.value === '.' || t.value === ':') && idx > 0 && idx + 1 < meaningfulTokens.length) {
-      const leftTok = meaningfulTokens[idx - 1];
-      const rightTok = meaningfulTokens[idx + 1];
+    if (t.value === '.' || t.value === ':') {
+      const leftTok = idx > 0 ? meaningfulTokens[idx - 1] : undefined;
+      const rightTok = idx + 1 < meaningfulTokens.length ? meaningfulTokens[idx + 1] : undefined;
 
-      if (leftTok && leftTok.type === 'identifier' && rightTok && rightTok.type === 'identifier') {
+      // Incomplete trailing colon or dot
+      if (!rightTok) {
+        diagnostics.push({
+          line: t.line,
+          column: t.column,
+          message: `Syntax Error: incomplete expression: expected member identifier after "${t.value}".`,
+          severity: 'error',
+          rule: 'incomplete-member-expression',
+        });
+      } else if (leftTok && leftTok.type === 'identifier' && rightTok.type !== 'identifier') {
+        // Unexpected token after colon or dot (e.g. something:1 or something:1abc or something:"str")
+        const isTableLikely = t.value === ':';
+        const msg = isTableLikely
+          ? `Syntax Error: unexpected ${rightTok.type} "${rightTok.value}" after ":". Method calls require an identifier (e.g. ${leftTok.value}:method()). If you intended a table field, use "=" instead of ":" in Lua (e.g. ${leftTok.value} = ${rightTok.value}).`
+          : `Syntax Error: unexpected ${rightTok.type} "${rightTok.value}" after ".". Expected property or function identifier.`;
+
+        diagnostics.push({
+          line: rightTok.line,
+          column: rightTok.column,
+          message: msg,
+          severity: 'error',
+          rule: 'invalid-member-name',
+        });
+      } else if (leftTok && leftTok.type === 'identifier' && rightTok && rightTok.type === 'identifier') {
         const className = leftTok.value;
         const memberName = rightTok.value;
         const isColon = t.value === ':';
 
-        // Check if this is a user-defined class
-        if (extractedClasses.some((c) => c.name === className)) {
-          customVerbs.add(memberName);
+        customVerbs.add(memberName);
 
-          let params: any[] = [];
-          const openParen = meaningfulTokens[idx + 2];
-          if (openParen && openParen.value === '(') {
-            params = extractTypedParams(meaningfulTokens, idx + 3);
-          }
+        let params: any[] = [];
+        const openParen = meaningfulTokens[idx + 2];
+        if (openParen && openParen.value === '(') {
+          params = extractTypedParams(meaningfulTokens, idx + 3);
+        }
 
-          let cls = extractedClasses.find((c) => c.name === className);
-          if (!cls) {
-            cls = {
-              name: className,
-              description: `Custom Class identified via Lua syntax (${className}${t.value}${memberName}) at line ${leftTok.line}`,
-              isCustom: true,
-              syntaxExample: `${className}${t.value}${memberName}(...)`,
-              members: [],
-            };
-            extractedClasses.push(cls);
-          }
+        let cls = extractedClasses.find((c) => c.name === className);
+        if (!cls) {
+          cls = {
+            name: className,
+            description: `Custom Class identified via Lua syntax (${className}${t.value}${memberName}) at line ${leftTok.line}`,
+            isCustom: true,
+            syntaxExample: `${className}${t.value}${memberName}(...)`,
+            members: [],
+          };
+          extractedClasses.push(cls);
+        }
 
-          if (!cls.members.some((m) => m.name === memberName)) {
-            cls.members.push({
-              name: memberName,
-              kind: isColon ? 'method' : (openParen?.value === '(' ? 'method' : 'property'),
-              parameters: params,
-              description: `Custom ${isColon ? 'method' : (openParen?.value === '(' ? 'function' : 'property')} invoked on ${className}`,
-              example: `${className}${t.value}${memberName}(${params.map((p) => p.name).join(', ')})`,
-              isCustom: true,
-            });
-          }
+        if (!cls.members.some((m) => m.name === memberName)) {
+          cls.members.push({
+            name: memberName,
+            kind: isColon ? 'method' : (openParen?.value === '(' ? 'method' : 'property'),
+            parameters: params,
+            description: `Custom ${isColon ? 'method' : (openParen?.value === '(' ? 'function' : 'property')} invoked on ${className}`,
+            example: `${className}${t.value}${memberName}(${params.map((p) => p?.name || '').join(', ')})`,
+            isCustom: true,
+          });
         }
       }
     }
@@ -684,10 +734,11 @@ export function parseAndValidate(code: string): {
         if (left.value === 'a' || left.value === 'actor') {
           const actorClass = BUILTIN_CLASSES.find((c) => c.name === 'LuaActor')!;
           if (!actorClass.members.some((m) => m.name === method)) {
+            const validMethods = actorClass.members.filter((m) => m.kind === 'method').map((m) => m.name).join(', ');
             diagnostics.push({
               line: right.line,
               column: right.column,
-              message: `Unknown LuaActor method "${method}". Valid methods include: move, gravity, draw_quad, advance, look, frame, explode, despawn, gfx, angle, scale, tint, blend, sound, in_water, on_feet`,
+              message: `Unknown LuaActor method "${method}". Valid methods include: ${validMethods}`,
               severity: 'warning',
               rule: 'actor-api',
             });
@@ -695,12 +746,37 @@ export function parseAndValidate(code: string): {
         } else if (left.value === 'worm') {
           const wormClass = BUILTIN_CLASSES.find((c) => c.name === 'WormEntity')!;
           if (!wormClass.members.some((m) => m.name === method)) {
+            const validMethods = wormClass.members.filter((m) => m.kind === 'method').map((m) => m.name).join(', ');
             diagnostics.push({
               line: right.line,
               column: right.column,
-              message: `Unknown WormEntity method "${method}". Valid methods: carry, drop, equip, ammo, hurt, ammo_absolute, inventory, clear_keys, set_state`,
+              message: `Unknown WormHandle method "${method}". Valid methods include: ${validMethods}`,
               severity: 'warning',
               rule: 'worm-api',
+            });
+          }
+        } else if (['inv', 'store', 'inventory'].includes(left.value)) {
+          const invClass = BUILTIN_CLASSES.find((c) => c.name === 'InventoryStore');
+          if (invClass && !invClass.members.some((m) => m.name === method)) {
+            const validMethods = invClass.members.filter((m) => m.kind === 'method').map((m) => m.name).join(', ');
+            diagnostics.push({
+              line: right.line,
+              column: right.column,
+              message: `Unknown InventoryStore method "${method}". Valid methods include: ${validMethods}`,
+              severity: 'warning',
+              rule: 'inventory-api',
+            });
+          }
+        } else if (['mine', 'drum', 'oil', 'oildrum', 'crate', 'grave', 'obj', 'object'].includes(left.value)) {
+          const worldClass = BUILTIN_CLASSES.find((c) => c.name === 'WorldHandle');
+          if (worldClass && !worldClass.members.some((m) => m.name === method)) {
+            const validMethods = worldClass.members.filter((m) => m.kind === 'method').map((m) => m.name).join(', ');
+            diagnostics.push({
+              line: right.line,
+              column: right.column,
+              message: `Unknown WorldHandle method "${method}". Valid methods include: ${validMethods}`,
+              severity: 'warning',
+              rule: 'world-object-api',
             });
           }
         } else if (left.value === 'm' || left.value === 'missile') {
@@ -709,7 +785,7 @@ export function parseAndValidate(code: string): {
             diagnostics.push({
               line: right.line,
               column: right.column,
-              message: `Unknown MissileEntity method "${method}". MissileEntity properties include: id, weapon, owner, x, y, vx, vy, sprite`,
+              message: `Unknown MissileEntity method "${method}". In-flight missile tables provide properties: id, weapon, sprite, collision_mask, x, y, vx, vy, damp, wind_scale, gravity_scale`,
               severity: 'warning',
               rule: 'missile-api',
             });
@@ -750,7 +826,6 @@ export function parseAndValidate(code: string): {
   for (const c of extractedClasses) {
     const existing = classes.find((ec) => ec.name === c.name);
     if (existing) {
-      // Merge members
       for (const m of c.members) {
         if (!existing.members.some((em) => em.name === m.name)) {
           existing.members.push(m);
@@ -761,7 +836,7 @@ export function parseAndValidate(code: string): {
     }
   }
 
-  // Deduplicate variables by name so builtins and locals do not collide
+  // Deduplicate variables
   const variables: VariableDef[] = [];
   const seenVars = new Set<string>();
   for (const v of BUILTIN_VARIABLES) {
@@ -777,7 +852,7 @@ export function parseAndValidate(code: string): {
     }
   }
 
-  // Deduplicate functions by name
+  // Deduplicate functions
   const functions: FunctionDef[] = [];
   const seenFuncs = new Set<string>();
   for (const f of BUILTIN_FUNCTIONS) {
@@ -794,54 +869,57 @@ export function parseAndValidate(code: string): {
   }
 
   return {
+    tokens,
     diagnostics,
     symbols: {
-      variables,
       functions,
+      variables,
       classes,
       enums: BUILTIN_ENUMERATIONS,
       customVerbs: Array.from(customVerbs),
+      diagnostics,
     },
   };
 }
 
-function extractParams(tokens: Token[], startIndex: number): any[] {
+function extractParams(tokens: Token[], startIdx: number): any[] {
   const params: any[] = [];
-  if (tokens[startIndex]?.value !== '(') return params;
-  let idx = startIndex + 1;
-  while (idx < tokens.length && tokens[idx].value !== ')') {
-    if (tokens[idx].type === 'identifier') {
-      params.push({ name: tokens[idx].value, type: 'any' });
+  let i = startIdx;
+  if (tokens[i]?.value === '(') i++;
+
+  while (i < tokens.length && tokens[i]?.value !== ')') {
+    const val = tokens[i]?.value;
+    if (val === '\n' || val === ';' || val === 'end' || val === 'local' || val === 'function') break;
+    if (tokens[i]?.type === 'identifier') {
+      params.push({
+        name: tokens[i].value,
+        type: 'any',
+      });
     }
-    idx++;
+    i++;
   }
   return params;
 }
 
-// Handles typed parameter lists like (int 1, string 2, float 3) or (string name, int count)
-function extractTypedParams(tokens: Token[], startIndex: number): any[] {
+function extractTypedParams(tokens: Token[], startIdx: number): any[] {
   const params: any[] = [];
-  let idx = startIndex;
-  while (idx < tokens.length && tokens[idx].value !== ')') {
-    const t = tokens[idx];
-    if (t.type === 'type' || TYPE_KEYWORDS.has(t.value.toLowerCase())) {
-      const paramType = t.value;
-      const next = tokens[idx + 1];
-      if (next && next.value !== ',' && next.value !== ')') {
-        params.push({
-          name: next.value,
-          type: paramType,
-        });
-        idx += 2;
-        continue;
+  let i = startIdx;
+  while (i < tokens.length && tokens[i]?.value !== ')') {
+    const val = tokens[i]?.value;
+    if (val === '\n' || val === ';' || val === 'end' || val === 'local' || val === 'function') break;
+    if (tokens[i]?.type === 'identifier') {
+      const name = tokens[i].value;
+      let type = 'any';
+      if (tokens[i + 1]?.value === ':') {
+        const typeTok = tokens[i + 2];
+        if (typeTok && (typeTok.type === 'identifier' || typeTok.type === 'type')) {
+          type = typeTok.value;
+          i += 2;
+        }
       }
-    } else if (t.type === 'identifier' || t.type === 'number' || t.type === 'string') {
-      params.push({
-        name: t.value,
-        type: t.type === 'number' ? 'int' : t.type === 'string' ? 'string' : 'any',
-      });
+      params.push({ name, type });
     }
-    idx++;
+    i++;
   }
   return params;
 }

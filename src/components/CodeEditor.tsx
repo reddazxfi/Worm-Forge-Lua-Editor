@@ -1,5 +1,5 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { Target, Crosshair, Plus, Check, Sliders } from 'lucide-react';
+import React, { useRef, useState, useEffect, useMemo, useCallback, useImperativeHandle } from 'react';
+import { Target, Crosshair, Plus, Check, Sliders, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { SyntaxDiagnostic } from '../types/wormforge';
 import { BUILTIN_CLASSES, BUILTIN_ENUMERATIONS, BUILTIN_FUNCTIONS, BUILTIN_VARIABLES } from '../data/wormforgeDefinitions';
 
@@ -118,6 +118,15 @@ interface AutocompleteItem {
   documentation?: string;
 }
 
+interface HistorySnapshot {
+  code: string;
+  cursorStart: number;
+  cursorEnd: number;
+}
+
+// Persistent per-file undo/redo history across tab switches
+const globalHistoryCache: Record<string, { undo: HistorySnapshot[]; redo: HistorySnapshot[] }> = {};
+
 interface CodeEditorProps {
   code: string;
   onChange: (newCode: string) => void;
@@ -127,6 +136,13 @@ interface CodeEditorProps {
   fontSize?: number;
   lineHeight?: number;
   theme?: 'dark' | 'light';
+  jumpTarget?: { line: number; column: number; key: number } | null;
+}
+
+// Imperative handle exposed to App.tsx. Lets the DocPane / API Tree / Keycode
+// "Insert" buttons drop a snippet at the caret instead of the end of the file.
+export interface CodeEditorHandle {
+  insertSnippet: (text: string) => string | null;
 }
 
 function escapeHtml(text: string): string {
@@ -234,19 +250,24 @@ function highlightLuaLine(line: string, isLight: boolean = false): string {
   return result;
 }
 
-export const CodeEditor: React.FC<CodeEditorProps> = ({
-  code,
-  onChange,
-  diagnostics,
-  onCursorChange,
-  activeFile,
-  fontSize = 13,
-  lineHeight = 1.5,
-  theme = 'dark',
-}) => {
+export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEditor(
+  {
+    code,
+    onChange,
+    diagnostics,
+    onCursorChange,
+    activeFile,
+    fontSize = 13,
+    lineHeight = 1.5,
+    theme = 'dark',
+    jumpTarget,
+  },
+  ref
+) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
 
   const [cursorPos, setCursorPos] = useState({ line: 1, column: 1, index: 0 });
   const [autocompleteVisible, setAutocompleteVisible] = useState(false);
@@ -258,34 +279,243 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const [selectedWeapon, setSelectedWeapon] = useState<string>('armageddon');
   const [insertedNotice, setInsertedNotice] = useState<string | null>(null);
 
+  // Diagnostic line flash highlight state
+  const [flashingLine, setFlashingLine] = useState<number | null>(null);
+
+  // Find In Code State (F3 / Ctrl+F scoped strictly to editor)
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findCaseSensitive, setFindCaseSensitive] = useState(false);
+  const [findMatchIndex, setFindMatchIndex] = useState(0);
+  const findInputRef = useRef<HTMLInputElement>(null);
+
+  // Undo/Redo Engine State
+  const isInternalUndoRedoRef = useRef(false);
+  const lastCodeRef = useRef(code);
+  const lastTypingTimeRef = useRef(0);
+
+  const getHistory = useCallback(() => {
+    if (!globalHistoryCache[activeFile]) {
+      globalHistoryCache[activeFile] = {
+        undo: [{ code, cursorStart: 0, cursorEnd: 0 }],
+        redo: [],
+      };
+    }
+    return globalHistoryCache[activeFile];
+  }, [activeFile, code]);
+
+  // Synchronize external code updates (e.g. snippet insertions from DocPane/Tree, template loads, format) into undo stack
+  useEffect(() => {
+    if (isInternalUndoRedoRef.current) {
+      isInternalUndoRedoRef.current = false;
+      lastCodeRef.current = code;
+      return;
+    }
+
+    if (code !== lastCodeRef.current) {
+      const hist = getHistory();
+      const top = hist.undo[hist.undo.length - 1];
+      const now = Date.now();
+      const timeDiff = now - lastTypingTimeRef.current;
+      lastTypingTimeRef.current = now;
+
+      const cursor = textareaRef.current
+        ? { start: textareaRef.current.selectionStart, end: textareaRef.current.selectionEnd }
+        : { start: code.length, end: code.length };
+
+      const isNewline = code.length > (top?.code.length || 0) && code.endsWith('\n');
+      const shouldPushNew =
+        !top ||
+        timeDiff > 600 ||
+        isNewline ||
+        Math.abs(code.length - (top?.code.length || 0)) > 8;
+
+      if (shouldPushNew) {
+        if (hist.undo.length >= 250) {
+          hist.undo.shift();
+        }
+        hist.undo.push({
+          code,
+          cursorStart: cursor.start,
+          cursorEnd: cursor.end,
+        });
+        hist.redo = [];
+      } else {
+        top.code = code;
+        top.cursorStart = cursor.start;
+        top.cursorEnd = cursor.end;
+      }
+
+      lastCodeRef.current = code;
+    }
+  }, [code, getHistory]);
+
+  const applyProgrammaticChange = useCallback(
+    (newCode: string, newCursorPos?: number) => {
+      const hist = getHistory();
+      const currentCursor = textareaRef.current
+        ? { start: textareaRef.current.selectionStart, end: textareaRef.current.selectionEnd }
+        : { start: code.length, end: code.length };
+
+      // Preserve the viewport. This is a controlled <textarea>: when React
+      // writes the new `value`, the browser auto-scrolls to the caret. Without
+      // capturing and restoring scroll here the view would jump to the bottom
+      // of the file even though the caret itself was restored correctly.
+      const prevScroll = textareaRef.current
+        ? { top: textareaRef.current.scrollTop, left: textareaRef.current.scrollLeft }
+        : { top: 0, left: 0 };
+
+      // Ensure current state is recorded
+      if (hist.undo.length === 0 || hist.undo[hist.undo.length - 1].code !== code) {
+        hist.undo.push({
+          code,
+          cursorStart: currentCursor.start,
+          cursorEnd: currentCursor.end,
+        });
+      }
+
+      // Clear redo history when user makes a new edit
+      hist.redo = [];
+
+      // Record the new state
+      const targetPos = newCursorPos !== undefined ? newCursorPos : newCode.length;
+      hist.undo.push({
+        code: newCode,
+        cursorStart: targetPos,
+        cursorEnd: targetPos,
+      });
+
+      lastCodeRef.current = newCode;
+      onChange(newCode);
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(targetPos, targetPos);
+          // Restore scroll AFTER the caret so the browser's auto-scroll is undone.
+          textareaRef.current.scrollTop = prevScroll.top;
+          textareaRef.current.scrollLeft = prevScroll.left;
+          if (highlightRef.current) {
+            highlightRef.current.scrollTop = prevScroll.top;
+            highlightRef.current.scrollLeft = prevScroll.left;
+          }
+          if (gutterRef.current) {
+            gutterRef.current.scrollTop = prevScroll.top;
+          }
+        }
+      }, 0);
+    },
+    [code, getHistory, onChange]
+  );
+
+  const performUndo = useCallback(() => {
+    const hist = getHistory();
+    if (hist.undo.length <= 1) return;
+
+    const currentCursor = textareaRef.current
+      ? { start: textareaRef.current.selectionStart, end: textareaRef.current.selectionEnd }
+      : { start: code.length, end: code.length };
+
+    const current = hist.undo.pop()!;
+    hist.redo.push({
+      code: current.code,
+      cursorStart: currentCursor.start,
+      cursorEnd: currentCursor.end,
+    });
+
+    const prev = hist.undo[hist.undo.length - 1];
+    if (prev) {
+      isInternalUndoRedoRef.current = true;
+      lastCodeRef.current = prev.code;
+      onChange(prev.code);
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(prev.cursorStart, prev.cursorEnd);
+        }
+      }, 0);
+    }
+  }, [getHistory, code, onChange]);
+
+  const performRedo = useCallback(() => {
+    const hist = getHistory();
+    if (hist.redo.length === 0) return;
+
+    const currentCursor = textareaRef.current
+      ? { start: textareaRef.current.selectionStart, end: textareaRef.current.selectionEnd }
+      : { start: code.length, end: code.length };
+
+    const next = hist.redo.pop()!;
+    hist.undo.push({
+      code: next.code,
+      cursorStart: currentCursor.start,
+      cursorEnd: currentCursor.end,
+    });
+
+    isInternalUndoRedoRef.current = true;
+    lastCodeRef.current = next.code;
+    onChange(next.code);
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(next.cursorStart, next.cursorEnd);
+      }
+    }, 0);
+  }, [getHistory, onChange]);
+
   const insertTextAtCursor = (textToInsert: string) => {
     if (!textareaRef.current) return;
     const start = textareaRef.current.selectionStart ?? code.length;
     const end = textareaRef.current.selectionEnd ?? code.length;
     const nextCode = code.slice(0, start) + textToInsert + code.slice(end);
-    onChange(nextCode);
+    applyProgrammaticChange(nextCode, start + textToInsert.length);
     setInsertedNotice(`Inserted "${textToInsert.trim()}"`);
     setTimeout(() => setInsertedNotice(null), 2500);
-
-    setTimeout(() => {
-      if (textareaRef.current) {
-        const nextPos = start + textToInsert.length;
-        textareaRef.current.focus();
-        textareaRef.current.setSelectionRange(nextPos, nextPos);
-      }
-    }, 10);
   };
+
+  // Public entry point for the "Insert" buttons in DocPane / API Tree / Keycode
+  // modal. Drops the snippet at the caret (replacing any selection) instead of
+  // appending to the end of the file, and mirrors the caret line's indentation
+  // onto the inserted lines so a function body lands at the right depth.
+  // Returns the new document text so App.tsx can re-run the syntax check.
+  const insertSnippetAtCaret = (snippet: string): string | null => {
+    if (!textareaRef.current) return null;
+
+    const start = textareaRef.current.selectionStart ?? code.length;
+    const end = textareaRef.current.selectionEnd ?? code.length;
+
+    // Leading whitespace of the line the caret sits on.
+    const lineStart = code.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+    const caretIndent = (code.slice(lineStart, start).match(/^[ \t]*/) ?? [''])[0];
+
+    const indented = snippet
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line, i) => (i === 0 || line.length === 0 ? line : caretIndent + line))
+      .join('\n');
+
+    const nextCode = code.slice(0, start) + indented + code.slice(end);
+    applyProgrammaticChange(nextCode, start + indented.length);
+    setInsertedNotice(`Inserted "${snippet.trim().split('\n')[0].slice(0, 40)}"`);
+    setTimeout(() => setInsertedNotice(null), 2500);
+    return nextCode;
+  };
+
+  useImperativeHandle(ref, () => ({ insertSnippet: insertSnippetAtCaret }));
 
   const lines = useMemo(() => code.split('\n'), [code]);
 
-  // Reset selection and scroll cleanly whenever activeFile changes
+  // Reset selection and scroll cleanly whenever activeFile changes.
+  // focus() MUST come before setting the selection: focusing a textarea moves
+  // the caret to the end of the text, so assigning selectionStart first and
+  // focusing afterwards left the caret at end-of-file (snippets then appeared
+  // to "append" even though the insert ran at the caret).
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.selectionStart = 0;
-      textareaRef.current.selectionEnd = 0;
       textareaRef.current.scrollTop = 0;
       textareaRef.current.scrollLeft = 0;
       textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(0, 0);
     }
     if (highlightRef.current) {
       highlightRef.current.scrollTop = 0;
@@ -687,18 +917,132 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     }
 
     const newCode = code.slice(0, replaceStart) + item.insertText + code.slice(selStart);
-    onChange(newCode);
+    const nextPos = replaceStart + item.insertText.length;
+    applyProgrammaticChange(newCode, nextPos);
     setAutocompleteVisible(false);
-
-    // Focus back and place cursor
-    setTimeout(() => {
-      if (textareaRef.current) {
-        const nextPos = replaceStart + item.insertText.length;
-        textareaRef.current.focus();
-        textareaRef.current.setSelectionRange(nextPos, nextPos);
-      }
-    }, 10);
   };
+
+  // Find in Code matches computation
+  const findMatches = useMemo(() => {
+    if (!findQuery) return [];
+    const matches: { index: number; length: number; line: number; col: number }[] = [];
+    const targetCode = findCaseSensitive ? code : code.toLowerCase();
+    const query = findCaseSensitive ? findQuery : findQuery.toLowerCase();
+    if (!query) return [];
+
+    let pos = 0;
+    while ((pos = targetCode.indexOf(query, pos)) !== -1) {
+      const textBefore = code.slice(0, pos);
+      const lineNum = textBefore.split('\n').length;
+      const lastNl = textBefore.lastIndexOf('\n');
+      const colNum = pos - (lastNl === -1 ? 0 : lastNl + 1) + 1;
+
+      matches.push({ index: pos, length: query.length, line: lineNum, col: colNum });
+      pos += query.length || 1;
+    }
+    return matches;
+  }, [code, findQuery, findCaseSensitive]);
+
+  const goToMatch = useCallback(
+    (match: { index: number; length: number; line: number }) => {
+      if (!textareaRef.current) return;
+      textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(match.index, match.index + match.length);
+      const lineTop = (match.line - 1) * lineHeightPx;
+      const containerHeight = textareaRef.current.clientHeight || 400;
+      const targetScroll = Math.max(0, lineTop - containerHeight / 2 + lineHeightPx);
+      textareaRef.current.scrollTop = targetScroll;
+      if (highlightRef.current) highlightRef.current.scrollTop = targetScroll;
+      if (gutterRef.current) gutterRef.current.scrollTop = targetScroll;
+    },
+    [lineHeightPx]
+  );
+
+  const navigateFind = useCallback(
+    (direction: 'next' | 'prev') => {
+      if (findMatches.length === 0) return;
+      let nextIdx = findMatchIndex;
+      if (direction === 'next') {
+        nextIdx = (findMatchIndex + 1) % findMatches.length;
+      } else {
+        nextIdx = (findMatchIndex - 1 + findMatches.length) % findMatches.length;
+      }
+      setFindMatchIndex(nextIdx);
+      goToMatch(findMatches[nextIdx]);
+    },
+    [findMatches, findMatchIndex, goToMatch]
+  );
+
+  const openFind = useCallback(() => {
+    if (textareaRef.current) {
+      const start = textareaRef.current.selectionStart;
+      const end = textareaRef.current.selectionEnd;
+      if (start !== end && end - start < 80) {
+        const selected = code.slice(start, end);
+        if (selected.trim() && !selected.includes('\n')) {
+          setFindQuery(selected);
+        }
+      }
+    }
+    setFindOpen(true);
+    setTimeout(() => {
+      findInputRef.current?.focus();
+      findInputRef.current?.select();
+    }, 20);
+  }, [code]);
+
+  // Global F3 shortcut handler: ensures F3 NEVER invokes browser find on sidebar or DOM
+  useEffect(() => {
+    const onGlobalKey = (e: KeyboardEvent) => {
+      if (e.key === 'F3') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!findOpen) {
+          openFind();
+        } else {
+          navigateFind(e.shiftKey ? 'prev' : 'next');
+        }
+      }
+    };
+    window.addEventListener('keydown', onGlobalKey);
+    return () => window.removeEventListener('keydown', onGlobalKey);
+  }, [findOpen, openFind, navigateFind]);
+
+  // Jump to diagnostic line / column handler.
+  // lastJumpKeyRef makes this one-shot: without it, editing the code would
+  // re-run this effect and yank the caret back to the diagnostic on every
+  // keystroke. App bumps `key` each click so the SAME diagnostic can be
+  // re-jumped by clicking it again.
+  const lastJumpKeyRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!jumpTarget || !textareaRef.current) return;
+    if (lastJumpKeyRef.current === jumpTarget.key) return;
+    lastJumpKeyRef.current = jumpTarget.key;
+
+    const { line, column } = jumpTarget;
+    const codeLines = code.split('\n');
+
+    let offset = 0;
+    for (let i = 0; i < Math.min(line - 1, codeLines.length); i++) {
+      offset += codeLines[i].length + 1;
+    }
+    offset += Math.max(0, column - 1);
+    offset = Math.min(offset, code.length);
+
+    textareaRef.current.focus();
+    textareaRef.current.setSelectionRange(offset, offset);
+
+    const lineTop = (line - 1) * lineHeightPx;
+    const containerHeight = textareaRef.current.clientHeight || 400;
+    const targetScroll = Math.max(0, lineTop - containerHeight / 2 + lineHeightPx);
+    textareaRef.current.scrollTop = targetScroll;
+    if (highlightRef.current) highlightRef.current.scrollTop = targetScroll;
+    if (gutterRef.current) gutterRef.current.scrollTop = targetScroll;
+
+    setFlashingLine(line);
+    const timer = setTimeout(() => setFlashingLine(null), 2000);
+    return () => clearTimeout(timer);
+  }, [jumpTarget, code, lineHeightPx]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (autocompleteVisible) {
@@ -726,36 +1070,89 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       }
     }
 
+    // F3 Find in Code
+    if (e.key === 'F3') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!findOpen) {
+        openFind();
+      } else {
+        navigateFind(e.shiftKey ? 'prev' : 'next');
+      }
+      return;
+    }
+
+    // Ctrl+F / Cmd+F Find in Code
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      e.stopPropagation();
+      openFind();
+      return;
+    }
+
+    // Undo: Ctrl+Z / Cmd+Z (or Ctrl+Shift+Z / Cmd+Shift+Z for Redo)
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) {
+        performRedo();
+      } else {
+        performUndo();
+      }
+      return;
+    }
+
+    // Redo: Ctrl+Y / Cmd+Y
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      e.stopPropagation();
+      performRedo();
+      return;
+    }
+
     // Tab key indent
     if (e.key === 'Tab') {
       e.preventDefault();
       const start = e.currentTarget.selectionStart;
       const end = e.currentTarget.selectionEnd;
       const nextCode = code.substring(0, start) + '  ' + code.substring(end);
-      onChange(nextCode);
-      setTimeout(() => {
-        if (textareaRef.current) {
-          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 2;
-        }
-      }, 0);
+      applyProgrammaticChange(nextCode, start + 2);
     }
   };
 
   // Syntax Highlighting Engine
   const highlightedCode = useMemo(() => {
+    const currentMatch = findMatches[findMatchIndex];
+
     return lines.map((lineText, lineIdx) => {
       const lineNum = lineIdx + 1;
       const diag = diagnostics.find((d) => d.line === lineNum);
+      const isCurrent = cursorPos.line === lineNum;
+      const isFlashing = flashingLine === lineNum;
+      const hasMatch = findOpen && findQuery.trim() && findMatches.some((m) => m.line === lineNum);
+      const isCurrentMatchLine = findOpen && currentMatch && currentMatch.line === lineNum;
 
       return (
         <div
           key={lineIdx}
           style={{ height: `${lineHeightPx}px`, lineHeight: `${lineHeightPx}px` }}
-          className={`code-editor-line relative flex items-center ${
-            cursorPos.line === lineNum
+          className={`code-editor-line relative flex items-center transition-colors duration-200 ${
+            isFlashing
+              ? isLight
+                ? 'bg-amber-300/70 ring-2 ring-amber-500 font-bold'
+                : 'bg-amber-500/40 ring-2 ring-amber-400 font-bold'
+              : isCurrentMatchLine
+              ? isLight
+                ? 'bg-amber-200/50'
+                : 'bg-amber-500/20'
+              : isCurrent
               ? isLight
                 ? 'bg-amber-100/60'
                 : 'bg-[#1b2029]/70'
+              : hasMatch
+              ? isLight
+                ? 'bg-amber-50/70'
+                : 'bg-amber-950/20'
               : ''
           } ${
             diag
@@ -787,14 +1184,157 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         </div>
       );
     });
-  }, [lines, diagnostics, cursorPos.line, lineHeightPx, isLight, isToml]);
+  }, [
+    lines,
+    diagnostics,
+    cursorPos.line,
+    lineHeightPx,
+    isLight,
+    isToml,
+    flashingLine,
+    findOpen,
+    findQuery,
+    findMatches,
+    findMatchIndex,
+  ]);
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newCode = e.target.value;
+    const now = Date.now();
+    const hist = getHistory();
+    const lastSnapshot = hist.undo[hist.undo.length - 1];
+    const timeDiff = now - lastTypingTimeRef.current;
+    lastTypingTimeRef.current = now;
+
+    const isWordBreak = /\s$/.test(newCode) || newCode.endsWith('\n');
+    if (
+      !lastSnapshot ||
+      (timeDiff > 600 && isWordBreak) ||
+      Math.abs(newCode.length - (lastSnapshot?.code.length || 0)) > 15
+    ) {
+      if (hist.undo.length >= 250) hist.undo.shift();
+      hist.undo.push({
+        code: newCode,
+        cursorStart: e.target.selectionStart,
+        cursorEnd: e.target.selectionEnd,
+      });
+      hist.redo = [];
+    } else {
+      lastSnapshot.code = newCode;
+      lastSnapshot.cursorStart = e.target.selectionStart;
+      lastSnapshot.cursorEnd = e.target.selectionEnd;
+    }
+    lastCodeRef.current = newCode;
+    onChange(newCode);
+    updateCursorAndAutocomplete();
+  };
 
   return (
     <div
+      ref={editorContainerRef}
       className={`relative flex-1 flex flex-col h-full overflow-hidden select-none font-mono transition-colors ${
         isLight ? 'bg-white text-slate-800' : 'bg-[#111418] text-[#e0e6ed]'
       }`}
     >
+      {/* In-Editor Find Bar (F3 / Ctrl+F scoped exclusively to code) */}
+      {findOpen && (
+        <div
+          className={`absolute top-2 right-4 z-40 flex items-center gap-1.5 p-1.5 rounded-md border shadow-2xl backdrop-blur-md text-xs font-sans transition-all animate-in fade-in slide-in-from-top-1 ${
+            isLight
+              ? 'bg-white/95 border-slate-300 text-slate-800 shadow-slate-400/30'
+              : 'bg-[#181d26]/95 border-[#2f3948] text-[#d6e2f0] shadow-black/60'
+          }`}
+        >
+          <Search className="w-3.5 h-3.5 text-amber-500 ml-1 shrink-0" />
+          <input
+            ref={findInputRef}
+            type="text"
+            value={findQuery}
+            onChange={(e) => {
+              setFindQuery(e.target.value);
+              setFindMatchIndex(0);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === 'F3') {
+                e.preventDefault();
+                e.stopPropagation();
+                navigateFind(e.shiftKey ? 'prev' : 'next');
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                setFindOpen(false);
+                textareaRef.current?.focus();
+              }
+            }}
+            placeholder="Find in code (F3)..."
+            className={`px-2 py-1 rounded text-xs font-mono border focus:outline-none focus:ring-1 focus:ring-amber-500 w-44 md:w-56 transition-colors ${
+              isLight
+                ? 'bg-slate-50 border-slate-300 text-slate-800'
+                : 'bg-[#11141a] border-[#293240] text-[#e0eaf5]'
+            }`}
+          />
+
+          {/* Counter */}
+          <span className="text-[11px] font-mono px-1 min-w-[50px] text-center opacity-80">
+            {findQuery.trim()
+              ? findMatches.length > 0
+                ? `${findMatchIndex + 1}/${findMatches.length}`
+                : 'No match'
+              : ''}
+          </span>
+
+          {/* Case Sensitivity Toggle */}
+          <button
+            type="button"
+            onClick={() => setFindCaseSensitive(!findCaseSensitive)}
+            title="Match Case"
+            className={`px-1.5 py-0.5 rounded font-mono font-bold text-[11px] border transition-colors ${
+              findCaseSensitive
+                ? 'bg-amber-500/20 text-amber-500 border-amber-500/40'
+                : isLight
+                ? 'bg-slate-100 hover:bg-slate-200 text-slate-500 border-slate-200'
+                : 'bg-[#202632] hover:bg-[#2b3545] text-[#718298] border-[#2b3442]'
+            }`}
+          >
+            Aa
+          </button>
+
+          {/* Previous */}
+          <button
+            type="button"
+            onClick={() => navigateFind('prev')}
+            title="Previous Match (Shift+Enter or Shift+F3)"
+            disabled={findMatches.length === 0}
+            className="p-1 rounded hover:bg-slate-500/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronUp className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Next */}
+          <button
+            type="button"
+            onClick={() => navigateFind('next')}
+            title="Next Match (Enter or F3)"
+            disabled={findMatches.length === 0}
+            className="p-1 rounded hover:bg-slate-500/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Close */}
+          <button
+            type="button"
+            onClick={() => {
+              setFindOpen(false);
+              textareaRef.current?.focus();
+            }}
+            title="Close (Escape)"
+            className="p-1 rounded hover:bg-rose-500/20 hover:text-rose-400 transition-colors ml-0.5"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       {/* Exclusive TOML Stock Weapons Dropdown Toolbar */}
       {isToml && (
         <div
@@ -942,7 +1482,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           <textarea
             ref={textareaRef}
             value={code}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             onKeyUp={updateCursorAndAutocomplete}
             onClick={updateCursorAndAutocomplete}
@@ -1044,4 +1584,4 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       </div>
     </div>
   );
-};
+});

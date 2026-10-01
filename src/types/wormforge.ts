@@ -11,36 +11,38 @@ export interface SyntaxDiagnostic {
 
 export interface ParameterDef {
   name: string;
-  type: 'int' | 'float' | 'string' | 'bool' | 'table' | 'function' | 'any';
+  type: string;
+  description?: string;
   optional?: boolean;
   defaultValue?: string | number | boolean;
-  description?: string;
 }
 
-export interface MemberDef {
+export interface ClassMemberDef {
   name: string;
   kind: 'method' | 'variable' | 'property' | 'constant';
-  returnType?: string;
   parameters?: ParameterDef[];
+  returnType?: string;
   description: string;
   example?: string;
   deprecated?: boolean;
   isCustom?: boolean;
 }
 
+export type MemberDef = ClassMemberDef;
+
 export interface ClassDef {
   name: string;
   description: string;
   parent?: string;
-  members: MemberDef[];
-  isCustom?: boolean;
   syntaxExample?: string;
+  members: ClassMemberDef[];
+  isCustom?: boolean;
 }
 
 export interface EnumDef {
   name: string;
   description: string;
-  values: { name: string; value: string | number; description?: string }[];
+  values: { name: string; value: number | string; description?: string }[];
 }
 
 export interface FunctionDef {
@@ -50,6 +52,7 @@ export interface FunctionDef {
   returnType?: string;
   description: string;
   example?: string;
+  scope?: 'global' | 'module' | 'hook';
   isCustom?: boolean;
 }
 
@@ -57,7 +60,7 @@ export interface VariableDef {
   name: string;
   type: string;
   description: string;
-  scope: 'global' | 'module' | 'worm' | 'actor' | 'custom';
+  scope?: 'global' | 'module' | 'worm' | 'actor' | 'custom';
   example?: string;
   isCustom?: boolean;
 }
@@ -74,7 +77,7 @@ export interface ModFolderInfo {
   name: string;
   version: string;
   author: string;
-  category?: 'weapons' | 'gameplay' | 'rules';
+  category?: 'weapons' | 'gameplay' | 'rules' | 'weapon' | 'hud' | 'visual' | 'utility' | string;
   description?: string;
   replacesSlot?: string;
   exclusiveGroup?: string;
@@ -83,17 +86,24 @@ export interface ModFolderInfo {
   enabled?: boolean;
   isOnlineAvailable?: boolean;
   files: ModFileInfo[];
-  declaredMethods: string[];
-  declaredVariables: string[];
-  customClasses: string[];
-  hooks: string[];
+  declaredMethods?: string[];
+  declaredVariables?: string[];
+  customClasses?: string[];
+  hooks?: string[];
   tags?: string[];
 }
 
 export interface ParsedSymbolTree {
-  variables: VariableDef[];
   functions: FunctionDef[];
+  variables: VariableDef[];
   classes: ClassDef[];
   enums: EnumDef[];
-  customVerbs: string[];
+  customVerbs?: string[];
+  diagnostics?: SyntaxDiagnostic[];
+}
+
+export interface ConsoleLogMessage {
+  time: string;
+  text: string;
+  type: 'info' | 'warn' | 'error' | 'success';
 }

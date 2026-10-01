@@ -1,0 +1,32 @@
+# Keeps AI context small. Gitignore-style syntax.
+# Cline enforces this on read_file AND on cat/Get-Content/etc in the terminal.
+# If you genuinely need one of these, ask and it can be temporarily uncommented.
+
+# --- Largest offenders (roughly 456k, 140k, 110k, 77k tokens) ---
+
+# Whole-repo snapshot. Regenerate on demand with: npx repomix
+repomix-output.xml
+
+# npm lockfile. build-tauri.bat deletes this on every build anyway.
+package-lock.json
+
+# Bun lockfile, inherited from the original AI Studio environment.
+bun.lock
+
+# Rust dependency lockfile. Committed to git, never read by hand.
+src-tauri/Cargo.lock
+
+# --- Reference data, large and rarely needed (33k and 15k tokens) ---
+# Grep these instead of reading them whole. If a task genuinely needs the
+# full contents, ask the user to temporarily comment out the line.
+src/data/existingMods.ts
+# Dev note: i will uncomment this when needing to update WormForge definitions.
+src/data/wormforgeDefinitions.ts
+
+# --- Binary assets, never useful as text context ---
+src-tauri/icons/
+
+# Screenshots for docs/app-visuals.md. These ARE useful, but only as images
+# opened deliberately via read_file. Grepping or cat-ing them yields nothing.
+# Comment this out when a task genuinely needs to look at the UI.
+docs/screenshots/

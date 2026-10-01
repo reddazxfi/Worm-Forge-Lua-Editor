@@ -16,7 +16,7 @@ import {
   Database,
 } from 'lucide-react';
 import { EditorConfig, DEFAULT_CONFIG, exportConfigAsIni, parseIniConfig } from '../services/config';
-import { cleanFolderPath, loadFolderFromPath, pickFolder, isDesktop } from '../services/modFolder';
+import { cleanFolderPath, loadFolderFromPath, pickFolder, isDesktop, listModEntries, baseName } from '../services/modFolder';
 import { ModFolderInfo } from '../types/wormforge';
 
 interface ConfigModalProps {
@@ -36,6 +36,9 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [testStatus, setTestStatus] = useState<{ type: 'success' | 'error' | 'loading' | null; msg: string }>({ type: null, msg: '' });
+  // Separate status for the mods-root path so the two "Test" buttons do not
+  // overwrite each other's messages.
+  const [modsTestStatus, setModsTestStatus] = useState<{ type: 'success' | 'error' | 'loading' | null; msg: string }>({ type: null, msg: '' });
 
   if (!isOpen) return null;
 
@@ -62,6 +65,49 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
         type: 'error',
         msg: err?.message || String(err),
       });
+    }
+  };
+
+  const handleBrowseModsFolder = async () => {
+    try {
+      const picked = await pickFolder();
+      if (!picked) return;
+      onUpdateConfig({ ...config, modsRootPath: picked });
+      setModsTestStatus({ type: 'loading', msg: `Scanning "${picked}"...` });
+      const entries = await listModEntries(picked);
+      if (entries === null) {
+        setModsTestStatus({ type: 'error', msg: 'Could not access folder.' });
+        return;
+      }
+      setModsTestStatus({
+        type: 'success',
+        msg: `Success: Found ${entries.length} mod(s) in "${baseName(picked)}"!`,
+      });
+    } catch (err: any) {
+      setModsTestStatus({ type: 'error', msg: err?.message || String(err) });
+    }
+  };
+
+  const handleTestModsFolder = async () => {
+    const raw = config.modsRootPath;
+    if (!raw.trim()) {
+      setModsTestStatus({ type: 'error', msg: 'Please enter a mods directory path first.' });
+      return;
+    }
+    const clean = cleanFolderPath(raw);
+    setModsTestStatus({ type: 'loading', msg: `Testing path "${clean}"...` });
+    try {
+      const entries = await listModEntries(clean);
+      if (entries === null) {
+        setModsTestStatus({ type: 'error', msg: 'Could not access folder.' });
+        return;
+      }
+      setModsTestStatus({
+        type: 'success',
+        msg: `Success: Found ${entries.length} mod(s) in "${baseName(clean)}"!`,
+      });
+    } catch (err: any) {
+      setModsTestStatus({ type: 'error', msg: err?.message || String(err) });
     }
   };
 
@@ -378,6 +424,105 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                 Supports paths with spaces (e.g. <span className="font-mono text-amber-500">D:\Worms Armageddon\Mods</span>) and surrounding quotes. Automatically loads mod packages on launch when running locally.
               </p>
             </div>
+
+            {/* ----- Mods-list launch screen (desktop only) ----- */}
+            {isDesktop() && (
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between">
+                  <label className={`text-[11px] font-medium ${isLight ? 'text-slate-700' : 'text-[#a2b4c7]'}`}>
+                    Mods Folder (one subfolder per mod):
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleBrowseModsFolder}
+                      className={`text-[10.5px] px-2 py-0.5 rounded font-mono border flex items-center gap-1 transition-colors ${
+                        isLight
+                          ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
+                          : 'bg-[#252d3a] hover:bg-[#313b4c] border-[#384354] text-[#cfdbe8]'
+                      }`}
+                      title="Select the folder that contains your mod subfolders"
+                    >
+                      <FolderOpen className="w-3 h-3 text-amber-500" />
+                      <span>Browse...</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleTestModsFolder}
+                      className={`text-[10.5px] px-2 py-0.5 rounded font-mono border flex items-center gap-1 transition-colors ${
+                        isLight
+                          ? 'bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-900'
+                          : 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/40 text-amber-300'
+                      }`}
+                    >
+                      <Search className="w-3 h-3" />
+                      <span>Test / Scan Path</span>
+                    </button>
+                  </div>
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="e.g. D:\Worms Armageddon\Mods"
+                  value={config.modsRootPath}
+                  onChange={(e) => {
+                    onUpdateConfig({ ...config, modsRootPath: e.target.value });
+                    if (modsTestStatus.type) setModsTestStatus({ type: null, msg: '' });
+                  }}
+                  className={`w-full py-1.5 px-2.5 rounded text-xs font-mono border focus:outline-none focus:border-amber-500 transition-colors ${
+                    isLight
+                      ? 'bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400'
+                      : 'bg-[#1f242c] border-[#2e3745] text-[#d6e3f0] placeholder-[#576475]'
+                  }`}
+                />
+
+                {modsTestStatus.type && (
+                  <div
+                    className={`p-2 rounded text-[11px] font-mono border ${
+                      modsTestStatus.type === 'success'
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                        : modsTestStatus.type === 'loading'
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                    }`}
+                  >
+                    {modsTestStatus.msg}
+                  </div>
+                )}
+
+                {/* Startup behaviour toggle */}
+                <div className="pt-1 space-y-1.5">
+                  <label className={`block text-[11px] font-medium ${isLight ? 'text-slate-700' : 'text-[#a2b4c7]'}`}>
+                    On Startup:
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {([
+                      { value: 'lastFile', label: 'Resume last file' },
+                      { value: 'modsList', label: 'Show mods list' },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => onUpdateConfig({ ...config, launchMode: opt.value })}
+                        className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-colors ${
+                          config.launchMode === opt.value
+                            ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold border-amber-500'
+                            : isLight
+                            ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300'
+                            : 'bg-[#252d3a] hover:bg-[#313b4c] text-[#a2b4c7] border-[#384354]'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className={`text-[10px] leading-relaxed ${isLight ? 'text-slate-500' : 'text-[#6c7d91]'}`}>
+                    "Show mods list" displays a grid of every subfolder containing a{' '}
+                    <span className="font-mono text-amber-500">mod.toml</span>. Needs a Mods Folder above.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Storage Location Info */}
             <div className={`p-2.5 rounded-lg border text-[11px] flex items-start gap-2 ${
