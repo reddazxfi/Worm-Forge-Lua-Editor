@@ -54,7 +54,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                 WormForge Code Studio
               </span>
               <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-500 font-mono border border-amber-500/30">
-                v0.8.12 dev
+                v0.8.22 dev
               </span>
             </h1>
           </div>
@@ -100,14 +100,14 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                     : 'bg-[#1a1e26] border-[#313a48] text-[#d4e0ed] divide-[#222834]'
                 }`}
               >
-                {/* 0.7 & 0.8.12 Gameplay & Rules Section */}
+                {/* 0.7 & 0.8.22 Gameplay & Rules Section */}
                 <div
                   className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center justify-between ${
                     isLight ? 'bg-amber-50 text-amber-800' : 'bg-[#212631] text-amber-400'
                   }`}
                 >
                   <span>★ Rules &amp; Gameplay Packs</span>
-                  <span className="text-[9px] px-1 bg-amber-500/20 text-amber-600 rounded">v0.8.12</span>
+                  <span className="text-[9px] px-1 bg-amber-500/20 text-amber-600 rounded">v0.8.22</span>
                 </div>
                 {[
                   { id: 'gameplay.highlander_full', name: 'Highlander (Full PX Scheme)', badge: '0rang3' },

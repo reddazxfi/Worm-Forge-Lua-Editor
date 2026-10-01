@@ -9,6 +9,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { SyntaxDiagnostic } from '../types/wormforge';
+import { CheckEngine } from '../services/luaCompiler';
 
 interface ConsoleOutputProps {
   diagnostics: SyntaxDiagnostic[];
@@ -16,6 +17,7 @@ interface ConsoleOutputProps {
   onSelectDiagnostic: (diag: SyntaxDiagnostic) => void;
   onClearLogs: () => void;
   hasRunCheck: boolean;
+  checkEngine: CheckEngine | null;
   isLight?: boolean;
 }
 
@@ -25,6 +27,7 @@ export const ConsoleOutput: React.FC<ConsoleOutputProps> = ({
   onSelectDiagnostic,
   onClearLogs,
   hasRunCheck,
+  checkEngine,
   isLight = false,
 }) => {
   const [filter, setFilter] = React.useState<'all' | 'errors' | 'warnings'>('all');
@@ -130,7 +133,13 @@ export const ConsoleOutput: React.FC<ConsoleOutputProps> = ({
             <div>
               <p className="font-semibold font-sans">Syntax Check Succeeded</p>
               <span className="text-[10.5px] text-emerald-400/80">
-                0 errors detected. Code structure, brackets, and WormForge verbs are validated.
+                {checkEngine === 'game-compiler' ? (
+                  <>0 errors. Checked with the real game compiler (Lua 5.4), then with the built-in verb checker.</>
+                ) : checkEngine === 'builtin' ? (
+                  <>0 errors. Checked with the built-in parser (browser mode) - there is no Rust compiler in this build.</>
+                ) : (
+                  <>Not a Lua file, so no Lua check applies.</>
+                )}
               </span>
             </div>
           </div>

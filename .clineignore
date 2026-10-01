@@ -20,8 +20,8 @@ src-tauri/Cargo.lock
 # Grep these instead of reading them whole. If a task genuinely needs the
 # full contents, ask the user to temporarily comment out the line.
 src/data/existingMods.ts
-# Dev note: i will uncomment this when needing to update WormForge definitions.
-src/data/wormforgeDefinitions.ts
+# Dev note: i will comment this when needing to update WormForge definitions.
+# src/data/wormforgeDefinitions.ts
 
 # --- Binary assets, never useful as text context ---
 src-tauri/icons/
@@ -30,3 +30,6 @@ src-tauri/icons/
 # opened deliberately via read_file. Grepping or cat-ing them yields nothing.
 # Comment this out when a task genuinely needs to look at the UI.
 docs/screenshots/
+
+# Read C:\Users\lucia\wormforge-code\WormForge-main-source\mods\examples\highlander\rules.lua by absolute path when needed.
+/WormForge-main-source/mods/

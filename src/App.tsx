@@ -193,7 +193,7 @@ export default function App() {
     },
     {
       time: new Date().toLocaleTimeString(),
-      text: 'Loaded WormForge API definitions (0.8.12 engine specifications).',
+      text: 'Loaded WormForge API definitions (0.8.22 engine specifications).',
       type: 'success',
     },
   ]);

@@ -557,8 +557,21 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
   // Cursor position and Autocomplete detection
   const updateCursorAndAutocomplete = () => {
     if (!textareaRef.current) return;
+    // Read lastCodeRef, NOT the `code` prop. handleTextareaChange calls this in
+    // the same tick as onChange(), so React has not re-rendered yet and the prop
+    // is one keystroke behind the DOM that selectionStart is read from. Every
+    // trigger regex below is $-anchored, so a stale prop means the character just
+    // typed is missing -- and that character is usually the one that opens the
+    // popup: `:` in `worm:`, `.` in `wa.`. The popup then only appeared if you
+    // pressed some other key afterwards.
+    //
+    // lastCodeRef is already synchronised on every mutation path: change (1227),
+    // applyProgrammaticChange (388), undo (429), redo (456), and this effect
+    // re-syncs it to `code` once the render catches up (349). So outside the
+    // keystroke race it equals the prop and nothing changes.
+    const live = lastCodeRef.current;
     const selStart = textareaRef.current.selectionStart;
-    const textBefore = code.slice(0, selStart);
+    const textBefore = live.slice(0, selStart);
     const codeLines = textBefore.split('\n');
     const currentLine = codeLines.length;
     const currentCol = codeLines[codeLines.length - 1].length + 1;

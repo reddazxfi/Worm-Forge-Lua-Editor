@@ -523,7 +523,7 @@ Autonomous deployable sentry turret with real-time target tracking and custom gr
   {
     id: 'gameplay.highlander.verbs',
     name: 'Highlander (Verb-Based Pack)',
-    version: '0.8.12',
+    version: '0.8.22',
     author: 'EdLud',
     category: 'gameplay',
     exclusiveGroup: 'highlander',
