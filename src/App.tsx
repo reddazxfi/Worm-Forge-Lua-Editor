@@ -41,7 +41,8 @@ import {
 import { EXISTING_MODS } from './data/existingMods';
 import { INITIAL_TEMPLATE } from './data/templates';
 import { parseAndValidate } from './services/parser';
-import { openModFolder, saveModFile, saveFileAs, canOpenFolders, cleanFolderPath, loadFolderFromPath, isDesktop, listModEntries, createModFolder } from './services/modFolder';
+import { compileWithEngine, CheckEngine } from './services/luaCompiler';
+import { openModFolder, saveModFile, saveFileAs, canOpenFolders, cleanFolderPath, loadFolderFromPath, isDesktop, baseName, listModEntries, createModFolder } from './services/modFolder';
 import { EditorConfig, loadConfig, saveConfig } from './services/config';
 
 export default function App() {
@@ -181,6 +182,10 @@ export default function App() {
   const [diagnostics, setDiagnostics] = useState<SyntaxDiagnostic[]>([]);
   const [symbols, setSymbols] = useState(() => parseAndValidate(INITIAL_TEMPLATE).symbols);
   const [hasRunCheck, setHasRunCheck] = useState<boolean>(true);
+  // Which checker produced the diagnostics above. The console says so, because a
+  // clean pass from the game compiler and a clean pass from the built-in parser
+  // are not the same claim. null = nothing checked yet.
+  const [checkEngine, setCheckEngine] = useState<CheckEngine | null>(null);
 
   // Console Logs
   const [logs, setLogs] = useState<
@@ -228,18 +233,41 @@ export default function App() {
 
   // Trigger AST Parsing and Validation
   const runSyntaxCheck = useCallback(
-    (codeToTest: string, fileName?: string) => {
+    async (codeToTest: string, fileName?: string) => {
       const file = fileName || activeFile;
       const lower = file.toLowerCase();
 
       // If document is not Lua (.toml, .md, .txt, .json, .ini), skip Lua AST errors
       if (lower.endsWith('.toml') || lower.endsWith('.md') || lower.endsWith('.txt') || lower.endsWith('.json') || lower.endsWith('.ini')) {
         setDiagnostics([]);
+        setCheckEngine(null);
         setHasRunCheck(true);
         return;
       }
 
       const now = new Date().toLocaleTimeString();
+      const chunkName = baseName(file);
+      const outcome = await compileWithEngine(codeToTest, chunkName);
+
+      // The game compiler is the authority on "does this load". If it says no,
+      // stop there: a real syntax error plus token-pass noise is worse than the
+      // error alone, and the token pass cannot contradict Lua 5.4.
+      if (outcome.engine === 'game-compiler' && !outcome.ok && outcome.diagnostic) {
+        const luaError = outcome.diagnostic;
+        setCheckEngine('game-compiler');
+        setDiagnostics([luaError]);
+        setHasRunCheck(true);
+        setLogs((prev) => [
+          ...prev,
+          {
+            time: now,
+            text: `[Syntax Check]: the game compiler rejected ${chunkName} - ${luaError.message}`,
+            type: 'error',
+          },
+        ]);
+        return;
+      }
+
       const result = parseAndValidate(codeToTest);
 
       // Merge user custom classes
@@ -250,22 +278,39 @@ export default function App() {
         }
       }
 
-      setDiagnostics(result.diagnostics);
+      // Only when we actually fell back. `isDesktop()` alone is not enough: a
+      // successful compile returns { ok: true, engine: 'game-compiler' } with no
+      // `reason`, which used to print a bogus "unavailable (unknown reason)".
+      const diagnosticsOut = [...result.diagnostics];
+      if (isDesktop() && outcome.engine === 'builtin') {
+        diagnosticsOut.unshift({
+          line: 1,
+          column: 1,
+          message: `The game compiler could not be reached (${outcome.reason ?? 'no reason given'}). Checked with the built-in parser instead. If this EXE predates the compiler, rebuild it with "npx tauri build".`,
+          severity: 'info',
+          rule: 'compiler-unavailable',
+        });
+      }
+
+      setCheckEngine(outcome.engine);
+      setDiagnostics(diagnosticsOut);
       setSymbols({
         ...result.symbols,
         classes: mergedClasses,
       });
       setHasRunCheck(true);
 
-      const errCount = result.diagnostics.filter((d) => d.severity === 'error').length;
-      const warnCount = result.diagnostics.filter((d) => d.severity === 'warning').length;
+      const errCount = diagnosticsOut.filter((d) => d.severity === 'error').length;
+      const warnCount = diagnosticsOut.filter((d) => d.severity === 'warning').length;
+      const via =
+        outcome.engine === 'game-compiler' ? 'real game compiler (Lua 5.4)' : 'built-in parser (browser mode)';
 
       if (errCount === 0 && warnCount === 0) {
         setLogs((prev) => [
           ...prev,
           {
             time: now,
-            text: `[Syntax Check]: OK - 0 syntax errors or desync violations. WormForge verbs verified.`,
+            text: `[Syntax Check]: OK - 0 syntax errors or desync violations, via the ${via}.`,
             type: 'success',
           },
         ]);
@@ -274,7 +319,7 @@ export default function App() {
           ...prev,
           {
             time: now,
-            text: `[Syntax Check]: ${errCount} error(s), ${warnCount} warning(s) detected. Check diagnostic output.`,
+            text: `[Syntax Check]: ${errCount} error(s), ${warnCount} warning(s) detected via the ${via}. Check diagnostic output.`,
             type: errCount > 0 ? 'error' : 'warn',
           },
         ]);
@@ -1320,6 +1365,7 @@ export default function App() {
               }}
               onClearLogs={() => setLogs([])}
               hasRunCheck={hasRunCheck}
+              checkEngine={checkEngine}
               isLight={isLight}
             />
           </div>

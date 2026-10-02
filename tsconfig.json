@@ -23,5 +23,9 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  // Without these, `allowJs` makes tsc type-check build output. A release build
+  // drops Tauri's generated codegen assets (.js) into src-tauri/target, and they
+  // fail with TS1127 / TS1005 / TS1490 on every `npm run lint` after it.
+  "exclude": ["node_modules", "dist", "src-tauri/target", "src-tauri/gen"]
 }
