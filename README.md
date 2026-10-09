@@ -1,5 +1,6 @@
-# 🪱⚡ WormForge Code Studio
 
+
+# 🪱⚡ WormForge Code Studio
 > **Elevate your Worms Armageddon modding workflow with a seamless, robust, next-generation Lua development experience.** 🚀
 
 WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully crafted** code editor designed to **empower** modders to **unlock** the full potential of the WormForge scripting engine. Whether you're a seasoned modder or just getting started, our **cutting-edge** toolkit has you covered. ✨
@@ -13,6 +14,7 @@ WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully cr
 ## 🌟 Key Features
 
 - ✅ **Real Lua 5.4 Compiler (Desktop)** — The desktop app ships the *actual* Lua 5.4 build the game compiles your mods with — the same `mlua` front end as the engine's own `crates/lua-host`. "Does this load?" is now answered by the genuine article, not a lookalike. 🧠
+- ⛓️ **Strict Parser** — Featuring rust::full_moon checks with TypeScript as a fall-back for extra reliability.
 - 🛡️ **Lockstep Guardian™** — Proactively catches desync-prone patterns like `math.random` and unordered `pairs()` iteration, so your mods stay **deterministic** and your multiplayer matches stay **drama-free**. 🛡️
 - 🎯 **Runtime-Fatal Name Detection** — Catches names that **compile fine but crash in-game**, before they cost you a whole match. See below. 🚨
 - 📚 **Built-in Documentation Pane** — Explore engine functions, classes, enums, and constants without ever leaving your editor.
@@ -69,7 +71,7 @@ explanation of why it was flagged. 🎯
 
 ### 🚨 Runtime-Fatal Name Detection
 
-Because the compiler doesn't *run* your code, a chunk full of invented globals is perfectly valid Lua:
+Because the compiler doesn't *run* your code, a chunk full of invented globals is perfectly valid Lua, Not anymore! Proper scoping now catches the following errors!
 
 ```lua
 eaea:abstract(asynca)          -- compiles. dies instantly.
@@ -141,8 +143,7 @@ src-tauri\target\release\wormforge-code-editor.exe
 │   ├── src/          # 🦀 Rust: full_moon semantic checker + the compile_lua command
 │   └── capabilities/ # 🔐 Plugin permissions (fs, dialog)
 ├── scripts/          # 🧪 Engine-data generator + the Rust-vs-TS differential sweep
-├── server.ts         # 🔌 Dev-only server (health + Vite middleware, loopback)
-└── compacted-context.md  # 🗒️ Engineering log: what was tried, measured, and why
+└── server.ts         # 🔌 Dev-only server (health + Vite middleware, loopback)
 ```
 
 ---
@@ -152,11 +153,9 @@ src-tauri\target\release\wormforge-code-editor.exe
 - The semantic checker has **two implementations** kept in step: a TypeScript one and a Rust `full_moon` one. A differential sweep runs both over the engine's whole mod corpus on demand; it currently reports **0 real drift**, plus 4 findings where Rust is deliberately and adjudicated-correctly ahead. 🧪
 - Syntax checking is **not AST-based** on the TypeScript side. Despite the "AST Inspector" label in the UI, that layer is a hand-written tokenizer plus two stacks. The real Lua 5.4 compiler in the desktop build is what makes syntax checking authoritative. 🤖
 - **The real compiler requires a current build.** An `.exe` predating the compiler silently falls back to the built-in parser, and the console says so.
-- One known tokenizer limitation: a **number directly after a dot** (`worm.1111`) breaks tokenizing. If something odd happens there, check that shape first.
 - The undefined-name check is **not scope-aware**: a name counts as defined if it's bound *anywhere* in the file, so a forward reference is never flagged. (The *autocomplete* is scope-aware — see Key Features.)
-- Missed members on a known handle are not caught — `wa.rndom(1)` (typo for `wa.random`) passes both stages, because `wa` and `w` are legitimately bound names.
 - Unknown-method checks only cover a **fixed receiver list** (`a`, `actor`, `worm`, `m`, `missile`, `inv`/`store`/`inventory`, `mine`/`drum`/`oil`/`crate`/`grave`/`obj`/`object`). Receivers narrowed by a `.kind` test are treated as a runtime union and reported as an `info` notice rather than a warning.
-- The API sidebar and autocomplete follow engine **0.8.22** and may lag behind newer engine versions.
+- The API sidebar and autocomplete follow engine **0.8.31** and may lag behind newer engine versions. Use Add Verb built-in function to cover the gaps, or wait for updates.
 - Built with heavy AI assistance (vibecoded). Expect rough edges. 🤖
 
 ---
@@ -198,6 +197,8 @@ MIT. See [LICENSE](LICENSE). ⚖️
 Not affiliated with Team17 or Worms Armageddon. This is a third-party tool for the [WormForge](https://github.com/ropahektic/WormForge) modding engine, which is MIT-licensed and maintained separately.
 
 <div align="center">
+
+[![128x128-2x.png](https://i.postimg.cc/vBfwbz62/128x128-2x.png)](https://postimg.cc/ZBbML6H6)
 
 **Made with ❤️ and a *deep passion* for worms.** 🪱
 
