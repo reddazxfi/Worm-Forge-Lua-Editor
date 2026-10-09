@@ -7,6 +7,24 @@ export interface SyntaxDiagnostic {
   message: string;
   severity: SyntaxSeverity;
   rule?: string;
+  /**
+   * The long-form explanation, shown only when the user expands the row.
+   *
+   * WHY THIS IS SPLIT OUT
+   * `message` is what fits on one console row without truncation, so it leads with
+   * the ACTIONABLE half -- the suggestion, or the consequence if ignored. Everything
+   * that is true but not needed to decide what to do (why the engine behaves this
+   * way, what happens at load time) goes here instead.
+   *
+   * The `worm-msg-filter` advisory was the reason this field exists: its message ran
+   * to ~470 characters, four full sentences of explanation wrapped around one short
+   * suggestion. On a 1366-wide display that is roughly 60 wrapped lines for a single
+   * finding, which pushes every other row in the list off screen. Short message plus
+   * an expandable detail keeps the suggestion visible and the reasoning one click away.
+   *
+   * Optional and absent on most findings, because most messages are already short.
+   */
+  detail?: string;
 }
 
 export interface ParameterDef {
@@ -63,6 +81,20 @@ export interface VariableDef {
   scope?: 'global' | 'module' | 'worm' | 'actor' | 'custom';
   example?: string;
   isCustom?: boolean;
+}
+
+export interface CustomVerb {
+  /** Target class, e.g. 'WormEntity', 'wa', or a brand-new class name. */
+  class: string;
+  /** Lua identifier, e.g. 'grapple'. */
+  name: string;
+  kind: 'method' | 'variable';
+  /** ':' methods pass self; '.' is a namespaced function or property. */
+  syntax: ':' | '.';
+  returnType: string;
+  parameters: ParameterDef[];
+  description: string;
+  example: string;
 }
 
 export interface ModFileInfo {

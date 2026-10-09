@@ -383,55 +383,15 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
                     </span>
                   </div>
 
-                  {/* Sub-items for mod (Methods & Variables inside this mod) */}
-                  <div
-                    className={`pl-3 ml-2 border-l my-0.5 space-y-0.5 hidden group-hover:block ${
-                      isLight ? 'border-slate-200' : 'border-[#232832]'
-                    }`}
-                  >
-                    {mod.declaredMethods.slice(0, 4).map((method, mIdx) => (
-                      <div
-                        key={`mod_${mod.id}_m_${method}_${mIdx}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectItem('mod_item', {
-                            name: `${mod.id}:${method}`,
-                            description: `Method defined in ${mod.name} (${mod.files[0]?.name})`,
-                            example: `${method}()`,
-                          });
-                        }}
-                        className={`flex items-center gap-1 text-[11px] cursor-pointer py-0.5 px-1 rounded transition-colors ${
-                          isLight
-                            ? 'text-slate-600 hover:text-emerald-700 hover:bg-slate-200'
-                            : 'text-[#78889c] hover:text-emerald-400 hover:bg-[#20252e]'
-                        }`}
-                      >
-                        <Code2 className="w-2.5 h-2.5 text-emerald-500" />
-                        <span>{method}()</span>
-                      </div>
-                    ))}
-                    {mod.declaredVariables.slice(0, 3).map((v, vIdx) => (
-                      <div
-                        key={`mod_${mod.id}_v_${v}_${vIdx}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectItem('mod_item', {
-                            name: `${mod.id}:${v}`,
-                            description: `Variable declared in ${mod.name}`,
-                            example: v,
-                          });
-                        }}
-                        className={`flex items-center gap-1 text-[11px] cursor-pointer py-0.5 px-1 rounded transition-colors ${
-                          isLight
-                            ? 'text-slate-600 hover:text-sky-700 hover:bg-slate-200'
-                            : 'text-[#78889c] hover:text-sky-400 hover:bg-[#20252e]'
-                        }`}
-                      >
-                        <Variable className="w-2.5 h-2.5 text-sky-500" />
-                        <span>{v}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {/* No hover sub-items here, deliberately.
+                      This block used to list `mod.declaredMethods` /
+                      `mod.declaredVariables` on hover. Those are optional on
+                      ModFolderInfo and the generated corpus never emits them, so
+                      the list was empty for every mod -- and rendering it with a
+                      bare `.slice()` on undefined is exactly what blanked this
+                      sidebar (§24). Removed rather than merely guarded: the feature
+                      was not wanted. Clicking a mod still opens its documentation in
+                      the pane below. */}
                 </div>
               ))}
             </div>

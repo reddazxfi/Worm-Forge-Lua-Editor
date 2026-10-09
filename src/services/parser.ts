@@ -3,6 +3,7 @@ import {
   VariableDef,
   FunctionDef,
   ClassDef,
+  CustomVerb,
   ParsedSymbolTree,
 } from '../types/wormforge';
 
@@ -13,98 +14,32 @@ import {
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
 } from '../data/wormforgeDefinitions';
+import {
+  ALL_HANDLE_CLASSES,
+  customMembersFor,
+  getClass,
+  resolveForCheck,
+  rowForClass,
+  traceLocalTypes,
+} from '../data/handleRegistry';
+import { buildScopes, visibleAt } from './scope';
+import {
+  WEAPON_SPEC_KEY_SET,
+  suggestSpecKey,
+  suggestWaFunction,
+} from '../data/specKeys';
+import { LUA_GLOBALS_SET } from '../data/luaGlobals';
+// The tokenizer now lives in ./lexer. Re-exported here so the existing importers
+// of parser (scripts/__sweep.ts, the vitest suites) keep one path, and so the
+// split is invisible to anything but the import graph.
+import { tokenize, type Token } from './lexer';
+export { tokenize };
+export type { Token };
 
-export interface Token {
-  type:
-    | 'keyword'
-    | 'identifier'
-    | 'operator'
-    | 'arrow'
-    | 'type'
-    | 'string'
-    | 'number'
-    | 'comment'
-    | 'punctuation'
-    | 'whitespace'
-    | 'unknown';
-  value: string;
-  line: number;
-  column: number;
-  start: number;
-  end: number;
-}
-
-const LUA_KEYWORDS = new Set([
-  'and',
-  'break',
-  'do',
-  'else',
-  'elseif',
-  'end',
-  'false',
-  'for',
-  'function',
-  'goto',
-  'if',
-  'in',
-  'local',
-  'nil',
-  'not',
-  'or',
-  'repeat',
-  'return',
-  'then',
-  'true',
-  'until',
-  'while',
-  'require',
-]);
-
-const TYPE_KEYWORDS = new Set([
-  'int',
-  'float',
-  'string',
-  'bool',
-  'boolean',
-  'table',
-  'void',
-  'any',
-  'number',
-]);
-
-// The receivers the unknown-method check knows about, and the handle class each
-// one is assumed to be. Adding a receiver means adding a row here. This is
-// data rather than an if/else chain so the duck-typed path below can walk it.
-const RECEIVER_CLASSES: {
-  names: string[];
-  className: string;
-  rule: string;
-  note?: string;
-}[] = [
-  { names: ['a', 'actor'], className: 'LuaActor', rule: 'actor-api' },
-  { names: ['worm'], className: 'WormEntity', rule: 'worm-api' },
-  { names: ['inv', 'store', 'inventory'], className: 'InventoryStore', rule: 'inventory-api' },
-  {
-    names: ['mine', 'drum', 'oil', 'oildrum', 'crate', 'grave', 'obj', 'object'],
-    className: 'WorldHandle',
-    rule: 'world-object-api',
-  },
-  {
-    names: ['m', 'missile'],
-    className: 'MissileEntity',
-    rule: 'missile-api',
-    note: 'In-flight missile tables provide properties: id, weapon, sprite, collision_mask, x, y, vx, vy, damp, wind_scale, gravity_scale',
-  },
-];
-
-// Every handle a `.kind`-narrowed receiver could turn out to be at runtime.
-const HANDLE_CLASS_NAMES = [
-  'WormEntity',
-  'WorldHandle',
-  'LuaActor',
-  'MissileEntity',
-  'InventoryStore',
-];
+// Receivers the unknown-method check knows about, and the handle class each one
+// is assumed to be. This is NOT defined here: services/parser.ts and
+// components/CodeEditor.tsx must resolve receiver names through the single
+// canonical registry in data/handleRegistry.ts, or the two lists drift.
 
 /** "3734", "3734 and 4209", "3734, 4209 and 4372" */
 function formatLines(lines: number[]): string {
@@ -114,43 +49,17 @@ function formatLines(lines: number[]): string {
   return `${sorted.slice(0, -1).join(', ')} and ${sorted[sorted.length - 1]}`;
 }
 
-/**
- * Length of a Lua binary exponent sitting at `i` (the `e`/`p`), or 0 if what
- * follows is not a well-formed one. Returning 0 is what keeps genuinely broken
- * input loud: `1e` and `0x1p` stay unconsumed, so the malformed-number check
- * downstream still reports them instead of silently accepting them.
- */
-function matchBinaryExponent(code: string, i: number): number {
-  let j = i + 1;
-  if (code[j] === '+' || code[j] === '-') j++;
-  const digitsStart = j;
-  while (j < code.length && /\d/.test(code[j])) j++;
-  return j > digitsStart ? j - i : 0;
-}
-
-// Globals a mod may legitimately read. Lua 5.4's standard library, plus the
-// sandbox survivors and WormForge's own `wa` dispatcher. Deliberately generous:
-// the check below only fires on names that are never bound anywhere in the file,
-// so a name on this list that turns out to be stripped by the engine sandbox
-// (io/os/debug/package/dofile/load/require/collectgarbage/coroutine) is a
-// separate check, not this one.
-const LUA_GLOBALS = new Set([
-  // Lua base
-  '_G', '_ENV', 'assert', 'error', 'getmetatable', 'ipairs', 'next', 'pairs',
-  'pcall', 'print', 'rawequal', 'rawget', 'rawlen', 'rawset', 'select',
-  'setmetatable', 'tonumber', 'tostring', 'type', 'warn', 'xpcall',
-  // Standard libraries
-  'coroutine', 'debug', 'io', 'math', 'os', 'package', 'string', 'table',
-  'utf8', 'bit32', 'arg',
-  // Load-time helpers the engine's sandbox nils out. Listed so that reading one
-  // is not reported as a typo; using one is a separate (real) problem.
-  'dofile', 'loadfile', 'load', 'require', 'collectgarbage',
-  // WormForge
-  'wa',
-]);
+// Globals a mod may legitimately read now live in src/data/luaGlobals.ts, which is
+// ALSO the source the Rust checker's KNOWN_GLOBALS is generated from. They used to be
+// a private `LUA_GLOBALS` const here and a hand-written `KNOWN_GLOBALS` in checks.rs,
+// and the two had already drifted by nine names -- including `unpack` and `bit32`,
+// which Lua 5.4 removed, and `game_state`/`run_once`/`printf`, which this engine never
+// injects. One list, one source, and `genEngineData.ts --check` fails if the generated
+// copy goes stale.
 
 /**
- * Names that are read but never bound anywhere in the file.
+ * Names that are read but never bound ANYWHERE in the file. The cheap,
+ * deliberately-not-scope-aware version.
  *
  * `into_function()` compiles without running, so a chunk naming five invented
  * globals is a *compilable* chunk. It then dies at runtime, and because
@@ -158,10 +67,11 @@ const LUA_GLOBALS = new Set([
  * error, one bad mod takes every other mod down with it. This is the check that
  * catches it before the match.
  *
- * Deliberately not scope-aware: a name is "bound" if it is assigned or declared
- * *anywhere*, so a forward reference inside a function still counts. That is the
- * cheap direction to be wrong in, and the 25 real packs under mods/examples are
- * the regression test.
+ * This pass is deliberately NOT scope-aware: a name counts as bound if it is
+ * declared or assigned ANYWHERE in the file, so a forward reference inside a
+ * function is accepted. That is the cheap direction to be wrong in, and it is
+ * why a local declared in one function used to silence a typo in another -- see
+ * scanUndefinedNamesInScope() for the check that actually catches that.
  */
 function scanUndefinedGlobals(meaningful: Token[]): SyntaxDiagnostic[] {
   const bound = new Set<string>();
@@ -233,7 +143,7 @@ function scanUndefinedGlobals(meaningful: Token[]): SyntaxDiagnostic[] {
   for (let i = 0; i < meaningful.length; i++) {
     const t = meaningful[i];
     if (t.type !== 'identifier') continue;
-    if (bound.has(t.value) || LUA_GLOBALS.has(t.value)) continue;
+    if (bound.has(t.value) || LUA_GLOBALS_SET.has(t.value)) continue;
 
     // `a.b` / `a:b` -- `b` is a field, not a global.
     const prev = meaningful[i - 1]?.value;
@@ -244,11 +154,11 @@ function scanUndefinedGlobals(meaningful: Token[]): SyntaxDiagnostic[] {
     out.push({
       line: t.line,
       column: t.column,
-      message:
-        `Undefined name "${t.value}": nothing in this file defines it. ` +
-        `This compiles, so the game will load it and then crash at runtime - ` +
-        `and because every mod shares one Lua state, that stops all mods loading. ` +
-        `If another mod is meant to set it, note the load order is not guaranteed.`,
+      message: `Undefined name "${t.value}": nothing in this file defines it.`,
+      detail:
+        `This compiles, so the game will load it and then crash at runtime - and because every mod ` +
+        `shares one Lua state, that stops all mods loading. If another mod is meant to set it, note ` +
+        `the load order is not guaranteed.`,
       severity: 'warning',
       rule: 'undefined-global',
     });
@@ -257,7 +167,464 @@ function scanUndefinedGlobals(meaningful: Token[]): SyntaxDiagnostic[] {
   return out;
 }
 
-/** The "Unknown <Handle> method" warning, shared by every receiver row. */
+/**
+ * Names read at a line where they are NOT visible (Track A / A4).
+ *
+ * This is the check that catches the reported bug: `t = r` inside an isolated
+ * function used to pass because `local t` and `local r` were declared in two
+ * OTHER functions. scanUndefinedGlobals() accepts that on purpose, because it
+ * does not model scope -- but this pass does, via services/scope.ts.
+ *
+ * Same `rule` id and the same wording as the flat pass, so:
+ *   - the console's Warn filter catches both
+ *   - the 25-pack regression compares like with like
+ *
+ * Deliberately a WARNING, never an error. A scope model built on a hand-written
+ * tokenizer is not a proof, and a false error on valid code is worse than a
+ * missed one: the engine compiles fine and runs fine, so nothing is broken until
+ * a rare branch runs. Every finding here is "suspicious", not "wrong".
+ *
+ * Names reached through a field access (`x.foo`, `x:foo`) are skipped: `foo` is
+ * a table key, not a global read. Same reasoning as the flat pass.
+ */
+function scanUndefinedNamesInScope(code: string, meaningful: Token[]): SyntaxDiagnostic[] {
+  const model = buildScopes(code);
+  const out: SyntaxDiagnostic[] = [];
+
+  for (let i = 0; i < meaningful.length; i++) {
+    const t = meaningful[i];
+    if (t.type !== 'identifier') continue;
+    if (LUA_GLOBALS_SET.has(t.value)) continue;
+
+    // `a.b` / `a:b` -- `b` is a field, not a global.
+    const prev = meaningful[i - 1]?.value;
+    if (prev === '.' || prev === ':') continue;
+    // Table constructor keys and `x = 1` are bindings, not reads.
+    if (meaningful[i + 1]?.value === '=') continue;
+
+    // `local`/`function`/`for` introduce the name at this point, so the token is a
+    // binding rather than a read. Same rule the flat pass uses.
+    const prevKw = meaningful[i - 1]?.value;
+    if (prevKw === 'local' || prevKw === 'function' || prevKw === 'for') continue;
+
+    const visible = visibleAt(model, t.line);
+    if (visible.some((v) => v.name === t.value)) continue;
+
+    out.push({
+      line: t.line,
+      column: t.column,
+      message: `Undefined name "${t.value}" in this scope: nothing visible here defines it.`,
+      detail:
+        `Another function in this file may declare a "${t.value}", but a local does not cross ` +
+        `into this function -- at runtime this reads nil, or stops every mod loading.`,
+      severity: 'warning',
+      rule: 'undefined-global',
+    });
+  }
+
+  return out;
+}
+
+/**
+ * `wa.weapons.repalce(...)` -- a real namespace with a misspelled leaf.
+ *
+ * The namespace is genuine and the function is not, so this compiles cleanly, does
+ * nothing at runtime, and the weapon silently never applies. Neither the game
+ * compiler nor the scope-aware name check can see it: `wa.weapons` is a real
+ * table, so every name in the path resolves.
+ *
+ * Only CALLS are checked (`wa.a.b(...)`). A bare `wa.a.b` on the right of an
+ * assignment is a field write, not a call, and is left to the member checks.
+ *
+ * Warning, never error: BUILTIN_FUNCTIONS is pinned to WormForge 0.8.22 and may
+ * lag the engine, so a key this build does not know is SUSPICIOUS, not wrong.
+ */
+function scanWaNamespaceTypos(meaningful: Token[], userVerbs: CustomVerb[] = []): SyntaxDiagnostic[] {
+  const known = new Set(BUILTIN_FUNCTIONS.map((f) => f.name));
+  const knownPaths = BUILTIN_FUNCTIONS.map((f) => f.name);
+  for (const verb of userVerbs) {
+    if (verb.class === 'wa' || verb.class.startsWith('wa.')) {
+      const path = `${verb.class}.${verb.name}`;
+      known.add(path);
+      knownPaths.push(path);
+    }
+  }
+  const out: SyntaxDiagnostic[] = [];
+
+  for (let i = 0; i < meaningful.length - 2; i++) {
+    const t = meaningful[i];
+    if (t.type !== 'identifier' || t.value !== 'wa') continue;
+    if (meaningful[i + 1]?.value !== '.') continue;
+
+    // Rebuild the dotted path `wa . x . y . z`.
+    const parts: string[] = ['wa'];
+    let k = i + 1;
+    while (k < meaningful.length && meaningful[k].value === '.' && meaningful[k + 1]?.type === 'identifier') {
+      parts.push(meaningful[k + 1].value);
+      k += 2;
+    }
+
+    // Is this reference part of a short-circuit CAPABILITY CHECK?
+    //
+    //   wa.worms.active and wa.worms.active()
+    //   wa.worms.all    and wa.worms.all()[1]
+    //   if wa.some_api then wa.some_api() end
+    //
+    // These are the standard Lua idioms for "use this API if it exists", and
+    // they are exactly what a pack writes to support more than one engine version.
+    // Flagging them is WRONG: the code is correct, deliberate, and short-circuits
+    // to a safe fallback instead of crashing.
+    //
+    // This exact line was found in the user's bee.lua and reported as a typo
+    // before the guard existed. A reference that is TESTED before being CALLED is
+    // a deliberate feature probe, not a mistake.
+    const nextTok = meaningful[k]?.value;
+    const prevTok = meaningful[i - 1]?.value;
+    if (nextTok === 'and' || nextTok === 'or' || prevTok === 'and' || prevTok === 'or') {
+      i = k - 1;
+      continue;
+    }
+    // `if wa.some_api then wa.some_api() end`. The PROBE half is preceded by `if`
+    // and ends at `then`; the CALL half sits immediately after `then`. Both must
+    // be skipped -- catching only the first reported the second as a typo.
+    if (prevTok === 'if' || prevTok === 'then') {
+      i = k - 1;
+      continue;
+    }
+
+    // Must be a call: `f(` immediately after the path, not `= `.
+    if (nextTok !== '(') continue;
+
+    const path = parts.join('.');
+    if (known.has(path)) continue;
+
+    // Is the NAMESPACE real? `wa.weapoons.repalce` has a bad namespace and is a
+    // different (and louder) mistake; both are reported the same way here, but
+    // the suggestion is only offered when the prefix is known-good.
+    const namespace = parts.slice(0, -1).join('.');
+    const namespaceKnown = knownPaths.some((p) => p.startsWith(namespace + '.'));
+    const leaf = parts[parts.length - 1];
+
+    const suggestion = namespaceKnown ? suggestWaFunction(leaf, knownPaths) : null;
+
+    out.push({
+      line: t.line,
+      column: t.column,
+      message:
+        `Unknown wa.* function "${path}". ` +
+        (namespaceKnown
+          ? `"${namespace}" is a real namespace, but "${leaf}" is not a function in it.`
+          : `"${parts.slice(1, -1).join('.')}" is not a known wa namespace either.`) +
+        (suggestion ? ` Did you mean "${suggestion}"?` : ''),
+      detail:
+        'The call does nothing at runtime, so the code loads and the effect never happens.',
+      severity: 'warning',
+      rule: 'wa-namespace-typo',
+    });
+
+    // Continue PAST the path so `wa.a.b(...).c(...)` is not reported twice. The loop
+    // increments `i` itself, so this sets it to the token BEFORE the call's `(`.
+    i = k - 1;
+  }
+
+  return out;
+}
+
+/**
+ * `wa.weapons.replace({ copy_fromm = "mine" })` -- a misspelled spec key.
+ *
+ * Lua does not complain: the table simply carries an extra key the engine never
+ * reads, so the intended effect is silently missing. This is the same class of
+ * bug as a misspelled `wa.*` function, in the place it actually bites.
+ *
+ * Only keys DIRECTLY inside the spec table are checked, not nested `patch = {...}`
+ * contents, and never keys in an ordinary table elsewhere in the file.
+ *
+ * Warning, never error: WEAPON_SPEC_KEYS is hand-maintained and errs toward
+ * inclusion, but the engine can still accept a key this build does not list.
+ */
+function scanSpecKeyTypos(meaningful: Token[]): SyntaxDiagnostic[] {
+  const out: SyntaxDiagnostic[] = [];
+
+  for (let i = 0; i < meaningful.length - 1; i++) {
+    const t = meaningful[i];
+    if (t.type !== 'identifier') continue;
+    if (t.value !== 'wa') continue;
+    // Require `wa.weapons.replace(` or `wa.weapons.register(` -- the two calls
+    // that take a spec table.
+    if (
+      meaningful[i + 1]?.value !== '.' ||
+      meaningful[i + 2]?.value !== 'weapons' ||
+      meaningful[i + 3]?.value !== '.' ||
+      meaningful[i + 4]?.type !== 'identifier'
+    ) {
+      continue;
+    }
+    const fn = meaningful[i + 4].value;
+    if (fn !== 'replace' && fn !== 'register') continue;
+
+    // Find the `(` then its matching `)`. Keys are `name =` at DEPTH 1 inside.
+    let open = i + 5;
+    while (open < meaningful.length && meaningful[open].value !== '(') open++;
+    if (open >= meaningful.length) continue;
+
+    // Walk the argument list looking for `key =` pairs that are DIRECTLY in the spec
+    // table.
+    //
+    // Depth is counted over `{`/`}` ONLY, and a `function` keyword opens an
+    // implicit block whose closing `end` is NOT a `}`. Counting only braces means
+    // a `}` inside a nested table (`patch = { ... }`) correctly reads as deeper,
+    // while an `if`/`for`/`function` body -- whose `end` has no brace at all --
+    // leaves the depth unchanged, which is the point.
+    //
+    // That still is not enough on its own: inside `on_fire = function(fire)
+    // ... end`, the body is at brace-depth 1, the same as a real spec key. So a
+    // `function`/`if`/`for`/`while`/`do` in the value position pushes a SENTINEL
+    // that only the matching `end` clears. Without it every `local worm = ...`
+    // inside a callback was reported as an unrecognised spec key -- 28 false
+    // positives across the example packs.
+    let depth = 0;
+    let blockDepth = 0;
+    for (let j = open; j < meaningful.length; j++) {
+      const tk = meaningful[j];
+      const v = tk.value;
+
+      if (tk.type === 'keyword') {
+        // `end` closes one implicit block; `elseif`/`else` do not add one.
+        if (v === 'end') {
+          if (blockDepth > 0) blockDepth--;
+          continue;
+        }
+        if (v === 'if' || v === 'for' || v === 'while' || v === 'do' || v === 'repeat' || v === 'function') {
+          blockDepth++;
+          continue;
+        }
+        continue; // local, return, nil, true, ... are not structure here
+      }
+
+      if (v === '{') {
+        depth++;
+        continue;
+      }
+      if (v === '}') {
+        depth--;
+        if (depth < 0) break; // malformed, do not run off the end
+        continue;
+      }
+      // `)` back at brace-depth 0 ends the argument list.
+      if (v === ')' && depth === 0) break;
+
+      // Inside a callback body: everything here is ordinary Lua, not spec keys.
+      if (blockDepth > 0) continue;
+      // Directly in the spec table. Anything deeper is inside `patch = { ... }`.
+      if (depth !== 1) continue;
+      if (tk.type !== 'identifier') continue;
+      if (meaningful[j + 1]?.value !== '=') continue;
+
+      const key = meaningful[j].value;
+      if (WEAPON_SPEC_KEY_SET.has(key.toLowerCase())) continue;
+
+      const suggestion = suggestSpecKey(key);
+      out.push({
+        line: meaningful[j].line,
+        column: meaningful[j].column,
+        message:
+          `Unrecognized spec key "${key}" in wa.weapons.${fn}{...}. ` +
+          (suggestion ? `Did you mean "${suggestion}"?` : ''),
+        detail: 'The engine ignores unknown keys, so this line has no effect.',
+        severity: 'warning',
+        rule: 'spec-key-typo',
+      });
+    }
+  }
+
+  return out;
+}
+
+/**
+ * `wa.on.worm_message(fn)` -- a handler that could name the messages it wants.
+ *
+ * WA sends every worm several messages a frame and enters Lua for each one, so an
+ * unfiltered handler runs a few hundred times per second just to compare `msg`
+ * against one constant and return. The engine can skip that dispatch entirely if
+ * the handler says up front which messages it cares about:
+ *
+ *   wa.on.worm_message(function(worm, msg)
+ *     if msg == wa.msg.FRAME_FINISH then ... end
+ *   end, { msgs = { wa.msg.FRAME_FINISH } })
+ *
+ * This is NOT a correctness check and is `info`, like `lockstep-pairs`: the
+ * unfiltered code is correct, it is just paying for messages it ignores.
+ *
+ * It only fires when the change is PROVABLY behaviour-preserving, which needs all
+ * three of:
+ *
+ *  - exactly one argument, so no filter is already there;
+ *  - an inline `function(worm, msg)` -- a named callback is not read, so nothing
+ *    can be said about it, and a differently-shaped parameter list is not assumed;
+ *  - EVERY use of `msg` in the body is a `msg == wa.msg.X` / `msg ~= wa.msg.X`
+ *    comparison. If `msg` is logged, indexed, compared numerically, or otherwise
+ *    used, the handler is doing something the engine cannot be told to skip, and
+ *    the check stays silent.
+ *
+ * With that last condition the handler already ignores every message it does not
+ * name, so filtering can only remove work, never change a result. The reverse is
+ * not true, which is the whole reason this is narrow.
+ */
+function scanWormMessageFilter(meaningful: Token[]): SyntaxDiagnostic[] {
+  const out: SyntaxDiagnostic[] = [];
+  const COMPARES = ['==', '~='];
+
+  for (let i = 0; i < meaningful.length - 4; i++) {
+    const t = meaningful[i];
+    if (t.type !== 'identifier' || t.value !== 'wa') continue;
+    if (
+      meaningful[i + 1]?.value !== '.' ||
+      meaningful[i + 2]?.value !== 'on' ||
+      meaningful[i + 3]?.value !== '.' ||
+      meaningful[i + 4]?.value !== 'worm_message'
+    ) {
+      continue;
+    }
+    // `(` right after the name, so this is a call and not a field read.
+    if (meaningful[i + 5]?.value !== '(') continue;
+
+    // The first argument must be an INLINE function. `wa.on.worm_message(handler)`
+    // gives a name, not a body, and is left alone.
+    let j = i + 6;
+    if (meaningful[j]?.type !== 'keyword' || meaningful[j]?.value !== 'function') continue;
+
+    // Parameter list. The last parameter must be named `msg`, which is the shape
+    // the engine calls with; anything else is not assumed to be this handler.
+    if (meaningful[j + 1]?.value !== '(') continue;
+    j += 2;
+    const params: string[] = [];
+    while (j < meaningful.length && meaningful[j].value !== ')') {
+      const p = meaningful[j];
+      // `worm, msg` -- the separator is punctuation, not a parameter. Anything
+      // else that is not a plain name (a default value, a `...`) is not assumed
+      // to be this handler.
+      if (p.value === ',') {
+        j++;
+        continue;
+      }
+      if (p.type !== 'identifier') {
+        params.length = 0;
+        break;
+      }
+      params.push(p.value);
+      j++;
+    }
+    if (params.length === 0 || params[params.length - 1] !== 'msg') continue;
+    j++; // step past the `)`
+
+    // Find the `end` that closes this function.
+    //
+    // Three things about Lua block keywords matter here, and getting any one wrong
+    // means the body never closes and the finding is silently lost:
+    //
+    //  - `repeat` is closed by `until`, not `end`.
+    //  - `elseif` and `then` open nothing.
+    //  - `for ... do` and `while ... do` are ONE block, but they are TWO keywords.
+    //    Counting both opened the depth twice and closed it once, so a handler with
+    //    a loop in it -- which is most of them -- never terminated and produced
+    //    nothing. That was the whole of the Rust-vs-TypeScript drift on the corpus.
+    //    A `do` therefore only opens a block when no `for`/`while` is waiting for one.
+    let depth = 1;
+    let pendingDo = false;
+    const bodyStart = j;
+    let bodyEnd = -1;
+    for (; j < meaningful.length; j++) {
+      const tk = meaningful[j];
+      if (tk.type === 'keyword') {
+        const v = tk.value;
+        if (v === 'end' || v === 'until') {
+          depth--;
+          if (depth === 0) {
+            bodyEnd = j;
+            break;
+          }
+        } else if (v === 'for' || v === 'while') {
+          depth++;
+          pendingDo = true;
+        } else if (v === 'do') {
+          // The `do` of `for ... do` / `while ... do` closes the loop header rather
+          // than opening a block of its own.
+          if (pendingDo) pendingDo = false;
+          else depth++;
+        } else if (v === 'if' || v === 'repeat' || v === 'function') {
+          depth++;
+        }
+      }
+    }
+    if (bodyEnd === -1) continue;
+
+    // One argument only. A `,` here is an opts table -- the filter is already there.
+    if (meaningful[bodyEnd + 1]?.value !== ')') continue;
+
+    // Walk every `msg` in the body. Each one must sit directly against a
+    // `==`/`~=` and be compared to `wa.msg.NAME`.
+    const names: string[] = [];
+    let unsafe = false;
+    let uses = 0;
+    for (let k = bodyStart; k < bodyEnd && !unsafe; k++) {
+      if (meaningful[k].type !== 'identifier' || meaningful[k].value !== 'msg') continue;
+      // `wa.msg.X` also contains the identifier `msg`; that is the constant's
+      // table, not the parameter.
+      if (meaningful[k - 1]?.value === '.' || meaningful[k + 1]?.value === '.') continue;
+      uses++;
+
+      const op = meaningful[k + 1];
+      if (op?.type !== 'operator' || !COMPARES.includes(op.value)) {
+        unsafe = true;
+        break;
+      }
+      // `msg == wa.msg.NAME` -- NAME is six tokens along, not five: the `.` is
+      // part of the path and must not be mistaken for the constant's name.
+      const name = meaningful[k + 6];
+      if (
+        meaningful[k + 2]?.value !== 'wa' ||
+        meaningful[k + 3]?.value !== '.' ||
+        meaningful[k + 4]?.value !== 'msg' ||
+        meaningful[k + 5]?.value !== '.' ||
+        name?.type !== 'identifier'
+      ) {
+        unsafe = true;
+        break;
+      }
+      if (!names.includes(name.value)) names.push(name.value);
+    }
+
+    // No `msg` use at all: there is nothing to name, and nothing to prove.
+    if (unsafe || uses === 0) continue;
+
+    const list = names.map((n) => `wa.msg.${n}`).join(', ');
+    out.push({
+      line: t.line,
+      column: t.column,
+      // The suggestion is the whole point and it is short. The ~470-character
+      // original explained why the change is behaviour-preserving INSIDE the
+      // message, which on a 1366-wide console is ~60 wrapped lines for one
+      // finding -- long enough to hide every other row in the list. All of that
+      // reasoning is real and belongs to the user, so it moves to `detail`
+      // behind the Info button rather than being deleted. Mirrors the Rust side
+      // in checks.rs, which the `starts_with`-style tests there also pin.
+      message: `Pass the messages up front: { msgs = { ${list} } }`,
+      detail:
+        `This handler enters Lua for every message WA sends each worm, then tests \`msg\` itself. ` +
+        `Every use of \`msg\` here is a comparison against wa.msg, so passing the messages up front -- ` +
+        `\`wa.on.worm_message(function(worm, msg) ... end, { msgs = { ... } })\` -- runs the same code ` +
+        `on the same messages without the dispatch for the rest. Filtered and unfiltered handlers run ` +
+        `together in registration order, so this changes neither what runs nor what gets eaten.`,
+      severity: 'info',
+      rule: 'worm-msg-filter',
+    });
+  }
+
+  return out;
+}
+
+/** The "Unknown <Handle> method" warning, shared by every registry row. */
 function pushUnknownMethod(
   expected: { className: string; rule: string; note?: string },
   cls: ClassDef | undefined,
@@ -270,441 +637,26 @@ function pushUnknownMethod(
     .filter((m) => m.kind === 'method')
     .map((m) => m.name)
     .join(', ');
-  const tail = expected.note ? expected.note : `Valid methods include: ${validMethods}`;
+  // Short message = the error plus, when the registry supplies one, a targeted
+  // hint. The full valid-method list moves to `detail`: it is what you need to
+  // fix the typo, but only once you have decided the name really is wrong, and
+  // it wraps off a 1366-wide console row. Mirrors checks.rs, which splits the
+  // same two halves.
   diagnostics.push({
     line: at.line,
     column: at.column,
-    message: `Unknown ${expected.className} method "${method}". ${tail}`,
+    message: `Unknown ${expected.className} method "${method}".`,
+    detail: expected.note ? expected.note : `Valid methods include: ${validMethods}`,
     severity: 'warning',
     rule: expected.rule,
   });
 }
 
-export function tokenize(code: string): { tokens: Token[]; diagnostics: SyntaxDiagnostic[] } {
-  const tokens: Token[] = [];
-  const diagnostics: SyntaxDiagnostic[] = [];
-  let i = 0;
-  let line = 1;
-  let col = 1;
 
-  while (i < code.length) {
-    const char = code[i];
-
-    // Newlines
-    if (char === '\n') {
-      tokens.push({
-        type: 'whitespace',
-        value: '\n',
-        line,
-        column: col,
-        start: i,
-        end: i + 1,
-      });
-      i++;
-      line++;
-      col = 1;
-      continue;
-    }
-
-    // Standard whitespace
-    if (/\s/.test(char)) {
-      const start = i;
-      const startCol = col;
-      let val = '';
-      while (i < code.length && /\s/.test(code[i]) && code[i] !== '\n') {
-        val += code[i];
-        i++;
-        col++;
-      }
-      tokens.push({
-        type: 'whitespace',
-        value: val,
-        line,
-        column: startCol,
-        start,
-        end: i,
-      });
-      continue;
-    }
-
-    // Comments (-- or --[[ ... ]])
-    if (char === '-' && code[i + 1] === '-') {
-      const start = i;
-      const startCol = col;
-      if (code.slice(i, i + 4) === '--[[') {
-        const endIdx = code.indexOf(']]', i + 4);
-        if (endIdx === -1) {
-          diagnostics.push({
-            line,
-            column: startCol,
-            message: 'Unterminated multi-line comment: missing matching "]]"',
-            severity: 'error',
-          });
-          const val = code.slice(i);
-          tokens.push({
-            type: 'comment',
-            value: val,
-            line,
-            column: startCol,
-            start,
-            end: code.length,
-          });
-          break;
-        } else {
-          const val = code.slice(i, endIdx + 2);
-          const lines = val.split('\n');
-          tokens.push({
-            type: 'comment',
-            value: val,
-            line,
-            column: startCol,
-            start,
-            end: endIdx + 2,
-          });
-          i = endIdx + 2;
-          if (lines.length > 1) {
-            line += lines.length - 1;
-            col = lines[lines.length - 1].length + 1;
-          } else {
-            col += val.length;
-          }
-          continue;
-        }
-      } else {
-        // Single line comment
-        let nextNewline = code.indexOf('\n', i);
-        if (nextNewline === -1) nextNewline = code.length;
-        const val = code.slice(i, nextNewline);
-        tokens.push({
-          type: 'comment',
-          value: val,
-          line,
-          column: startCol,
-          start,
-          end: nextNewline,
-        });
-        col += val.length;
-        i = nextNewline;
-        continue;
-      }
-    }
-
-    // Strings: single, double quote, or multi-line [[ ... ]]
-    if (char === '"' || char === "'") {
-      const quote = char;
-      const start = i;
-      const startCol = col;
-      i++;
-      col++;
-      let escaped = false;
-      let strVal = quote;
-      let closed = false;
-
-      while (i < code.length) {
-        const c = code[i];
-        strVal += c;
-        if (c === '\n' && !escaped) {
-          diagnostics.push({
-            line,
-            column: startCol,
-            message: `Unterminated string literal: newline before closing ${quote}`,
-            severity: 'error',
-          });
-          break;
-        }
-        if (escaped) {
-          escaped = false;
-        } else if (c === '\\') {
-          escaped = true;
-        } else if (c === quote) {
-          closed = true;
-          i++;
-          col++;
-          break;
-        }
-        i++;
-        col++;
-      }
-
-      if (!closed && i >= code.length) {
-        diagnostics.push({
-          line,
-          column: startCol,
-          message: `Unterminated string literal: missing closing ${quote}`,
-          severity: 'error',
-        });
-      }
-
-      tokens.push({
-        type: 'string',
-        value: strVal,
-        line,
-        column: startCol,
-        start,
-        end: i,
-      });
-      continue;
-    }
-
-    // Multiline string [[ ... ]]
-    if (char === '[' && code[i + 1] === '[') {
-      const start = i;
-      const startCol = col;
-      const endIdx = code.indexOf(']]', i + 2);
-      if (endIdx === -1) {
-        diagnostics.push({
-          line,
-          column: startCol,
-          message: 'Unterminated multi-line string literal [[ ... ]]',
-          severity: 'error',
-        });
-        tokens.push({
-          type: 'string',
-          value: code.slice(i),
-          line,
-          column: startCol,
-          start,
-          end: code.length,
-        });
-        break;
-      } else {
-        const val = code.slice(i, endIdx + 2);
-        const lines = val.split('\n');
-        tokens.push({
-          type: 'string',
-          value: val,
-          line,
-          column: startCol,
-          start,
-          end: endIdx + 2,
-        });
-        i = endIdx + 2;
-        if (lines.length > 1) {
-          line += lines.length - 1;
-          col = lines[lines.length - 1].length + 1;
-        } else {
-          col += val.length;
-        }
-        continue;
-      }
-    }
-
-    // Arrow Operator: -> (Invalid in Lua / WormForge; flag with error diagnostic)
-    if (char === '-' && code[i + 1] === '>') {
-      tokens.push({
-        type: 'arrow',
-        value: '->',
-        line,
-        column: col,
-        start: i,
-        end: i + 2,
-      });
-      i += 2;
-      col += 2;
-      continue;
-    }
-
-    // Numbers (hex: 0x10000, 0x1A, floats: 3.14, .5, ints: 42)
-    if (/\d/.test(char) || (char === '.' && /\d/.test(code[i + 1] || ''))) {
-      const start = i;
-      const startCol = col;
-      let num = '';
-      if (char === '0' && (code[i + 1] === 'x' || code[i + 1] === 'X')) {
-        num += code.slice(i, i + 2);
-        i += 2;
-        col += 2;
-        let hasDot = false;
-        while (i < code.length) {
-          const c = code[i];
-          if (/[0-9a-fA-F_]/.test(c)) {
-            num += c;
-            i++;
-            col++;
-          } else if (c === '.' && !hasDot) {
-            // Hex float fraction: 0x1.8p3
-            hasDot = true;
-            num += c;
-            i++;
-            col++;
-          } else {
-            break;
-          }
-        }
-        // Hex float exponent: 0x1p4, 0x1.8p-3
-        if (i < code.length && (code[i] === 'p' || code[i] === 'P')) {
-          const len = matchBinaryExponent(code, i);
-          if (len > 0) {
-            num += code.slice(i, i + len);
-            col += len;
-            i += len;
-          }
-        }
-      } else {
-        let hasDot = false;
-        while (i < code.length) {
-          const c = code[i];
-          if (/[\d_]/.test(c)) {
-            num += c;
-            i++;
-            col++;
-          } else if (c === '.' && !hasDot && code[i + 1] !== '.') {
-            hasDot = true;
-            num += c;
-            i++;
-            col++;
-          } else {
-            break;
-          }
-        }
-        // Decimal exponent: 1e-6, 2.5E+3. Without this the scanner stops at the
-        // `e` and the malformed-number check below reports valid Lua like
-        // `< 1e-6` as an error, which the game compiler never does.
-        if (i < code.length && (code[i] === 'e' || code[i] === 'E')) {
-          const len = matchBinaryExponent(code, i);
-          if (len > 0) {
-            num += code.slice(i, i + len);
-            col += len;
-            i += len;
-          }
-        }
-      }
-
-      // Safeguard: Ensure i always advances
-      if (i === start) {
-        num = char;
-        i++;
-        col++;
-      }
-
-      // If a number is immediately followed by identifier characters without a separator (e.g. 1abc or 0x1G)
-      if (i < code.length && /[a-zA-Z_]/.test(code[i])) {
-        let suffix = '';
-        while (i < code.length && /[a-zA-Z0-9_]/.test(code[i])) {
-          suffix += code[i];
-          i++;
-          col++;
-        }
-        const fullMalformed = num + suffix;
-        diagnostics.push({
-          line,
-          column: startCol,
-          message: `Syntax Error: malformed number or identifier starting with digit "${fullMalformed}". Identifiers in Lua cannot start with a number.`,
-          severity: 'error',
-          rule: 'malformed-number-identifier',
-        });
-        tokens.push({
-          type: 'unknown',
-          value: fullMalformed,
-          line,
-          column: startCol,
-          start,
-          end: i,
-        });
-        continue;
-      }
-
-      tokens.push({
-        type: 'number',
-        value: num,
-        line,
-        column: startCol,
-        start,
-        end: i,
-      });
-      continue;
-    }
-
-    // Identifiers and Keywords
-    if (/[a-zA-Z_]/.test(char)) {
-      const start = i;
-      const startCol = col;
-      let id = '';
-      while (i < code.length && /[a-zA-Z0-9_]/.test(code[i])) {
-        id += code[i];
-        i++;
-        col++;
-      }
-
-      let type: Token['type'] = 'identifier';
-      if (LUA_KEYWORDS.has(id)) {
-        type = 'keyword';
-      } else if (TYPE_KEYWORDS.has(id.toLowerCase())) {
-        type = 'type';
-      }
-
-      tokens.push({
-        type,
-        value: id,
-        line,
-        column: startCol,
-        start,
-        end: i,
-      });
-      continue;
-    }
-
-    // Multi-character operators
-    const twoChars = code.slice(i, i + 2);
-    if (['==', '~=', '<=', '>=', '//', '..'].includes(twoChars)) {
-      tokens.push({
-        type: 'operator',
-        value: twoChars,
-        line,
-        column: col,
-        start: i,
-        end: i + 2,
-      });
-      i += 2;
-      col += 2;
-      continue;
-    }
-
-    // Punctuation and Single-character operators
-    if ('{}[](),;:.:'.includes(char)) {
-      tokens.push({
-        type: 'punctuation',
-        value: char,
-        line,
-        column: col,
-        start: i,
-        end: i + 1,
-      });
-      i++;
-      col++;
-      continue;
-    }
-
-    if ('+-*/%^#=<>~'.includes(char)) {
-      tokens.push({
-        type: 'operator',
-        value: char,
-        line,
-        column: col,
-        start: i,
-        end: i + 1,
-      });
-      i++;
-      col++;
-      continue;
-    }
-
-    // Unknown single character fallback
-    tokens.push({
-      type: 'unknown',
-      value: char,
-      line,
-      column: col,
-      start: i,
-      end: i + 1,
-    });
-    i++;
-    col++;
-  }
-
-  return { tokens, diagnostics };
-}
-
-export function parseAndValidate(code: string): {
+export function parseAndValidate(
+  code: string,
+  userVerbs: CustomVerb[] = []
+): {
   tokens: Token[];
   diagnostics: SyntaxDiagnostic[];
   symbols: ParsedSymbolTree;
@@ -816,7 +768,7 @@ export function parseAndValidate(code: string): {
   const extractedVariables: VariableDef[] = [];
   const extractedFunctions: FunctionDef[] = [];
   const extractedClasses: ClassDef[] = [];
-  const customVerbs: Set<string> = new Set();
+  const extractedVerbNames: Set<string> = new Set();
 
   // Receivers narrowed by a `x.kind == "..."` test somewhere in the file are a
   // runtime union, not one fixed handle. Highlander does this with `obj`:
@@ -838,6 +790,12 @@ export function parseAndValidate(code: string): {
     if (op?.value !== '==' && op?.value !== '~=') continue;
     duckTypedReceivers.add(recv.value);
   }
+
+  // Resolution step 1: locals whose value is a call to a function whose
+  // declared returnType names a handle. Computed from the source once, before
+  // the walk, so the receiver check below can ask it first and only fall back
+  // to the name table when the code itself says nothing.
+  const tracedTypes = traceLocalTypes(code);
 
   // One entry per `receiver:method()` that only passed because the receiver is
   // duck-typed. Reported together at the end, so a file with a dozen branches
@@ -964,7 +922,7 @@ export function parseAndValidate(code: string): {
         const memberName = rightTok.value;
         const isColon = t.value === ':';
 
-        customVerbs.add(memberName);
+        extractedVerbNames.add(memberName);
 
         let params: any[] = [];
         const openParen = meaningfulTokens[idx + 2];
@@ -1003,19 +961,47 @@ export function parseAndValidate(code: string): {
       const right = meaningfulTokens[idx + 1];
       if (left && right && right.type === 'identifier') {
         const method = right.value;
-        const expected = RECEIVER_CLASSES.find((r) => r.names.includes(left.value));
+        // Resolution order, most accurate first:
+        //   1. the traced call-site returnType (`local x = wa.worms.nearest(...)`)
+        //   2. the name table -- confident names only, via resolveForCheck
+        // then, if the receiver is .kind-narrowed, the duck-typed union above.
+        // Autocomplete may guess loosely, but a wrong guess here is a false
+        // error on valid code, so step 2 only claims names it is sure about.
+        const tracedClass = tracedTypes.get(left.value);
+        const expected = tracedClass
+          ? rowForClass(tracedClass)
+          : resolveForCheck(left.value);
         if (expected) {
-          const cls = BUILTIN_CLASSES.find((c) => c.name === expected.className);
-          const hasIt = !!cls?.members.some((m) => m.name === method);
+          const cls = getClass(expected.className);
+          // The user's own verbs are as real as engine members. This overlay
+          // is why `worm:grapple()` is silent after registering
+          // WormEntity:grapple -- `customVerbs` arrives per check from
+          // custom_verbs.cfg, never from a global, so the browser path and the
+          // desktop path read the same list.
+          const customHit = customMembersFor(expected.className, userVerbs).includes(method);
+          const hasIt = customHit || !!cls?.members.some((m) => m.name === method);
 
           if (hasIt) {
             // Fine on the assumed handle. Nothing to say.
           } else if (duckTypedReceivers.has(left.value)) {
             // The receiver is narrowed by a `.kind` test, so the assumed handle
-            // is only one of several. Accept any handle that has the method.
-            const owners = HANDLE_CLASS_NAMES.filter((name) =>
-              BUILTIN_CLASSES.find((c) => c.name === name)?.members.some((m) => m.name === method)
+            // is only one of several. Accept any handle that has the method --
+            // or any class the user extended with it.
+            // Widened to string[] on purpose: custom owner names appended
+            // below are arbitrary identifiers, not HandleClassName members.
+            const owners: string[] = ALL_HANDLE_CLASSES.filter(
+              (name) =>
+                getClass(name)?.members.some((m) => m.name === method) ||
+                customMembersFor(name, userVerbs).includes(method)
             );
+            // A user class that is NOT an engine class can own the method too
+            // (GhostProxy:hurt in custom_verbs.cfg). checks.rs appends custom
+            // owners after the engine ones, in overlay order, so both engines
+            // read `WormEntity and GhostProxy`. Without this loop TS would
+            // show a shorter owner list than Rust for the same file+cfg.
+            for (const v of userVerbs) {
+              if (v.name === method && !owners.includes(v.class)) owners.push(v.class);
+            }
             if (owners.length > 0) {
               const key = `${left.value}:${method}`;
               const seen = unionPasses.find((u) => `${u.receiver}:${u.method}` === key);
@@ -1040,15 +1026,28 @@ export function parseAndValidate(code: string): {
       }
     }
 
-    // Check for banned lockstep patterns (e.g. math.random)
-    if (t.value === 'math' && meaningfulTokens[idx + 1]?.value === '.' && meaningfulTokens[idx + 2]?.value === 'random') {
-      diagnostics.push({
-        line: t.line,
-        column: t.column,
-        message: 'Lockstep Violation: "math.random" is disabled in WormForge to prevent desyncs. Use "wa.random(min, max)" to draw from Worms Armageddon\'s shared lockstep RNG.',
-        severity: 'error',
-        rule: 'lockstep-rng',
-      });
+    // Check for banned lockstep patterns (e.g. math.random). These are the
+    // Lua 5.4 standard library forms -- they are NOT the same as the engine's
+    // wa.math.* forms, which the user replaces them with because the engine
+    // forms are deterministic across every lockstep peer.
+    const bannedLockstep = [
+      { name: 'random', hint: 'Use "wa.random(min, max)" to draw from Worms Armageddon\'s shared lockstep RNG.' },
+      { name: 'randomseed', hint: 'Use "wa.random(min, max)" to draw from Worms Armageddon\'s shared lockstep RNG.' },
+      { name: 'cos', hint: 'Use "wa.math.cos(...)" -- the engine\'s deterministic sine table -- instead.' },
+      { name: 'sin', hint: 'Use "wa.math.sin(...)" -- the engine\'s deterministic sine table -- instead.' },
+      { name: 'atan', hint: 'Use "wa.math.atan(y, x)" -- the engine\'s deterministic arctangent -- instead.' },
+    ] as const;
+    const afterDot = meaningfulTokens[idx - 1]?.value === '.';
+    for (const b of bannedLockstep) {
+      if (!afterDot && t.value === 'math' && meaningfulTokens[idx + 1]?.value === '.' && meaningfulTokens[idx + 2]?.value === b.name) {
+        diagnostics.push({
+          line: t.line,
+          column: t.column,
+          message: `Lockstep Violation: "math.${b.name}" is disabled in WormForge to prevent desyncs. ${b.hint}`,
+          severity: 'error',
+          rule: 'lockstep-rng',
+        });
+      }
     }
 
     // Check for pairs() without wa.sorted() on string keys
@@ -1067,6 +1066,17 @@ export function parseAndValidate(code: string): {
   // that is not caught by the game compiler.
   diagnostics.push(...scanUndefinedGlobals(meaningfulTokens));
 
+  // The scope-aware pass on top. Strictly narrower than the one above: it reports
+  // a subset of the same `rule`, so it can add findings but never contradict or
+  // remove one. This is what catches a local leaking between functions.
+  diagnostics.push(...scanUndefinedNamesInScope(code, meaningfulTokens));
+
+  // Silent-failure checks: a typo here loads fine, runs fine, and simply does
+  // nothing, which is the exact class of bug the compiler cannot catch.
+  diagnostics.push(...scanWaNamespaceTypos(meaningfulTokens, userVerbs));
+  diagnostics.push(...scanSpecKeyTypos(meaningfulTokens));
+  diagnostics.push(...scanWormMessageFilter(meaningfulTokens));
+
   // One notice per duck-typed `receiver:method()` that the assumed handle alone
   // would have rejected. Severity `info`, not `warning`: the code is valid, and
   // the console's Errors/Warn filters plus the clear button keep it out of the way.
@@ -1075,11 +1085,13 @@ export function parseAndValidate(code: string): {
       line: u.lines[0],
       column: 1,
       message:
-        `Passed - Notice: lines ${formatLines(u.lines)} call \`${u.receiver}:${u.method}()\`, which ` +
-        `${u.owners.join(' and ')} has but ${u.assumedClass} (what \`${u.receiver}\` alone suggests) does not. ` +
+        `Passed - lines ${formatLines(u.lines)} call \`${u.receiver}:${u.method}()\`, which ` +
+        `${u.owners.join(' and ')} has but ${u.assumedClass} does not.`,
+      detail:
+        `\`${u.assumedClass}\` -- what \`${u.receiver}\` alone suggests -- does not have this method. ` +
         `\`${u.receiver}\` is narrowed by a \`.kind\` test, so it is a different handle in each branch. ` +
-        `That is correct while every branch is covered - a missing one only breaks in-game, when the engine ` +
-        `runs this method on the wrong handle.`,
+        `That is correct while every branch is covered; a missing one only breaks in-game, when the ` +
+        `engine runs this method on the wrong handle.`,
       severity: 'info',
       rule: 'handle-union',
     });
@@ -1144,7 +1156,7 @@ export function parseAndValidate(code: string): {
       variables,
       classes,
       enums: BUILTIN_ENUMERATIONS,
-      customVerbs: Array.from(customVerbs),
+      customVerbs: Array.from(extractedVerbNames),
       diagnostics,
     },
   };

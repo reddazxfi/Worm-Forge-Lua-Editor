@@ -7,6 +7,7 @@ interface UnsavedChangesModalProps {
   isLight?: boolean;
   onSaveAndClose: () => void;
   onDiscardAndClose: () => void;
+  onResetAndClose: () => void;
   onCancel: () => void;
 }
 
@@ -16,6 +17,7 @@ export const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
   isLight = false,
   onSaveAndClose,
   onDiscardAndClose,
+  onResetAndClose,
   onCancel,
 }) => {
   if (!isOpen) return null;
@@ -80,7 +82,19 @@ export const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
             Cancel
           </button>
           <button
+            onClick={onResetAndClose}
+            title="Discard these edits and clear the saved session, so the next launch starts clean"
+            className={`px-3 py-1.5 rounded border font-medium transition-colors ${
+              isLight
+                ? 'bg-white hover:bg-slate-100 text-slate-600 border-slate-300'
+                : 'bg-[#202631] hover:bg-[#2b3341] text-[#93a6bd] border-[#2e3745]'
+            }`}
+          >
+            Close &amp; reset session
+          </button>
+          <button
             onClick={onDiscardAndClose}
+            title="Leave these edits out of disk, but keep them for the next launch"
             className={`px-3 py-1.5 rounded border font-medium transition-colors ${
               isLight
                 ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300'

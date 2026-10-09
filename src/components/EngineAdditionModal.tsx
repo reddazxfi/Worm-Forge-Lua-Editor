@@ -1,18 +1,25 @@
 import React, { useState } from 'react';
-import { X, Sparkles, Plus, Code2, Variable, Box } from 'lucide-react';
-import { ClassDef, MemberDef, ParameterDef } from '../types/wormforge';
+import { X, Sparkles, Plus, Code2, Variable, Box, AlertTriangle } from 'lucide-react';
+import { ClassDef, CustomVerb, ParameterDef } from '../types/wormforge';
+import { isValidIdent, isValidClass } from '../services/customVerbs';
 
 interface EngineAdditionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddClassOrMember: (clsName: string, member: MemberDef) => void;
+  /**
+   * Emits a FULL verb, not (class, member) halves. The consumer no longer has
+   * to reconstruct `syntax` from `kind` -- `.` vs `:` is a separate choice in
+   * this form -- and the same shape is what persists to custom_verbs.cfg and
+   * what the checkers read, so there is one representation end to end.
+   */
+  onAddVerb: (verb: CustomVerb) => void;
   existingClasses: ClassDef[];
 }
 
 export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
   isOpen,
   onClose,
-  onAddClassOrMember,
+  onAddVerb,
   existingClasses,
 }) => {
   const [targetClass, setTargetClass] = useState(existingClasses[0]?.name ?? 'wa');
@@ -24,6 +31,11 @@ export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
   const [returnType, setReturnType] = useState('any');
   const [description, setDescription] = useState('Custom engine function / method');
   const [paramsStr, setParamsStr] = useState('1, "test", 3.14');
+  // Inline submit-time validation. A name that is not a Lua identifier would
+  // be dropped by `sanitizeVerb` at load time anyway -- surfacing it HERE
+  // (with the reason) instead of logging success for a verb that silently
+  // vanishes on restart is the whole point of this state.
+  const [formError, setFormError] = useState('');
 
   if (!isOpen) return null;
 
@@ -31,7 +43,27 @@ export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
     e.preventDefault();
 
     const className = isNewClass ? newClassName.trim() : targetClass;
-    if (!className) return;
+    const name = memberName.trim();
+    // Both halves are checked, not just the new class: registering
+    // `WormEntity:grap ple` on an EXISTING class would fail the same way at
+    // load time, so it must fail the same way here.
+    if (!className || !isValidClass(className)) {
+      setFormError(
+        isNewClass && className
+          ? `"${className}" is not a valid class name. Classes may contain letters, digits, underscores and dots (namespace paths) -- the NAME AFTER the last dot must still be a plain identifier.`
+          : 'Choose a target class first.'
+      );
+      return;
+    }
+    if (!name || !isValidIdent(name)) {
+      setFormError(
+        name
+          ? `"${name}" is not a valid Lua identifier. Use letters, digits and underscores; must not start with a digit.`
+          : 'Enter a method / variable name.'
+      );
+      return;
+    }
+    setFormError('');
 
     // Parse parameters e.g. "param1, param2" or "1, 2, 3"
     const parsedParams: ParameterDef[] = [];
@@ -41,25 +73,26 @@ export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
         const segs = part.split(/\s+/);
         if (segs.length >= 2) {
           const type = segs[0].toLowerCase() as any;
-          const name = segs[1];
-          parsedParams.push({ name, type });
-        } else if (segs.length === 1 && segs[0]) {
+          const pname = segs[1];
+          if (isValidIdent(pname)) parsedParams.push({ name: pname, type });
+        } else if (segs.length === 1 && segs[0] && isValidIdent(segs[0])) {
           parsedParams.push({ name: segs[0], type: 'any' });
         }
       }
     }
 
-    const member: MemberDef = {
-      name: memberName.trim() || 'customMethod',
+    const verb: CustomVerb = {
+      class: className,
+      name,
       kind: memberKind,
+      syntax: callSyntax,
       returnType,
       parameters: parsedParams,
       description: description.trim(),
-      example: `${className}${callSyntax}${memberName}(${paramsStr})`,
-      isCustom: true,
+      example: `${className}${callSyntax}${name}(${paramsStr})`,
     };
 
-    onAddClassOrMember(className, member);
+    onAddVerb(verb);
     onClose();
   };
 
@@ -82,6 +115,7 @@ export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
           <p className="text-[11.5px] text-[#8ea1b8] leading-relaxed">
             Expand the WormForge parser and autocompletion with custom classes and verbs.
             In Lua, use <code className="text-emerald-300 font-mono">.</code> for functions/properties (e.g. <code className="text-emerald-300 font-mono">wa.log()</code>) or <code className="text-amber-300 font-mono">:</code> for methods with self (e.g. <code className="text-amber-300 font-mono">a:gfx()</code>). The arrow <code className="text-rose-400 font-mono">-&gt;</code> is from PX engine C++ internals, not valid Lua.
+            {' '}For a custom namespaced function such as <code className="text-emerald-300 font-mono">wa.one.two()</code>, choose <code className="font-mono">+ New Class</code>, enter <code className="font-mono">wa.one</code> as the namespace and <code className="font-mono">two</code> as the member.
           </p>
 
           {/* Target Class */}
@@ -103,7 +137,7 @@ export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
               ) : (
                 <input
                   type="text"
-                  placeholder="New Class name (e.g. SentryTurret)"
+                  placeholder="e.g. wa.one (namespace prefix)"
                   value={newClassName}
                   onChange={(e) => setNewClassName(e.target.value)}
                   className="flex-1 bg-[#12151a] border border-[#2e3540] rounded px-2.5 py-1.5 text-xs text-[#dce7f3] font-mono"
@@ -143,7 +177,7 @@ export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
                 type="text"
                 value={memberName}
                 onChange={(e) => setMemberName(e.target.value)}
-                placeholder="e.g. my_verb"
+                placeholder={isNewClass && newClassName.trim().startsWith('wa.') ? 'e.g. two' : 'e.g. my_verb'}
                 className="w-full bg-[#12151a] border border-[#2e3540] rounded px-2.5 py-1.5 text-xs text-[#dce7f3] font-mono"
                 required
               />
@@ -204,6 +238,19 @@ export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
               {memberKind === 'method' ? `(${paramsStr})` : ''}
             </div>
           </div>
+
+          {/* Validation error: inline, specific, and it BLOCKS submit. A verb
+              that fails sanitizeVerb later would be dropped from the cfg file
+              silently -- better to refuse it here with the reason. */}
+          {formError && (
+            <div
+              role="alert"
+              className="p-2 rounded border flex items-start gap-1.5 text-[11px] bg-rose-500/10 border-rose-500/30 text-rose-400"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{formError}</span>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-2 pt-2">

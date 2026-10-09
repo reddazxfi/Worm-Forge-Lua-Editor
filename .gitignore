@@ -15,5 +15,7 @@ coverage/
 src-tauri/target/
 src-tauri/gen/
 
-# Generated whole-repo snapshot. Regenerate on demand with: npx repomix
+# Generated whole-repo snapshot, a checkpoint for handing work to a fresh agent.
+# Excludes the vendored engine source, build output, lockfiles and the root
+# parser.ts backup. Regenerate with: npx repomix .
 repomix-output.xml

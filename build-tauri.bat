@@ -21,7 +21,7 @@ if errorlevel 1 (echo [ERROR] Vite build failed. & pause & exit /b 1)
 
 echo [4/4] Building EXE with Tauri ^(first run downloads Rust crates, takes several minutes^)...
 call npx tauri build
-if errorlevel 1 (echo [ERROR] Tauri build failed. Need Visual Studio Build Tools with "Desktop development with C++". & pause & exit /b 1)
+if errorlevel 1 (echo [ERROR] Tauri build failed. Read the error above - common causes: ^(1^) tauri.conf.json frontendDist ^("npm run build" must succeed first^), ^(2^) missing permissions in src-tauri\capabilities\default.json, ^(3^) missing Visual Studio Build Tools with "Desktop development with C++" for the Rust link step. & pause & exit /b 1)
 
 echo.
 echo DONE: %CD%\src-tauri\target\release\wormforge-code-editor.exe

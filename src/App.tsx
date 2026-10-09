@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
+  RefreshCw,
   Play,
   CheckCircle,
   Keyboard,
@@ -20,7 +21,7 @@ import { UpperCornerTree } from './components/UpperCornerTree';
 import { DocPane } from './components/DocPane';
 import { CodeEditor, CodeEditorHandle } from './components/CodeEditor';
 import { ConsoleOutput } from './components/ConsoleOutput';
-import { KeycodeModal } from './components/KeycodeModal';
+import { KeyboardReference } from './components/KeyboardReference';
 import { EngineAdditionModal } from './components/EngineAdditionModal';
 import { ConfigModal } from './components/ConfigModal';
 import { UnsavedChangesModal } from './components/UnsavedChangesModal';
@@ -28,8 +29,7 @@ import { ModsListScreen, ModsListTile } from './components/ModsListScreen';
 import { CreateModModal } from './components/CreateModModal';
 
 import {
-  ClassDef,
-  MemberDef,
+  CustomVerb,
   SyntaxDiagnostic,
 } from './types/wormforge';
 import {
@@ -41,9 +41,20 @@ import {
 import { EXISTING_MODS } from './data/existingMods';
 import { INITIAL_TEMPLATE } from './data/templates';
 import { parseAndValidate } from './services/parser';
-import { compileWithEngine, CheckEngine } from './services/luaCompiler';
-import { openModFolder, saveModFile, saveFileAs, canOpenFolders, cleanFolderPath, loadFolderFromPath, isDesktop, baseName, listModEntries, createModFolder } from './services/modFolder';
+import {
+  loadCustomVerbs,
+  saveCustomVerbs,
+  mergeCustomClasses,
+  verbsForRust,
+  verbToMember,
+  serializeVerbsFile,
+} from './services/customVerbs';
+import { formatLua } from './services/formatLua';
+import { compileWithEngine, parseWithAst, mergeExtractedSymbols, CheckEngine } from './services/luaCompiler';
+import { mergeDiagnostics, countSeverities } from './services/diagnostics';
+import { openModFolder, saveModFile, saveFileAs, cleanFolderPath, loadFolderFromPath, isDesktop, baseName, listModEntries, createModFolder, pickStartupFile } from './services/modFolder';
 import { EditorConfig, loadConfig, saveConfig } from './services/config';
+import { resetPersistedSession } from './services/session';
 
 export default function App() {
   // Configuration State
@@ -103,13 +114,50 @@ export default function App() {
     return null;
   });
 
-  const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
+  // `savedFiles` is deliberately NOT persisted.
+//
+// It used to be written to localStorage in full, which meant storing a SECOND
+// complete copy of every buffer (`wormforge_saved_files` alongside
+// `wormforge_last_files`). Two copies of a 165 KB rules.lua plus the rest of a
+// pack exceed the ~5 MB localStorage quota, so `setItem` threw
+// QuotaExceededError, the bare `catch {}` swallowed it, and the value never
+// persisted. On the next launch `savedFiles` came back as `{}`, every file
+// compared `files[f] !== undefined`, and the unsaved-changes prompt fired on
+// close every single time -- with nothing actually unsaved. That made the window
+// impossible to close without Task Manager.
+//
+// It only ever needed to live for one session: "what did we write to disk during
+// THIS run". So it starts from the restored buffer contents below and is never
+// written. Opening a mod folder still resets both from disk via
+// applyOpenedFolder(), which is the authoritative source.
+const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
+  // Seed from the buffers being restored. Without this, a restored session has
+  // savedFiles = {} while `files` is populated, so every file compares
+  // `files[f] !== undefined` and the unsaved-changes prompt fires on close with
+  // nothing unsaved -- the exact symptom this whole comment block is about.
+  //
+  // Opening a mod folder still resets BOTH from disk via applyOpenedFolder(),
+  // which is authoritative. This seed only covers a session restored from
+  // localStorage, where disk state is genuinely unknown and nagging the user
+  // about it is worse than the (unlikely) case of unsaved work carried over.
+  try {
+    const saved = localStorage.getItem(STORAGE_FILES_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        return { ...parsed };
+      }
+    }
+  } catch {}
+  return {};
+});
+
+  // Reclaim the quota the old duplicate copy was holding.
+  useEffect(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_SAVED_FILES_KEY);
-      if (saved) return JSON.parse(saved);
+      localStorage.removeItem(STORAGE_SAVED_FILES_KEY);
     } catch {}
-    return {};
-  });
+  }, []);
 
   // Jump to Diagnostic Target Line/Column
   const [jumpTarget, setJumpTarget] = useState<{ line: number; column: number; key: number } | null>(null);
@@ -117,15 +165,33 @@ export default function App() {
   // Imperative handle on the editor, used to insert snippets at the caret
   const editorRef = useRef<CodeEditorHandle>(null);
 
+  // False until the startup auto-load has resolved and disk is authoritative.
+  //
+  // WHY THIS EXISTS
+  // `files` seeds from localStorage, so the first render paints the PREVIOUS session's
+  // buffers -- including edits that were never written to disk. The folder scan is async,
+  // so that stale content was visible for a beat before being replaced, and worse, the
+  // startup effect ran `runSyntaxCheck` against it, painting red diagnostics for text the
+  // user had already discarded.
+  //
+  // Nothing is shown, and nothing is checked, until this is true. The editor is covered by
+  // a neutral panel rather than conditionally re-rendered, so no existing layout is
+  // restructured -- the same approach the mods-list screen already uses.
+  const [sessionReady, setSessionReady] = useState(false);
+  // Mirrors `sessionReady` for the compiler/syntax checker, which is a
+  // useCallback and so cannot read the state without being re-created on every
+  // flip. False until the startup auto-load resolves; until then runSyntaxCheck
+  // returns immediately (see its guard).
+  const bootedRef = useRef(false);
   // Set when a close was blocked because of unsaved changes
   const [pendingClose, setPendingClose] = useState(false);
 
   // ----- Mods-list launch screen state -----
   // 'launchMode === modsList' + a configured root shows the grid instead of
-  // the editor on startup. Desktop only; see listModEntries().
-  const modsRootConfigured = !!cleanFolderPath(config.modsRootPath) && isDesktop();
-  const modsListEnabled =
-    config.launchMode === 'modsList' && !!cleanFolderPath(config.modsRootPath) && isDesktop();
+  // the editor on startup. listModEntries() is itself desktop-only and returns
+  // null elsewhere, so the gating moved there rather than being duplicated here.
+  const modsRootConfigured = !!cleanFolderPath(config.modsRootPath);
+  const modsListEnabled = config.launchMode === 'modsList' && !!cleanFolderPath(config.modsRootPath);
   const [showModsList, setShowModsList] = useState(false);
   const [mods, setMods] = useState<ModsListTile[]>([]);
   const [modsLoading, setModsLoading] = useState(false);
@@ -137,11 +203,24 @@ export default function App() {
   // Active Code
   const activeCode = files[activeFile] || '';
 
-  // Persist files and active script across browser sessions
+  // Persist files and active script across browser sessions.
+  //
+  // DEBOUNCED. This used to fire on every `files` change, which is every
+  // keystroke: JSON.stringify of every open buffer (169 KB for highlander) plus a
+  // synchronous localStorage write, on the critical path of typing. On a big file
+  // that is the single largest per-keystroke cost in the app, and localStorage is
+  // synchronous by spec -- the write blocks the main thread.
+  //
+  // 400ms is short enough that a crash loses at most a fraction of a second, and
+  // long enough that typing never triggers more than one write.
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_FILES_KEY, JSON.stringify(files));
-    } catch {}
+    const id = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_FILES_KEY, JSON.stringify(files));
+      } catch {}
+    }, 400);
+    // Clear on unmount so a pending write cannot fire against a dead component.
+    return () => clearTimeout(id);
   }, [files]);
 
   useEffect(() => {
@@ -166,14 +245,86 @@ export default function App() {
     } catch {}
   }, [modFolder]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_SAVED_FILES_KEY, JSON.stringify(savedFiles));
-    } catch {}
-  }, [savedFiles]);
+  // NOTE: `savedFiles` has no persistence effect on purpose -- see the useState
+// declaration. Writing it was what exhausted the localStorage quota.
 
-  // Engine Custom Classes state
-  const [customClasses, setCustomClasses] = useState<ClassDef[]>([]);
+  // Engine Custom Classes state.
+  //
+  // The SOURCE OF TRUTH is the verb list, not a ClassDef[]: a verb is what the
+  // modal emits, what custom_verbs.cfg stores, what both checkers read. The
+  // class-view merges are derived from it via mergeCustomClasses -- they used
+  // to be a second copy that dropped every verb landing on an existing class
+  // (the dropped-verb bug), so nothing writes ClassDef[] anymore.
+  const [customVerbs, setCustomVerbs] = useState<CustomVerb[]>([]);
+  // Guards the persist effect: hydration is async (disk read over IPC), and a
+  // save before it completes would write [] over the real cfg file on launch.
+  const verbsHydratedRef = useRef(false);
+  // What we last wrote (or last read). The debounced save compares against it
+  // so hydration itself never triggers a redundant disk write.
+  const verbsPersistedRef = useRef<string | null>(null);
+
+  // Hydrate the verb list once: custom_verbs.cfg on disk first, then the
+  // localStorage mirror. The refs are set BEFORE the state update so the
+  // persist effect below sees "hydrated, unchanged" on the very first run
+  // instead of writing [] over the file it is about to read.
+  useEffect(() => {
+    let cancelled = false;
+    loadCustomVerbs()
+      .then((verbs) => {
+        if (cancelled) return;
+        verbsPersistedRef.current = serializeVerbsFile(verbs);
+        verbsHydratedRef.current = true;
+        // An empty load leaves state untouched: [] already IS the state, and
+        // setting a fresh array would fire the re-check effect below for a
+        // no-op change.
+        if (verbs.length === 0) return;
+        setCustomVerbs(verbs);
+        setLogs((prev) => [
+          ...prev,
+          {
+            time: new Date().toLocaleTimeString(),
+            text: `[Custom Verbs]: loaded ${verbs.length} registered verb(s) from custom_verbs.cfg.`,
+            type: 'info',
+          },
+        ]);
+      })
+      // loadCustomVerbs degrades to [] on any failure; this is belt-and-braces
+      // so a future throw cannot leave the app with hydration permanently off.
+      .catch(() => {
+        if (!cancelled) verbsHydratedRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Debounced persist (400 ms): every verb edit lands in custom_verbs.cfg on
+  // desktop (+ always the localStorage mirror). Skipped before hydration, and
+  // skipped when the serialized list matches what is already on disk -- so
+  // opening the app does not rewrite the user's file.
+  useEffect(() => {
+    if (!verbsHydratedRef.current) return;
+    const body = serializeVerbsFile(customVerbs);
+    if (body === verbsPersistedRef.current) return;
+    const timer = setTimeout(async () => {
+      const { disk } = await saveCustomVerbs(customVerbs);
+      verbsPersistedRef.current = body;
+      // On desktop a cfg path exists, so disk:false is a real write failure
+      // (permissions, locked file) -- say so rather than let the user trust a
+      // save that did not happen. In the browser there is no disk by design.
+      if (!disk && isDesktop()) {
+        setLogs((prev) => [
+          ...prev,
+          {
+            time: new Date().toLocaleTimeString(),
+            text: `[Custom Verbs]: could not write custom_verbs.cfg to AppData (localStorage mirror was updated). Check file permissions.`,
+            type: 'warn',
+          },
+        ]);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [customVerbs]);
 
   // Selected symbol for DocPane
   const [selectedSymbolItem, setSelectedSymbolItem] = useState<any>(() => BUILTIN_CLASSES[0]);
@@ -204,7 +355,7 @@ export default function App() {
   ]);
 
   // Modals
-  const [isKeycodeModalOpen, setIsKeycodeModalOpen] = useState(false);
+  const [isKeyboardRefOpen, setIsKeyboardRefOpen] = useState(false);
   const [isEngineModalOpen, setIsEngineModalOpen] = useState(false);
 
   // Layout View State (Mobile responsive tabs)
@@ -234,6 +385,17 @@ export default function App() {
   // Trigger AST Parsing and Validation
   const runSyntaxCheck = useCallback(
     async (codeToTest: string, fileName?: string) => {
+      // Nothing is checked until the session has resolved.
+      //
+      // `files` seeds from localStorage, so a check during boot describes text
+      // that is about to be replaced. Worse, on the desktop this is what fires
+      // the Lua 5.4 compiler and the full_moon AST parser over IPC, and doing
+      // that while the window is still initialising is the reported "crash if
+      // you interact too early". Waiting for `sessionReady` means the checker
+      // runs exactly once, on the content actually on screen -- the sessionReady
+      // effect below performs that first check.
+      if (!bootedRef.current) return;
+
       const file = fileName || activeFile;
       const lower = file.toLowerCase();
 
@@ -268,21 +430,51 @@ export default function App() {
         return;
       }
 
-      const result = parseAndValidate(codeToTest);
+      const result = parseAndValidate(codeToTest, customVerbs);
 
-      // Merge user custom classes
-      const mergedClasses = [...result.symbols.classes];
-      for (const cc of customClasses) {
-        if (!mergedClasses.some((c) => c.name === cc.name)) {
-          mergedClasses.push(cc);
-        }
+      // B1: when the Rust parser produced a symbol tree, USE IT. This is the whole
+      // point of the phase -- symbols now come from a real parse instead of the
+      // hand-written tokenizer. parser.ts still runs and still produces the
+      // diagnostics; only the symbol tree is taken from Rust.
+      //
+      // `parseAndValidate` stays the fallback for three cases, in this order:
+      //   1. the AST was unavailable (an EXE predating the command)
+      //   2. the parse FAILED -- there is no tree to read, so the tokenizer's
+      //      partial extraction is better than nothing
+      //   3. the AST succeeded
+      const ast = await parseWithAst(codeToTest, verbsForRust(customVerbs));
+
+      let symbolsOut = result.symbols;
+      if (ast.available && ast.report?.ok) {
+        symbolsOut = mergeExtractedSymbols(
+          ast.report,
+          { functions: BUILTIN_FUNCTIONS, variables: BUILTIN_VARIABLES, classes: BUILTIN_CLASSES },
+          BUILTIN_ENUMERATIONS
+        );
       }
 
-      // Only when we actually fell back. `isDesktop()` alone is not enough: a
-      // successful compile returns { ok: true, engine: 'game-compiler' } with no
-      // `reason`, which used to print a bogus "unavailable (unknown reason)".
-      const diagnosticsOut = [...result.diagnostics];
-      if (isDesktop() && outcome.engine === 'builtin') {
+      // Merge user custom verbs into the class view. mergeCustomClasses lands a
+      // verb on an EXISTING class (WormEntity:grapple joins WormEntity) and only
+      // invents a new class when the name is genuinely unknown -- the old
+      // name-level push here dropped every verb on an existing class, which is
+      // half of the dropped-verb bug.
+      const mergedClasses = mergeCustomClasses(symbolsOut.classes, customVerbs);
+
+      // B2: Rust diagnostics merged on top of the TypeScript ones, rather than
+      // replacing them, because the port is NOT finished: `parser.ts` still owns
+      // the scope analysis and the spec-key check. Replacing outright would
+      // silently delete those warnings from the console. Once the sweep reports no
+      // rule unique to TS, this can drop to Rust-only -- and only then.
+      //
+      // Deduplicated on (line, COLUMN, rule) because a finding both implementations
+      // cover would otherwise appear twice, and a list you read line by line is not a
+      // tally. The column is what keeps two genuinely different findings on the SAME
+      // line apart -- `worm:hurtt(1) worm:hurtt(2)` is two typos, not one. See
+      // `mergeDiagnostics` for the measurements behind the key, including why the old
+      // (line, rule) key was dropping real findings as well as letting duplicates
+      // through.
+      const diagnosticsOut = mergeDiagnostics(result.diagnostics, ast.report?.ok ? ast.report.diagnostics : []);
+      if (outcome.engine === 'builtin') {
         diagnosticsOut.unshift({
           line: 1,
           column: 1,
@@ -295,22 +487,38 @@ export default function App() {
       setCheckEngine(outcome.engine);
       setDiagnostics(diagnosticsOut);
       setSymbols({
-        ...result.symbols,
+        ...symbolsOut,
         classes: mergedClasses,
+        diagnostics: diagnosticsOut,
       });
       setHasRunCheck(true);
 
-      const errCount = diagnosticsOut.filter((d) => d.severity === 'error').length;
-      const warnCount = diagnosticsOut.filter((d) => d.severity === 'warning').length;
+      let astNote = '';
+      if (!ast.available) {
+        astNote = ` AST unavailable (${ast.reason ?? 'no reason given'}).`;
+      } else if (ast.report && !ast.report.ok) {
+        // full_moon rejected what Lua 5.4 accepted. That disagreement is the
+        // whole point of the exercise, so it is stated rather than hidden.
+        astNote = ` AST parser reported ${ast.report.diagnostics.length} issue(s) that Lua 5.4 accepted; the built-in results below are unaffected.`;
+      } else if (ast.report) {
+        astNote = ` AST: ${ast.report.locals.length} local binding(s), ${ast.report.functions.length} function(s) parsed. Symbols taken from the AST parser.`;
+      }
+
+      // Counted through the ONE shared helper rather than an inline filter. The console
+      // header, this verdict banner and the three filter pills must never be able to
+      // disagree about how many findings there are -- see `countSeverities`.
+      const counts = countSeverities(diagnosticsOut);
+      const errCount = counts.error;
+      const warnCount = counts.warning;
       const via =
-        outcome.engine === 'game-compiler' ? 'real game compiler (Lua 5.4)' : 'built-in parser (browser mode)';
+        outcome.engine === 'game-compiler' ? 'real game compiler (Lua 5.4)' : 'built-in parser (compiler unreachable)';
 
       if (errCount === 0 && warnCount === 0) {
         setLogs((prev) => [
           ...prev,
           {
             time: now,
-            text: `[Syntax Check]: OK - 0 syntax errors or desync violations, via the ${via}.`,
+            text: `[Syntax Check]: OK - 0 syntax errors or desync violations, via the ${via}.${astNote}`,
             type: 'success',
           },
         ]);
@@ -319,14 +527,30 @@ export default function App() {
           ...prev,
           {
             time: now,
-            text: `[Syntax Check]: ${errCount} error(s), ${warnCount} warning(s) detected via the ${via}. Check diagnostic output.`,
+            text: `[Syntax Check]: ${errCount} error(s), ${warnCount} warning(s) detected via the ${via}. Check diagnostic output.${astNote}`,
             type: errCount > 0 ? 'error' : 'warn',
           },
         ]);
       }
     },
-    [customClasses, activeFile]
+    [customVerbs, activeFile]
   );
+
+  // Re-check whenever the verb OVERLAY changes and the app has booted.
+  // Two cases need this: (1) hydration resolving AFTER the sessionReady boot
+  // check -- diagnostics on screen were computed without the cfg's verbs and
+  // would keep flagging `worm:grapple()` until the next manual check; (2) the
+  // user registering or importing a verb, who expects the warning it silences
+  // to disappear without hunting for the Syntax Check button. The boot check
+  // itself is skipped here (bootedRef false until sessionReady) so there is
+  // never a double IPC check on startup.
+  useEffect(() => {
+    if (!bootedRef.current) return;
+    runSyntaxCheck(files[activeFile] ?? '', activeFile);
+    // Deliberately only on customVerbs: runSyntaxCheck identity also changes
+    // with activeFile, and file switches already trigger their own check.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customVerbs]);
 
   // Load Mod or Template
   const handleLoadTemplate = useCallback(
@@ -369,8 +593,16 @@ export default function App() {
   );
 
   // Auto-Load on Startup Check
+  //
+  // `sessionReady` is set at EVERY exit, including after the async folder scan, because
+  // it gates whether restored buffers are shown or checked. Miss one path and the editor
+  // stays behind the boot panel forever, so the async branch uses `.finally()` rather
+  // than repeating the call at the end of `.then()`.
   useEffect(() => {
-    runSyntaxCheck(activeCode, activeFile);
+    let cancelled = false;
+    const finish = () => {
+      if (!cancelled) setSessionReady(true);
+    };
 
     // 0. Mods-list launch mode takes precedence: show the grid and do NOT
     //    auto-open anything behind it. Scoping the existing auto-load blocks
@@ -379,7 +611,10 @@ export default function App() {
     if (modsListEnabled) {
       setShowModsList(true);
       refreshMods();
-      return;
+      finish();
+      return () => {
+        cancelled = true;
+      };
     }
 
     // 1. If an auto-load mod is specified in config, load it on startup
@@ -398,11 +633,28 @@ export default function App() {
       }
     }
 
-    // 2. If an auto-load disk directory is specified, automatically scan and open its files
-    if (config.autoLoadFolder) {
-      const targetDir = cleanFolderPath(config.autoLoadFolder);
-      if (targetDir) {
-        loadFolderFromPath(targetDir)
+    // 2. Open one mod from the configured mods folder, if the user named one.
+    //
+    // §35: this used to read a SECOND absolute path (config.autoLoadFolder). The
+    // startup mod is now a subfolder NAME resolved against config.modsRootPath, so
+    // both features are driven by the single folder the user configured. The old
+    // field is not read here -- loadConfig() migrated it already.
+    if (config.startupModFolder) {
+      const modsRoot = cleanFolderPath(config.modsRootPath);
+      if (!modsRoot) {
+        setLogs((prev) => [
+          ...prev,
+          {
+            time: new Date().toLocaleTimeString(),
+            text: `[Startup]: No Mods Folder configured, so "${config.startupModFolder}" was not opened. Set one in Config.`,
+            type: 'warn',
+          },
+        ]);
+      } else {
+        const sep = modsRoot.includes('\\') ? '\\' : '/';
+        const targetDir = cleanFolderPath(modsRoot + sep + config.startupModFolder);
+        if (targetDir) {
+          loadFolderFromPath(targetDir)
           .then((res) => {
             if (!res) return;
             const names = Object.keys(res.files).sort();
@@ -417,7 +669,10 @@ export default function App() {
               ]);
               return;
             }
-            const first = names.find((n) => n.toLowerCase().endsWith('.lua')) ?? names[0];
+            // The manifest decides, not the alphabet -- see pickStartupFile.
+            // Without this a scratch file sorting first outranks `rules.lua`.
+            const first = pickStartupFile(res.files);
+            if (!first) return;
             // Reopen the file that was active last session, if it still exists
             // in the folder. Falling straight to `first` would silently drop it.
             let remembered: string | null = null;
@@ -452,10 +707,34 @@ export default function App() {
                 type: 'warn',
               },
             ]);
-          });
+          }).finally(finish);
+          return;
+        }
       }
     }
+
+    finish();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  // The startup syntax check, gated on `sessionReady`.
+  //
+  // This used to be the FIRST line of the auto-load effect above, which meant it ran
+  // against the restored localStorage buffer -- text from the previous session that was
+  // about to be replaced a moment later by the folder scan. That is where the red
+  // diagnostics on startup came from: findings about a file the user had already
+  // discarded. Checking only after the load resolves means the check always describes
+  // what is actually on screen.
+  useEffect(() => {
+    if (!sessionReady) return;
+    // Only now may the compiler/AST IPC run: the session has resolved, so the
+    // buffers on screen are the real ones. This also opens the gate for every
+    // later user-initiated check.
+    bootedRef.current = true;
+    runSyntaxCheck(activeCode, activeFile);
+  }, [sessionReady]);
 
   // Update Code Content for Active File
   const handleCodeChange = (newCode: string) => {
@@ -487,38 +766,24 @@ export default function App() {
     ]);
   };
 
-  // Format Code Helper
+  // Format Code. The re-indent itself lives in services/formatLua.ts; this is
+  // only the wiring. It used to be a regex closure inline here, which silently
+  // corrupted files -- see the header of formatLua.ts and §32.
   const handleFormatCode = () => {
-    const lines = activeCode.split('\n');
-    let indent = 0;
-    const formatted = lines
-      .map((line) => {
-        const trimmed = line.trim();
-        if (!trimmed) return '';
-        if (trimmed.match(/^(end|else|elseif|until|\})/)) {
-          indent = Math.max(0, indent - 1);
-        }
-        const indented = '  '.repeat(indent) + trimmed;
-        if (
-          trimmed.match(/^(function|if|for|while|repeat|\bdo\b|\{)/) &&
-          !trimmed.match(/\bend\b/)
-        ) {
-          indent++;
-        }
-        return indented;
-      })
-      .join('\n');
+    const { code: formatted, suspect } = formatLua(activeCode);
 
     handleCodeChange(formatted);
     runSyntaxCheck(formatted);
-    setLogs((prev) => [
-      ...prev,
-      {
-        time: new Date().toLocaleTimeString(),
-        text: `Cleaned and formatted ${activeFile}.`,
-        type: 'info',
-      },
-    ]);
+
+    // An unbalanced chunk re-indents unpredictably, and the checker will say so
+    // a moment later. Say it up front rather than letting the user wonder why
+    // their indentation changed shape.
+    addLog(
+      suspect
+        ? `Formatted ${activeFile}, but the block structure did not balance (missing or extra end). Check the indentation.`
+        : `Cleaned and formatted ${activeFile}.`,
+      suspect ? 'warn' : 'info'
+    );
   };
 
   // ----- Mod folder: open / save -----
@@ -542,8 +807,8 @@ export default function App() {
         addLog(`Folder "${res.name}" has no .lua/.toml/.md/.txt/.json files.`, 'warn');
         return;
       }
-      const first = names.find((n) => n.toLowerCase().endsWith('.lua')) ?? names[0];
-      if (!first) return;
+      // Which file opens is decided inside applyOpenedFolder, from the
+      // manifest's `entry`, so there is nothing left to compute here.
       applyOpenedFolder(res);
       addLog(`Opened folder "${res.name}" (${names.length} file${names.length === 1 ? '' : 's'}).`, 'success');
     } catch (e: any) {
@@ -559,8 +824,14 @@ export default function App() {
    */
   const applyOpenedFolder = useCallback(
     (res: { name: string; root: string; files: Record<string, string> }) => {
-      const names = Object.keys(res.files).sort();
-      const first = names.find((n) => n.toLowerCase().endsWith('.lua')) ?? names[0];
+      // THE MANIFEST DECIDES. `mod.toml`'s `entry` names the file the engine
+      // actually loads, so that is what opens. The old behaviour -- "the first
+      // `.lua` in sorted order" -- opened whatever happened to sort first, which
+      // in a real pack is a scratch file (`highlander1asdasd.lua`) rather than
+      // `rules.lua`. pickStartupFile falls back inside itself when there is no
+      // manifest or no usable `entry`.
+      const first = pickStartupFile(res.files);
+      if (!first) return;
       setModFolder({ name: res.name, root: res.root });
       setSavedFiles(res.files);
       setFiles(res.files);
@@ -712,10 +983,6 @@ export default function App() {
 
   const closeAppWindow = async () => {
     try {
-      if (!isDesktop()) {
-        window.close();
-        return;
-      }
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       await getCurrentWindow().destroy();
     } catch {}
@@ -777,6 +1044,19 @@ export default function App() {
     await closeAppWindow();
   };
 
+  // Third close option: throw the session away entirely.
+  //
+  // "Close without saving" leaves the persisted buffers in localStorage, so the NEXT
+  // launch restores the very edits the user just declined to save -- and, before the
+  // boot gate, painted them on screen first. This clears them so the next launch starts
+  // from disk (or the template) with nothing carried over.
+  const handleResetAndClose = async () => {
+    resetPersistedSession();
+    forceCloseRef.current = true;
+    setPendingClose(false);
+    await closeAppWindow();
+  };
+
   // Keyboard shortcut: Ctrl+S saves current file to disk
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -828,40 +1108,36 @@ export default function App() {
     e.target.value = '';
   };
 
-  // Register Custom Class or Member from Modal
-  const handleAddClassOrMember = (clsName: string, member: MemberDef) => {
-    setCustomClasses((prev) => {
-      const existing = prev.find((c) => c.name === clsName);
-      if (existing) {
-        return prev.map((c) =>
-          c.name === clsName
-            ? { ...c, members: [...c.members.filter((m) => m.name !== member.name), member] }
-            : c
-        );
+  // Register a Custom Verb from the Modal.
+  //
+  // The list is the source of truth: the ClassDef view (API tree, modal
+  // dropdown) is derived from it through mergeCustomClasses, and the persist
+  // effect above writes it to custom_verbs.cfg. Re-registering the same
+  // class:name pair REPLACES the old row -- first-wins elsewhere is about
+  // duplicate ROWS in a file, not about refusing an edit the user just made.
+  const handleAddVerb = (verb: CustomVerb) => {
+    setCustomVerbs((prev) => {
+      const key = `${verb.class.toLowerCase()}:${verb.name.toLowerCase()}`;
+      const idx = prev.findIndex((v) => `${v.class.toLowerCase()}:${v.name.toLowerCase()}` === key);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = verb;
+        return next;
       }
-      return [
-        ...prev,
-        {
-          name: clsName,
-          description: `User-registered engine class (${clsName}${member.kind === 'method' ? ':' : '.'}${member.name})`,
-          isCustom: true,
-          syntaxExample: `${clsName}${member.kind === 'method' ? ':' : '.'}${member.name}(...)`,
-          members: [member],
-        },
-      ];
+      return [...prev, verb];
     });
 
     setSelectedSymbolItem({
-      name: clsName,
+      name: verb.class,
       isCustom: true,
-      activeMember: member,
+      activeMember: verbToMember(verb),
     });
 
     setLogs((prev) => [
       ...prev,
       {
         time: new Date().toLocaleTimeString(),
-        text: `Registered new engine verb: ${clsName}${member.kind === 'method' ? ':' : '.'}${member.name}()`,
+        text: `Registered new engine verb: ${verb.class}${verb.syntax}${verb.name}(). Applying to autocomplete and both checkers; persisting to custom_verbs.cfg.`,
         type: 'success',
       },
     ]);
@@ -875,19 +1151,21 @@ export default function App() {
     }
   };
 
-  // All combined classes (built-in + custom)
-  const combinedClasses = useMemo(() => {
-    const list = [...symbols.classes];
-    for (const cc of customClasses) {
-      if (!list.some((c) => c.name === cc.name)) {
-        list.push(cc);
-      }
-    }
-    return list;
-  }, [symbols.classes, customClasses]);
+  // All combined classes (built-in + custom).
+  // mergeCustomClasses again -- the SAME call runSyntaxCheck makes over the AST
+  // symbols, so the API tree and the post-check symbols state can never drift
+  // apart on where a verb landed.
+  const combinedClasses = useMemo(
+    () => mergeCustomClasses(symbols.classes, customVerbs),
+    [symbols.classes, customVerbs]
+  );
 
-  const errorCount = diagnostics.filter((d) => d.severity === 'error').length;
-  const warnCount = diagnostics.filter((d) => d.severity === 'warning').length;
+  // The SAME helper the verdict banner used, over the SAME list the console renders.
+  // These were separate inline filters over two different sources, which agreed only
+  // by accident of how the state is written.
+  const counts = countSeverities(diagnostics);
+  const errorCount = counts.error;
+  const warnCount = counts.warning;
   const isLight = config.theme === 'light';
 
   // Mirror the theme onto <html> so index.css can theme the ::-webkit-scrollbar
@@ -1015,6 +1293,7 @@ export default function App() {
         }}
         onLoadTemplate={handleLoadTemplate}
         onOpenConfig={() => setIsConfigModalOpen(true)}
+        existingMods={EXISTING_MODS}
         onOpenModsList={modsRootConfigured ? handleShowModsList : undefined}
         isLight={isLight}
       />
@@ -1047,18 +1326,19 @@ export default function App() {
             )}
           </button>
 
-          {/* Keycode Reference Tester Button */}
+          {/* Keyboard Reference. Renamed from "Keycode Tester" in §36: there are no
+              keycodes. This lists the nine fields wa.world.keys() actually returns. */}
           <button
-            onClick={() => setIsKeycodeModalOpen(true)}
+            onClick={() => setIsKeyboardRefOpen(true)}
             className={`flex items-center gap-1 px-2.5 py-1.5 rounded border font-medium transition-colors ${
               isLight
                 ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300'
                 : 'bg-[#202631] hover:bg-[#2b3341] text-[#cfdbe8] border-[#2e3745]'
             }`}
-            title="Inspect keycodes, hex values, and WormForge lockstep bitmasks"
+            title="Which keys WormForge reads, and what each one does"
           >
             <Keyboard className="w-3.5 h-3.5 text-sky-500" />
-            <span className="hidden sm:inline">Keycode Tester</span>
+            <span className="hidden sm:inline">Keys</span>
           </button>
 
           {/* Add Engine Verb Button */}
@@ -1093,20 +1373,18 @@ export default function App() {
         {/* Right Toolbar Actions */}
         <div className="flex items-center gap-1.5">
           {/* Open mod folder / Save */}
-          {canOpenFolders() && (
-            <button
-              onClick={handleOpenFolder}
-              className={`flex items-center gap-1 px-2 py-1.5 rounded border transition-colors ${
-                isLight
-                  ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300'
-                  : 'bg-[#202631] hover:bg-[#2b3341] text-[#93a6bd] hover:text-[#dce7f3] border-[#2b3340]'
-              }`}
-              title="Open a mod folder from disk"
-            >
-              <FolderOpen className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Open Folder</span>
-            </button>
-          )}
+          <button
+            onClick={handleOpenFolder}
+            className={`flex items-center gap-1 px-2 py-1.5 rounded border transition-colors ${
+              isLight
+                ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300'
+                : 'bg-[#202631] hover:bg-[#2b3341] text-[#93a6bd] hover:text-[#dce7f3] border-[#2b3340]'
+            }`}
+            title="Open a mod folder from disk"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Open Folder</span>
+          </button>
           {modFolder && (
             <button
               onClick={() => saveFiles(dirtyFiles.length ? dirtyFiles : [activeFile])}
@@ -1320,7 +1598,11 @@ export default function App() {
               fontSize={config.fontSize}
               lineHeight={config.lineHeight}
               theme={config.theme}
+              syntaxPreset={config.syntaxPreset}
+              syntaxOverridesDark={config.syntaxOverridesDark}
+              syntaxOverridesLight={config.syntaxOverridesLight}
               jumpTarget={jumpTarget}
+              customVerbs={customVerbs}
             />
           </div>
 
@@ -1372,10 +1654,10 @@ export default function App() {
         </div>
       </div>
 
-      {/* Keycode Reference & Tester Modal */}
-      <KeycodeModal
-        isOpen={isKeycodeModalOpen}
-        onClose={() => setIsKeycodeModalOpen(false)}
+      {/* Keyboard Reference Modal */}
+      <KeyboardReference
+        isOpen={isKeyboardRefOpen}
+        onClose={() => setIsKeyboardRefOpen(false)}
         onInsertCode={handleInsertCode}
       />
 
@@ -1383,7 +1665,7 @@ export default function App() {
       <EngineAdditionModal
         isOpen={isEngineModalOpen}
         onClose={() => setIsEngineModalOpen(false)}
-        onAddClassOrMember={handleAddClassOrMember}
+        onAddVerb={handleAddVerb}
         existingClasses={combinedClasses}
       />
 
@@ -1392,9 +1674,42 @@ export default function App() {
         isOpen={isConfigModalOpen}
         onClose={() => setIsConfigModalOpen(false)}
         config={config}
+        customVerbs={customVerbs}
+        onImportVerbs={(imported) => {
+          // Merge, keeping EXISTING rows on collision (first-wins, same rule
+          // loadCustomVerbs applies between disk and mirror): an import is a
+          // contribution, never a silent overwrite of verbs the user just
+          // registered in this session.
+          setCustomVerbs((prev) => {
+            const seen = new Set(prev.map((v) => `${v.class.toLowerCase()}:${v.name.toLowerCase()}`));
+            const merged = [...prev];
+            for (const v of imported) {
+              const key = `${v.class.toLowerCase()}:${v.name.toLowerCase()}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              merged.push(v);
+            }
+            return merged;
+          });
+        }}
         onUpdateConfig={handleUpdateConfig}
         existingMods={EXISTING_MODS}
       />
+      {/* Boot gate. Covers the studio while the startup folder scan resolves, so the
+          previous session's buffers are never painted -- not even for a frame. This is
+          an overlay rather than a conditional around the studio, matching the mods-list
+          screen below, so no existing layout is restructured. */}
+      {!sessionReady && (
+        <div
+          className={`absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 text-xs ${
+            isLight ? 'bg-white text-slate-600' : 'bg-[#111418] text-[#93a6bd]'
+          }`}
+        >
+          <RefreshCw className={`w-4 h-4 ${isLight ? 'text-slate-400' : 'text-[#5c6b80]'}`} />
+          <span>Restoring session...</span>
+        </div>
+      )}
+
       {/* Unsaved changes prompt shown when a close is attempted with dirty files */}
       <UnsavedChangesModal
         isOpen={pendingClose}
@@ -1402,6 +1717,7 @@ export default function App() {
         isLight={isLight}
         onSaveAndClose={handleSaveAndClose}
         onDiscardAndClose={handleDiscardAndClose}
+        onResetAndClose={handleResetAndClose}
         onCancel={() => setPendingClose(false)}
       />
 

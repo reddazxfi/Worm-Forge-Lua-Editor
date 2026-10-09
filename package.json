@@ -11,7 +11,10 @@
     "tauri": "tauri",
     "preview": "vite preview",
     "clean": "node -e \"for (const d of ['dist','dist_exe']) require('fs').rmSync(d,{recursive:true,force:true})\"",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "gen:corpus": "tsx scripts/__gen_corpus_run.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.11",
@@ -34,7 +37,8 @@
     "@types/react-dom": "^19.0.1",
     "tailwindcss": "^4.1.11",
     "tsx": "^4.20.3",
-    "typescript": "~5.8.3"
+    "typescript": "~5.8.3",
+    "vitest": "^5.0.3"
   },
   "allowScripts": {
     "esbuild@0.28.2": true,

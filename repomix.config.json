@@ -1,0 +1,52 @@
+{
+  "input": {
+    "maxFileSize": 2000000
+  },
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "filePathStyle": "cwd-relative",
+    "removeComments": false,
+    "compress": false,
+    "truncateBase64": true,
+    "git": {
+      "sortByChanges": false,
+      "includeDiffs": false,
+      "includeLogs": false
+    }
+  },
+  "include": [
+    "src/**",
+    "src-tauri/src/**",
+    "src-tauri/*.json",
+    "src-tauri/*.toml",
+    "scripts/**",
+    "docs/requests/**",
+    "*.ts",
+    "*.json",
+    "*.md",
+    "*.html",
+    ".clinerules/**",
+    ".clineignore"
+  ],
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "WormForge-main-source/**",
+      "gen/**",
+      "node_modules/**",
+      "dist/**",
+      "src-tauri/target/**",
+      "repomix-output.xml",
+      "parser.ts",
+      "bun.lock",
+      "package-lock.json",
+      "src-tauri/Cargo.lock",
+      "docs/screenshots/**"
+    ]
+  },
+  "security": {
+    "enableSecurityCheck": true
+  }
+}

@@ -1,5 +1,10 @@
-// Open / save a mod folder. Desktop app: Tauri dialog + fs plugins.
-// Browser: File System Access API (Chromium/Edge only) or local server FS API.
+// Open / save a mod folder. DESKTOP ONLY, via the Tauri dialog + fs plugins.
+//
+// The browser paths that used to live here (File System Access API, the HTML5
+// webkitdirectory input, an anchor-download write-back, and the Express
+// /api/fs/* endpoints) are all gone. They could read a folder but never wrote
+// back to the one the user picked, so "saved" work quietly landed in Downloads.
+// An honest refusal is better than a save that goes somewhere else.
 
 const TEXT_EXT = ['.lua', '.toml', '.md', '.txt', '.json', '.ini'];
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'target', 'dist', '.vscode']);
@@ -14,8 +19,6 @@ export interface OpenedFolder {
 export const isDesktop = (): boolean =>
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-export const canOpenFolders = (): boolean => true;
-
 export const isTextFile = (name: string) => TEXT_EXT.some((e) => name.toLowerCase().endsWith(e));
 export const baseName = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
 
@@ -29,94 +32,24 @@ export function cleanFolderPath(p: string): string {
   return p.trim().replace(/^["']|["']$/g, '').trim().replace(/[\\/]+$/, '');
 }
 
-let browserRoot: any = null; // FileSystemDirectoryHandle in browser mode
-
 export async function pickFolder(): Promise<string | null> {
-  if (isDesktop()) {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const picked = await open({ directory: true, multiple: false, recursive: true });
-    if (!picked || Array.isArray(picked)) return null;
-    return picked as string;
-  }
-  return null;
+  if (!isDesktop()) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const picked = await open({ directory: true, multiple: false, recursive: true });
+  if (!picked || Array.isArray(picked)) return null;
+  return picked as string;
 }
 
 export async function openModFolder(): Promise<OpenedFolder | null> {
-  return isDesktop() ? openDesktop() : openBrowser();
-}
-
-/**
- * Fallback folder picker using standard HTML5 directory input.
- * Works across all browsers (Chrome, Firefox, Safari, Edge, WebViews, and inside iframes).
- */
-function openViaDirectoryInput(): Promise<OpenedFolder | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    (input as any).webkitdirectory = true;
-    (input as any).directory = true;
-    input.multiple = true;
-    input.style.position = 'fixed';
-    input.style.left = '-9999px';
-    input.style.top = '-9999px';
-    input.style.opacity = '0';
-
-    let resolved = false;
-
-    input.onchange = async () => {
-      resolved = true;
-      const fileList = input.files;
-      if (!fileList || fileList.length === 0) {
-        if (input.parentNode) input.parentNode.removeChild(input);
-        resolve(null);
-        return;
-      }
-
-      const files: Record<string, string> = {};
-      let folderName = 'Mod Folder';
-
-      for (let i = 0; i < fileList.length; i++) {
-        if (Object.keys(files).length >= MAX_FILES) break;
-        const file = fileList[i];
-        const rel = file.webkitRelativePath || file.name;
-        const parts = rel.split(/[\\/]/);
-        if (parts.length > 1 && folderName === 'Mod Folder') {
-          folderName = parts[0];
-        }
-        const innerPath = parts.length > 1 ? parts.slice(1).join('/') : rel;
-
-        // Skip ignored directories
-        if (parts.some((p, idx) => idx < parts.length - 1 && SKIP_DIRS.has(p))) {
-          continue;
-        }
-
-        if (isTextFile(file.name)) {
-          try {
-            files[innerPath] = await file.text();
-          } catch (err) {
-            console.warn('Failed to read file:', rel, err);
-          }
-        }
-      }
-
-      if (input.parentNode) input.parentNode.removeChild(input);
-      resolve({ name: folderName, root: folderName, files });
-    };
-
-    const onFocus = () => {
-      window.removeEventListener('focus', onFocus);
-      setTimeout(() => {
-        if (!resolved) {
-          if (input.parentNode) input.parentNode.removeChild(input);
-          resolve(null);
-        }
-      }, 1000);
-    };
-    window.addEventListener('focus', onFocus);
-
-    document.body.appendChild(input);
-    input.click();
-  });
+  if (!isDesktop()) {
+    // Desktop-only, deliberately. The browser paths this replaces (File System
+    // Access API, the HTML5 webkitdirectory input, the anchor-download write-back)
+    // could read a folder but never reliably write back to the one the user
+    // picked -- `saveModFile` in a browser silently downloaded to Downloads
+    // instead. That asymmetry is worse than an honest refusal.
+    throw new Error('Opening a mod folder is only available in the desktop app.');
+  }
+  return openDesktop();
 }
 
 /**
@@ -127,41 +60,17 @@ export async function loadFolderFromPath(rawPath: string): Promise<OpenedFolder 
   const clean = cleanFolderPath(rawPath);
   if (!clean) return null;
 
-  if (isDesktop()) {
-    try {
-      return await loadDesktopPath(clean);
-    } catch (err: any) {
-      // If dev server or local Node API is active alongside Tauri, try server fallback
-      try {
-        const res = await fetch(`/api/fs/scan-folder?path=${encodeURIComponent(clean)}`);
-        const data = await res.json();
-        if (res.ok && data.success) {
-          return {
-            name: data.name || baseName(clean),
-            root: data.root || clean,
-            files: data.files || {},
-          };
-        }
-      } catch {}
-      throw err;
-    }
+  if (!isDesktop()) {
+    // The old /api/fs/scan-folder endpoint is gone (see server.ts). There is no
+    // browser path left, so say so plainly -- returning null here used to look
+    // like "that folder simply has no files", which silently broke startup
+    // auto-open instead of reporting a real reason.
+    throw new Error(
+      'Opening a folder by path is only available in the desktop app. Use "Open Folder" there, or configure an Auto-Open path in the desktop build.'
+    );
   }
 
-  // Web / Server-side fallback: call backend /api/fs/scan-folder
-  try {
-    const res = await fetch(`/api/fs/scan-folder?path=${encodeURIComponent(clean)}`);
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || `Failed to read directory "${clean}"`);
-    }
-    return {
-      name: data.name || baseName(clean),
-      root: data.root || clean,
-      files: data.files || {},
-    };
-  } catch (err: any) {
-    throw new Error(err?.message || String(err));
-  }
+  return loadDesktopPath(clean);
 }
 
 async function loadDesktopPath(cleanPath: string): Promise<OpenedFolder> {
@@ -224,120 +133,49 @@ async function openDesktop(): Promise<OpenedFolder | null> {
   return { name: baseName(normalizedRoot), root: normalizedRoot, files };
 }
 
-async function openBrowser(): Promise<OpenedFolder | null> {
-  const w = window as any;
-  if (typeof w.showDirectoryPicker === 'function') {
-    try {
-      const dir = await w.showDirectoryPicker({ mode: 'readwrite' });
-      browserRoot = dir;
-      const files: Record<string, string> = {};
-
-      const walk = async (handle: any, rel: string) => {
-        for await (const [name, child] of handle.entries()) {
-          if (Object.keys(files).length >= MAX_FILES) return;
-          const relPath = rel ? `${rel}/${name}` : name;
-          if (child.kind === 'directory') {
-            if (!SKIP_DIRS.has(name)) await walk(child, relPath);
-          } else if (isTextFile(name)) {
-            files[relPath] = await (await child.getFile()).text();
-          }
-        }
-      };
-      await walk(dir, '');
-      return { name: dir.name, root: dir.name, files };
-    } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        return null; // user clicked cancel in directory picker
-      }
-      // SecurityError (e.g. cross-origin iframe in web preview) or unsupported: fall through to HTML5 directory input!
-    }
-  }
-
-  // Cross-browser & iframe fallback using HTML5 webkitdirectory
-  return openViaDirectoryInput();
-}
-
 export async function saveModFile(root: string, rel: string, content: string): Promise<void> {
-  if (isDesktop()) {
-    const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
-    const isWin = root.includes('\\') || /^[a-zA-Z]:/.test(root);
-    const sep = isWin ? '\\' : '/';
-    const normalizedRoot = isWin
-      ? root.replace(/\//g, '\\').replace(/\\+$/, '')
-      : root.replace(/\\/g, '/').replace(/\/+$/, '');
-    const parts = rel.split('/');
-    if (parts.length > 1) {
-      const sub = isWin ? parts.slice(0, -1).join('\\') : parts.slice(0, -1).join('/');
-      const fullSub = `${normalizedRoot}${sep}${sub}`;
-      try {
-        await mkdir(fullSub, { recursive: true });
-      } catch {}
-    }
-    const fullFile = isWin
-      ? `${normalizedRoot}\\${parts.join('\\')}`
-      : `${normalizedRoot}/${rel}`;
-    await writeTextFile(fullFile, content);
-    return;
-  }
-  if (browserRoot) {
-    const parts = rel.split('/');
-    let dir = browserRoot;
-    for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p, { create: true });
-    const fh = await dir.getFileHandle(parts[parts.length - 1], { create: true });
-    const w = await fh.createWritable();
-    await w.write(content);
-    await w.close();
-    return;
+  if (!isDesktop()) {
+    // No browser fallback remains: /api/fs/save-file is gone (see server.ts), and
+    // the FileSystem Access + download paths it replaced could not write back to
+    // the folder the user picked anyway. Say so instead of silently doing nothing.
+    throw new Error('Saving to disk is only available in the desktop app. Use "Save As" there.');
   }
 
-  // Server-side FS fallback (for local server mode)
-  try {
-    const res = await fetch('/api/fs/save-file', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ root, relPath: rel, content }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.success) return;
-    }
-  } catch {}
-
-  // Browser download fallback when opened via webkitdirectory input
-  try {
-    const fileName = rel.split(/[\\/]/).pop() || rel;
-    await saveFileAs(fileName, content);
-    return;
-  } catch (err: any) {
-    throw new Error(err?.message || 'Could not save file to disk.');
+  const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
+  const isWin = root.includes('\\') || /^[a-zA-Z]:/.test(root);
+  const sep = isWin ? '\\' : '/';
+  const normalizedRoot = isWin
+    ? root.replace(/\//g, '\\').replace(/\\+$/, '')
+    : root.replace(/\\/g, '/').replace(/\/+$/, '');
+  const parts = rel.split('/');
+  if (parts.length > 1) {
+    const sub = isWin ? parts.slice(0, -1).join('\\') : parts.slice(0, -1).join('/');
+    const fullSub = `${normalizedRoot}${sep}${sub}`;
+    try {
+      await mkdir(fullSub, { recursive: true });
+    } catch {}
   }
+  const fullFile = isWin
+    ? `${normalizedRoot}\\${parts.join('\\')}`
+    : `${normalizedRoot}/${rel}`;
+  await writeTextFile(fullFile, content);
 }
 
-// "Save As": native dialog on desktop, browser download fallback.
+// "Save As": native dialog, desktop only.
 export async function saveFileAs(suggestedName: string, content: string): Promise<string | null> {
-  if (isDesktop()) {
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-    const ext = suggestedName.includes('.') ? suggestedName.split('.').pop() : undefined;
-    const path = await save({
-      defaultPath: suggestedName,
-      filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : undefined,
-    });
-    if (!path) return null; // user cancelled
-    await writeTextFile(path, content);
-    return path;
+  if (!isDesktop()) {
+    throw new Error('"Save As" is only available in the desktop app.');
   }
-  // Browser fallback: blob download.
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = suggestedName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-  return suggestedName;
+  const { save } = await import('@tauri-apps/plugin-dialog');
+  const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+  const ext = suggestedName.includes('.') ? suggestedName.split('.').pop() : undefined;
+  const path = await save({
+    defaultPath: suggestedName,
+    filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : undefined,
+  });
+  if (!path) return null; // user cancelled
+  await writeTextFile(path, content);
+  return path;
 }
 
 /**
@@ -453,10 +291,20 @@ export interface ModListEntry {
  * Intentionally tolerant: a missing or malformed field yields a placeholder
  * rather than throwing, so one bad manifest cannot break the whole grid.
  */
-export function parseModManifest(toml: string): { id?: string; author?: string; version?: string } {
-  const out: { id?: string; author?: string; version?: string } = {};
+export function parseModManifest(toml: string): {
+  id?: string;
+  author?: string;
+  version?: string;
+  entry?: string;
+} {
+  const out: { id?: string; author?: string; version?: string; entry?: string } = {};
   // Matches `key = value`, `key="value"` and `[section]` headers alike.
-  const re = /^[ \t]*(id|author|author_name|version)[ \t]*=[ \t]*(.+)$/gim;
+  // `entry` is here because it is the field that decides WHICH FILE OPENS FIRST
+  // (see pickStartupFile). First match wins throughout, so on a bundle -- whose
+  // `[[components]]` blocks each carry their own `entry` -- this is the first
+  // component's entry. That is still a real, engine-loaded Lua file, which beats
+  // "whatever sorts first in the alphabet".
+  const re = /^[ \t]*(id|author|author_name|version|entry)[ \t]*=[ \t]*(.+)$/gim;
   let m: RegExpExecArray | null;
   while ((m = re.exec(toml)) !== null) {
     const key = m[1].toLowerCase();
@@ -469,8 +317,68 @@ export function parseModManifest(toml: string): { id?: string; author?: string; 
     if (key === 'id' && !out.id) out.id = val;
     else if ((key === 'author' || key === 'author_name') && !out.author) out.author = val;
     else if (key === 'version' && !out.version) out.version = val;
+    else if (key === 'entry' && !out.entry) out.entry = val;
   }
   return out;
+}
+
+/**
+ * The file `mod.toml` points at with `entry`, matched against the real file keys,
+ * or null when there is no usable answer.
+ *
+ * Matching is layered because `entry` is written relative to the mod root and the
+ * keys are relative paths with forward slashes, so the obvious shapes differ:
+ *
+ *   1. exact key           entry = "rules.lua"       -> "rules.lua"
+ *   2. trailing path       entry = "lib/anim.lua"   -> "lib/anim.lua"
+ *   3. basename anywhere   entry = "rules.lua"      -> "weapons/rules.lua"
+ *
+ * All three are case-insensitive and tolerate backslashes in the manifest.
+ */
+export function declaredEntryFile(files: Record<string, string>): string | null {
+  const keys = Object.keys(files);
+  const tomlKey = keys.find((k) => baseName(k).toLowerCase() === 'mod.toml');
+  if (!tomlKey) return null;
+
+  const entry = parseModManifest(files[tomlKey]).entry;
+  if (!entry) return null;
+
+  const want = entry.replace(/\\/g, '/').replace(/^\.\//, '').trim().toLowerCase();
+  if (!want) return null;
+
+  const norm = (k: string) => k.replace(/\\/g, '/').toLowerCase();
+
+  const byKey = keys.find((k) => norm(k) === want);
+  if (byKey) return byKey;
+
+  const byPath = keys.find((k) => norm(k).endsWith(`/${want}`));
+  if (byPath) return byPath;
+
+  const base = baseName(want);
+  return keys.find((k) => baseName(k).toLowerCase() === base) ?? null;
+}
+
+/**
+ * Which file in a freshly-opened folder should be shown first.
+ *
+ * THE MANIFEST DECIDES, not the alphabet. `mod.toml` declares
+ * `entry = "rules.lua"`, and that is the file the engine actually loads. The
+ * previous behaviour -- "the first `.lua` in sorted order" -- opened whatever
+ * happened to sort first, which in the user's highlander pack was a scratch file
+ * (`highlander1asdasd.lua`) instead of `rules.lua`.
+ *
+ * Falls back, in order: the declared entry, then the first `.lua` in sorted order
+ * (so a folder with no mod.toml still opens something sensible), then the first
+ * file at all. Null only when the folder is empty.
+ */
+export function pickStartupFile(files: Record<string, string>): string | null {
+  const names = Object.keys(files).sort();
+  if (names.length === 0) return null;
+
+  const declared = declaredEntryFile(files);
+  if (declared) return declared;
+
+  return names.find((n) => n.toLowerCase().endsWith('.lua')) ?? names[0];
 }
 
 /**

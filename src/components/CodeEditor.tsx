@@ -1,7 +1,27 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback, useImperativeHandle } from 'react';
 import { Target, Crosshair, Plus, Check, Sliders, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
-import { SyntaxDiagnostic } from '../types/wormforge';
+import { SyntaxDiagnostic, CustomVerb } from '../types/wormforge';
 import { BUILTIN_CLASSES, BUILTIN_ENUMERATIONS, BUILTIN_FUNCTIONS, BUILTIN_VARIABLES } from '../data/wormforgeDefinitions';
+import { READABLE_WORM_STATES, SETTABLE_WORM_STATES } from '../data/wormStates';
+import {
+  getClass,
+  resolveByName,
+  rowForClass,
+  traceLocalTypes,
+  ALL_RECEIVER_PREFIXES,
+  type HandleClassName,
+} from '../data/handleRegistry';
+import { buildScopes, visibleAt, type ScopeModel, type VisibleName } from '../services/scope';
+import {
+  escapeHtml,
+  highlightLuaLine,
+  resolveTokenClasses,
+  themeSignature,
+  type SyntaxOverrides,
+  type TokenClasses,
+} from '../services/editorHighlight';
+import { LUA_GLOBALS_SET } from '../data/luaGlobals';
+import { startsNewUndoEntry, isWordBoundary } from '../services/undoPolicy';
 
 export const STOCK_WA_WEAPON_SLOTS = [
   // Standard & Explosives
@@ -87,25 +107,35 @@ export const STOCK_WA_WEAPON_SLOTS = [
   { id: 'low_gravity', name: 'Low Gravity', category: 'Construction & Utilities' },
 ];
 
-function highlightTomlLine(line: string, isLight: boolean = false): string {
+// TOML (mod.toml) highlighting. §34: this now reads from the SAME palette as the
+// Lua highlighter rather than keeping a second private set of colours, so picking
+// a preset in the settings re-tints mod.toml too. TOML has three token kinds that
+// map onto the Lua palette as: comment -> comment, `[section]` -> keyword,
+// key -> declaration, value -> string.
+function highlightTomlLine(
+  line: string,
+  isLight: boolean = false,
+  palette?: TokenClasses,
+): string {
+  const p = palette ?? resolveTokenClasses(isLight);
   if (!line) return '&nbsp;';
   const trimmed = line.trim();
   // Comment (# ...)
   if (trimmed.startsWith('#')) {
-    return `<span class="${isLight ? 'text-slate-500' : 'text-slate-500'} italic font-normal">${escapeHtml(line)}</span>`;
+    return `<span class="${p.comment}">${escapeHtml(line)}</span>`;
   }
   // Section header [section] or [[array_of_tables]]
   if (/^\s*\[\[?.*\]\]?\s*$/.test(line)) {
-    return `<span class="${isLight ? 'text-amber-800 font-bold' : 'text-amber-400 font-bold'}">${escapeHtml(line)}</span>`;
+    return `<span class="${p.keyword}">${escapeHtml(line)}</span>`;
   }
   // Key = Value
   const eqIdx = line.indexOf('=');
   if (eqIdx !== -1) {
     const key = line.slice(0, eqIdx);
     const rest = line.slice(eqIdx);
-    return `<span class="${isLight ? 'text-sky-800 font-semibold' : 'text-sky-300 font-semibold'}">${escapeHtml(key)}</span>` +
-           `<span class="${isLight ? 'text-slate-400' : 'text-[#64748b]'}">=</span>` +
-           `<span class="${isLight ? 'text-emerald-700' : 'text-lime-300'} font-mono">${escapeHtml(rest.slice(1))}</span>`;
+    return `<span class="${p.declaration}">${escapeHtml(key)}</span>` +
+           `<span class="${p.punctuation}">=</span>` +
+           `<span class="${p.string}">${escapeHtml(rest.slice(1))}</span>`;
   }
   return escapeHtml(line);
 }
@@ -116,7 +146,28 @@ interface AutocompleteItem {
   detail?: string;
   insertText: string;
   documentation?: string;
+  /**
+   * Sort weight, lower sorts first. Scope-aware entries get their distance from
+   * the cursor's scope (see visibleAt().rank), engine entries get ENGINE_RANK so
+   * a local declared two lines up always outranks the entire engine API.
+   * Ties keep insertion order, which is why the items are appended scope-first.
+   */
+  rank?: number;
 }
+
+/** Anything from the engine definitions, sorted below every local name. */
+const ENGINE_RANK = 1000;
+
+// Autocomplete popup geometry. These are state (not fixed classes) because the
+// window is user-resizable, and showAutocomplete() needs the current values to
+// decide whether to flip above the caret. Keep them in sync with the style
+// attributes on the popup element.
+const AUTO_MIN_W = 240;
+const AUTO_MAX_W = 900;
+const AUTO_MIN_H = 120;
+const AUTO_MAX_H = 560;
+const AUTO_DEFAULT_W = 340;
+const AUTO_DEFAULT_H = 264;
 
 interface HistorySnapshot {
   code: string;
@@ -136,7 +187,18 @@ interface CodeEditorProps {
   fontSize?: number;
   lineHeight?: number;
   theme?: 'dark' | 'light';
+  // Syntax palette (§34). Optional: omitted means the default 'classic' preset,
+  // so every existing caller and the mount in App.tsx keep working unchanged.
+  syntaxPreset?: string;
+  syntaxOverridesDark?: SyntaxOverrides;
+  syntaxOverridesLight?: SyntaxOverrides;
   jumpTarget?: { line: number; column: number; key: number } | null;
+  /**
+   * The custom_verbs.cfg overlay, passed per render from App (same list the
+   * checkers get). Optional so every other caller keeps compiling; omitted
+   * means autocomplete behaves exactly as before (engine tables only).
+   */
+  customVerbs?: CustomVerb[];
 }
 
 // Imperative handle exposed to App.tsx. Lets the DocPane / API Tree / Keycode
@@ -145,111 +207,57 @@ export interface CodeEditorHandle {
   insertSnippet: (text: string) => string | null;
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
+// (highlightLuaLine now lives in services/editorHighlight.ts, where it is testable.)
 
-function highlightLuaLine(line: string, isLight: boolean = false): string {
-  if (!line) return '&nbsp;';
+/**
+ * Per-line highlighter cache.
+ *
+ * highlightLuaLine() is a character-by-character scan building an HTML string,
+ * and it used to run for every line on every render -- including renders caused by
+ * something unrelated to the text, like the cursor moving or a diagnostic
+ * appearing. On rules.lua that is 4,689 string builds per keystroke.
+ *
+ * Keyed by the line text, so a keystroke that changes one line re-highlights one
+ * line and reuses the other 4,688. The theme is folded into the key because the
+ * two light/dark modes emit different markup.
+ *
+ * §34: the key must ALSO change when the user picks a different syntax preset or
+ * edits a single colour override. Without that, changing the palette would appear
+ * to do nothing until the file was closed and reopened -- the editor would keep
+ * serving markup built for the old colours out of this cache. `themeSignature()`
+ * collapses the whole palette choice (preset id + both override maps) into one
+ * short string, and the resolved classes are appended so that changing the code
+ * path that produces them also invalidates old entries.
+ * Bounded: a big file would otherwise grow this without limit as the user types,
+ * so the oldest half is dropped on overflow.
+ */
+const highlightCache = new Map<string, string>();
+const HIGHLIGHT_CACHE_MAX = 20000;
 
-  let i = 0;
-  let result = '';
-  const len = line.length;
+function cachedHighlightLuaLine(
+  line: string,
+  isLight: boolean,
+  sig: string,
+  palette: TokenClasses,
+): string {
+  const key = `${isLight ? 'L' : 'D'}\u0000${sig}\u0000${line}`;
+  const hit = highlightCache.get(key);
+  if (hit !== undefined) return hit;
 
-  while (i < len) {
-    // 1. Comment (-- to end of line)
-    if (line.slice(i, i + 2) === '--') {
-      const commentText = line.slice(i);
-      result += `<span class="${isLight ? 'text-slate-500' : 'text-slate-500'} italic font-normal">${escapeHtml(commentText)}</span>`;
-      break;
+  const html = highlightLuaLine(line, isLight, palette);
+  if (highlightCache.size >= HIGHLIGHT_CACHE_MAX) {
+    // Insertion-ordered Map: the first keys are the oldest. Dropping half keeps
+    // the hot working set (recently typed lines) and caps memory.
+    const drop = HIGHLIGHT_CACHE_MAX / 2;
+    let i = 0;
+    for (const k of highlightCache.keys()) {
+      highlightCache.delete(k);
+      if (++i >= drop) break;
     }
-
-    // 2. String literal (double or single quote)
-    const quote = line[i];
-    if (quote === '"' || quote === "'") {
-      let str = quote;
-      let j = i + 1;
-      let escaped = false;
-      while (j < len) {
-        const ch = line[j];
-        str += ch;
-        if (!escaped && ch === quote) {
-          j++;
-          break;
-        }
-        escaped = !escaped && ch === '\\';
-        j++;
-      }
-      i = j;
-      result += `<span class="${isLight ? 'text-emerald-700 font-semibold' : 'text-lime-300'} font-mono">${escapeHtml(str)}</span>`;
-      continue;
-    }
-
-    // 3. Arrow operator -> (Flag as invalid in WormForge Lua)
-    if (line.slice(i, i + 2) === '->') {
-      result += `<span class="text-rose-500 font-bold underline decoration-wavy decoration-rose-500/70" title="'->' is not valid in Lua; use '.' (e.g. wa.log()) or ':' (e.g. a:gfx)">-&gt;</span>`;
-      i += 2;
-      continue;
-    }
-
-    // 4. Method call starting with colon :methodName
-    if (line[i] === ':' && i + 1 < len && /[a-zA-Z_]/.test(line[i + 1])) {
-      let j = i + 1;
-      while (j < len && /[a-zA-Z0-9_]/.test(line[j])) j++;
-      const meth = line.slice(i, j);
-      result += `<span class="${isLight ? 'text-teal-700 font-bold' : 'text-emerald-400 font-medium'}">${escapeHtml(meth)}</span>`;
-      i = j;
-      continue;
-    }
-
-    // 5. Hex numbers (0x...) or Dec numbers
-    if (line.slice(i, i + 2) === '0x' || line.slice(i, i + 2) === '0X') {
-      let j = i + 2;
-      while (j < len && /[0-9a-fA-F]/.test(line[j])) j++;
-      const hex = line.slice(i, j);
-      result += `<span class="${isLight ? 'text-amber-700 font-semibold' : 'text-orange-400'}">${escapeHtml(hex)}</span>`;
-      i = j;
-      continue;
-    }
-    if (/[0-9]/.test(line[i]) && (i === 0 || !/[a-zA-Z_]/.test(line[i - 1]))) {
-      let j = i;
-      while (j < len && /[0-9.]/.test(line[j])) j++;
-      const num = line.slice(i, j);
-      result += `<span class="${isLight ? 'text-amber-700 font-semibold' : 'text-orange-400'}">${escapeHtml(num)}</span>`;
-      i = j;
-      continue;
-    }
-
-    // 6. Word / Identifier
-    if (/[a-zA-Z_]/.test(line[i])) {
-      let j = i;
-      while (j < len && /[a-zA-Z0-9_]/.test(line[j])) j++;
-      const word = line.slice(i, j);
-      i = j;
-
-      if (/^(local|function|end|return|if|then|else|elseif|for|in|do|while|repeat|until|and|or|not|true|false|nil)$/.test(word)) {
-        result += `<span class="${isLight ? 'text-purple-700 font-bold' : 'text-rose-400 font-medium'}">${escapeHtml(word)}</span>`;
-      } else if (/^(int|float|string|bool|boolean|void)$/.test(word)) {
-        result += `<span class="${isLight ? 'text-indigo-600 font-semibold' : 'text-purple-400 font-medium'}">${escapeHtml(word)}</span>`;
-      } else if (word === 'wa' || word === 'require') {
-        result += `<span class="${isLight ? 'text-blue-700 font-extrabold' : 'text-cyan-400 font-semibold'}">${escapeHtml(word)}</span>`;
-      } else {
-        result += escapeHtml(word);
-      }
-      continue;
-    }
-
-    // 7. Any other character (spaces, symbols, punctuation)
-    result += escapeHtml(line[i]);
-    i++;
   }
-
-  return result;
+  highlightCache.set(key, html);
+  return html;
 }
-
 export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEditor(
   {
     code,
@@ -260,7 +268,11 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     fontSize = 13,
     lineHeight = 1.5,
     theme = 'dark',
+    syntaxPreset,
+    syntaxOverridesDark,
+    syntaxOverridesLight,
     jumpTarget,
+    customVerbs = [],
   },
   ref
 ) {
@@ -274,6 +286,26 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
   const [autocompletePos, setAutocompletePos] = useState({ top: 0, left: 0 });
   const [autocompleteItems, setAutocompleteItems] = useState<AutocompleteItem[]>([]);
   const [selectedAutoIdx, setSelectedAutoIdx] = useState(0);
+
+  // Autocomplete window size, user-resizable. Reset per file so a window widened
+  // for one pack does not permanently change the next.
+  const [autoSize, setAutoSize] = useState({ w: AUTO_DEFAULT_W, h: AUTO_DEFAULT_H });
+
+  // Resize drag state. Kept in a ref because the mousemove/mouseup listeners are
+  // attached to `window` (the pointer leaves the 4px handle otherwise) and must
+  // not be torn down and rebuilt on every move.
+  const autoDragRef = useRef<{ axis: 'w' | 'h'; startX: number; startY: number; startW: number; startH: number } | null>(null);
+
+  // Signature (joined labels) of the list currently on screen. Arrow-key
+  // navigation needs this: the textarea also runs the full trigger check on
+  // keyup/select (onKeyUp/onSelect below), so pressing ArrowDown set the
+  // highlight to 1 and the keyup immediately re-ran showAutocomplete, which
+  // reset it to 0. The first item was then selected no matter how many times
+  // you pressed the key. preventDefault() stops the caret moving but cannot
+  // stop the keyup event. When the signature is unchanged this is a refresh of
+  // the same context, so the highlight is preserved; a genuinely different list
+  // (you typed another character) still starts at the top.
+  const lastAutoSignatureRef = useRef<string | null>(null);
 
   const isToml = activeFile.toLowerCase().endsWith('.toml');
   const [selectedWeapon, setSelectedWeapon] = useState<string>('armageddon');
@@ -505,6 +537,81 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
 
   const lines = useMemo(() => code.split('\n'), [code]);
 
+  // Receiver-type trace. Also lazy rather than a useMemo: it is a full-file regex
+  // pass (1.1 ms measured on rules.lua) and a useMemo on `code` re-ran it on every
+  // keystroke for the same reason buildScopes did -- see getScopeModel above. It is
+  // only consulted when the member branch (`worm:`, `obj.`) actually fires.
+  const traceCacheRef = useRef<{ code: string; map: Map<string, HandleClassName> } | null>(null);
+
+  const getTracedTypes = (): Map<string, HandleClassName> => {
+    const cached = traceCacheRef.current;
+    if (cached && cached.code === code) return cached.map;
+    const map = traceLocalTypes(code);
+    traceCacheRef.current = { code, map };
+    return map;
+  };
+
+  // Scope model for identifier autocomplete (Track A / A4).
+  //
+  // LAZY, and deliberately not a useMemo. Measured on highlander's rules.lua
+  // (165 KB, 4,689 lines):
+  //
+  //     buildScopes  17.6 ms   <- per call
+  //     tokenize      8.9 ms   <- most of the above
+  //
+  // A useMemo keyed on `code` still re-ran that on every keystroke, because `code`
+  // is what changes when you type. That put 17 ms of tokenizer work directly in
+  // the typing path -- a regression introduced when this model was first wired in.
+  // Memoisation only helps when a value is read many times for ONE code state; it
+  // does nothing across edits.
+  //
+  // So the model is computed on demand, from a one-entry cache keyed by the exact
+  // string. During a burst of typing the popup opens on every keyup, so consecutive
+  // reads within one keystroke still hit the cache; the cost is paid once per
+  // edit, only when something actually asks what is in scope.
+  //
+  // `console.warn` above 40ms stays, so a future regression names its cause rather
+  // than just feeling slow.
+  const scopeCacheRef = useRef<{ code: string; model: ScopeModel } | null>(null);
+
+  // Above this many lines the popup skips the scope model entirely.
+  //
+  // MEASURED (buildScopes, 3 runs each, against the real packs):
+  //     700 lines    2.6 ms
+  //    1400 lines    3.8 ms
+  //    2800 lines    5.3 ms   <- chosen threshold
+  //    4689 lines   19.7 ms   (rules.lua, measured on the real file)
+  //   11200 lines   23.0 ms
+  //
+  // ~2.3 ms per 1,000 lines, so the cost is linear and predictable. 2,800 sits at
+  // the 8 ms mark: a quarter of a 60 fps frame, on a path that runs on EVERY keyup
+  // and on every keyup that opens the popup. At rules.lua's size the popup was
+  // spending ~20 ms synchronously per keystroke and appeared dead, which is
+  // exactly the "suggestions don't work on large files" report.
+  //
+  // Above the threshold the popup still works -- it just falls back to the engine
+  // declarations and the receiver registry, with no file scoping. Losing local
+  // suggestions on a 4,000-line file is a far better trade than a stuttering
+  // editor. The scope-aware DIAGNOSTICS in parser.ts are unaffected: they run on
+  // demand, not per keystroke, so they keep their full accuracy at any size.
+  const SCOPE_SUGGEST_MAX_LINES = 2800;
+
+  const getScopeModel = (): ScopeModel | null => {
+    if (lines.length > SCOPE_SUGGEST_MAX_LINES) return null;
+
+    const cached = scopeCacheRef.current;
+    if (cached && cached.code === code) return cached.model;
+
+    const t0 = performance.now();
+    const model = buildScopes(code);
+    const took = performance.now() - t0;
+    if (took > 40) {
+      console.warn(`[scope] buildScopes took ${Math.round(took)}ms on ${code.length} chars`);
+    }
+    scopeCacheRef.current = { code, model };
+    return model;
+  };
+
   // Reset selection and scroll cleanly whenever activeFile changes.
   // focus() MUST come before setting the selection: focusing a textarea moves
   // the caret to the end of the text, so assigning selectionStart first and
@@ -524,8 +631,13 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     if (gutterRef.current) {
       gutterRef.current.scrollTop = 0;
     }
+    // Reset the virtualised window too. Assigning scrollTop fires no scroll event,
+    // so without this the newly-opened file would render the previous file's
+    // window until the user happened to scroll.
+    setScrollTop(0);
     setCursorPos({ line: 1, column: 1, index: 0 });
     setAutocompleteVisible(false);
+    lastAutoSignatureRef.current = null;
   }, [activeFile]);
 
   // Copy handler ensures the exact text from the active file's selection is copied
@@ -541,7 +653,7 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     }
   };
 
-  // Sync scroll
+  // Sync scroll with handleScroll.
   const handleScroll = () => {
     if (!textareaRef.current) return;
     const { scrollTop, scrollLeft } = textareaRef.current;
@@ -552,6 +664,15 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     if (gutterRef.current) {
       gutterRef.current.scrollTop = scrollTop;
     }
+    // Reposition the popup from the corrected measureCaret(), which already accounts
+    // for scrollTop with the correct sign.
+    if (autocompleteVisible) {
+      const at = measureCaret();
+      if (at) setAutocompletePos({ top: at.top + lineHeightPx, left: at.left });
+    }
+    // Feed the virtualised window. rAF-throttled inside, because a scroll gesture
+    // fires far more events than the window can usefully change.
+    noteScrollTop();
   };
 
   // Cursor position and Autocomplete detection
@@ -608,6 +729,7 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
         }
       }
       setAutocompleteVisible(false);
+      lastAutoSignatureRef.current = null;
       return;
     }
 
@@ -619,9 +741,27 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       const query = memberMatch[3].toLowerCase();
       const items: AutocompleteItem[] = [];
 
-      // A. Worm Entity (worm, w, victim, target, attacker, owner, active)
-      if (['worm', 'w', 'victim', 'target', 'attacker', 'owner', 'active'].includes(obj.toLowerCase())) {
-        const wormCls = BUILTIN_CLASSES.find((c) => c.name === 'WormEntity')!;
+      // A. Handles. Receiver names resolve through data/handleRegistry.ts --
+      // the SAME table services/parser.ts uses, so this popup can never offer a
+      // member the checker then warns about, or miss one the checker knows.
+      // One branch serves WormEntity, LuaActor, WorldHandle (mine/drum/oil/
+      // crate/grave all resolve there), the missile_frame payload table, and
+      // the inventory namespace.
+      // Resolution order matches services/parser.ts exactly: traced call-site
+      // returnType first, then the name table. Sharing it is the point -- a
+      // suggestion and a warning for the same receiver must never disagree.
+      const tracedClass = getTracedTypes().get(obj);
+      const regRow = tracedClass ? rowForClass(tracedClass) : resolveByName(obj);
+      if (regRow) {
+        const wormCls = getClass(regRow.className);
+        // A registry row whose className is missing from BUILTIN_CLASSES. The old
+        // `!` turned that data gap into a render-adjacent TypeError instead of a
+        // quiet skip, so it is checked rather than asserted.
+        if (!wormCls) {
+          setAutocompleteVisible(false);
+          lastAutoSignatureRef.current = null;
+          return;
+        }
         
         // Add all methods
         for (const m of wormCls.members.filter((m) => m.kind === 'method')) {
@@ -649,28 +789,27 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
             });
           }
         }
-      }
-      // B. Actor Entity (a, actor, self, body, child, sentry, bullet, proj)
-      else if (['a', 'actor', 'self', 'body', 'child', 'sentry', 'bullet', 'proj'].includes(obj.toLowerCase())) {
-        const actorCls = BUILTIN_CLASSES.find((c) => c.name === 'LuaActor')!;
-        
-        // Add all methods
-        for (const m of actorCls.members.filter((m) => m.kind === 'method')) {
-          if (!query || m.name.toLowerCase().includes(query)) {
-            const params = m.parameters?.map((p) => p.name).join(', ') || '';
+
+        // Custom-verb overlay for THIS class (custom_verbs.cfg). Same list the
+        // checkers get, so a suggestion here can never be a warning there. A
+        // verb whose name collides with an engine member is skipped: the engine
+        // row above already offers it, and a duplicate entry would just split
+        // the arrow-key navigation.
+        const engineNames = new Set(wormCls.members.map((m) => m.name));
+        for (const v of customVerbs) {
+          if (v.class !== regRow.className) continue;
+          if (engineNames.has(v.name)) continue;
+          if (query && !v.name.toLowerCase().includes(query)) continue;
+          if (v.kind === 'method') {
+            const params = v.parameters.map((p) => p.name).join(', ');
             items.push({
-              label: m.name,
+              label: v.name,
               kind: 'method',
-              detail: `${obj}${sep}${m.name}(${params})`,
-              insertText: `${m.name}(${params})`,
-              documentation: m.description,
+              detail: `${obj}${sep}${v.name}(${params})`,
+              insertText: `${v.name}(${params})`,
+              documentation: v.description,
             });
-          }
-        }
-        
-        // Add all variables and properties (a.x, a:x, a.hp, etc.)
-        for (const v of actorCls.members.filter((m) => m.kind !== 'method')) {
-          if (!query || v.name.toLowerCase().includes(query)) {
+          } else {
             items.push({
               label: v.name,
               kind: v.kind === 'variable' ? 'variable' : 'property',
@@ -727,56 +866,79 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
             }
           }
         }
-      }
-      // D. Inventory Store (inv, store, inventory)
-      else if (['inv', 'store', 'inventory'].includes(obj.toLowerCase())) {
-        const invMethods = [
-          { name: 'get', params: 'worm', doc: 'Reads a worm\'s inventory in this store.' },
-          { name: 'set', params: 'worm, weapon, amount', doc: 'Sets a worm\'s amount for a weapon in this store.' },
-          { name: 'add', params: 'worm, weapon, amount', doc: 'Adds to a worm\'s amount for a weapon in this store.' },
-          { name: 'remove', params: 'worm, weapon', doc: 'Removes a weapon from a worm\'s inventory in this store.' },
-          { name: 'clear', params: 'worm', doc: 'Clears a worm\'s inventory in this store.' },
-          { name: 'list', params: 'worm', doc: 'Lists a worm\'s inventory contents in this store.' },
-          { name: 'deal', params: 'worms', doc: 'Deterministically deals items among the given worms.' },
-          { name: 'transfer', params: 'from, to, opts', doc: 'Moves or copies weapons between two explicit worms.' },
-          { name: 'apply', params: 'worm, opts', doc: 'Materializes only this worm\'s inventory onto team row.' },
-        ];
-        for (const m of invMethods) {
-          if (!query || m.name.toLowerCase().includes(query)) {
-            items.push({
-              label: m.name,
-              kind: 'method',
-              detail: `${obj}${sep}${m.name}(${m.params})`,
-              insertText: `${m.name}(${m.params})`,
-              documentation: m.doc,
-            });
-          }
+        // Custom verbs registered ON the wa namespace (class: "wa"), so
+        // `wa.my_thing` autocompletes like any engine function.
+        for (const v of customVerbs) {
+          if (v.class !== 'wa') continue;
+          if (query && !v.name.toLowerCase().includes(query)) continue;
+          items.push({
+            label: v.name,
+            kind: v.kind === 'method' ? 'method' : 'variable',
+            detail: `wa.${v.name} (${v.returnType || 'any'})`,
+            insertText: v.parameters.length > 0 ? `${v.name}(${v.parameters.map((p) => p.name).join(', ')})` : v.name,
+            documentation: v.description,
+          });
         }
       }
+      // D. (InventoryStore is served by the registry branch above; its class members
+      // are the same get/set/add/remove/clear/list/deal/transfer/apply list
+      // this branch used to carry by hand.)
       // E. Other custom classes in BUILTIN_CLASSES
       else {
         const cls = BUILTIN_CLASSES.find((c) => c.name.toLowerCase() === obj.toLowerCase());
-        if (cls) {
-          for (const m of cls.members) {
-            if (!query || m.name.toLowerCase().includes(query)) {
-              if (m.kind === 'method') {
-                const params = m.parameters?.map((p) => p.name).join(', ') || '';
-                items.push({
-                  label: m.name,
-                  kind: 'method',
-                  detail: `${obj}${sep}${m.name}(${params})`,
-                  insertText: `${m.name}(${params})`,
-                  documentation: m.description,
-                });
-              } else {
-                items.push({
-                  label: m.name,
-                  kind: m.kind === 'variable' ? 'variable' : 'property',
-                  detail: `${obj}${sep}${m.name} (${m.returnType || 'any'})`,
-                  insertText: m.name,
-                  documentation: m.description,
-                });
+        // Custom verbs whose class matches the receiver by name. This covers
+        // a brand-new class invented in the modal (MyHands does not exist in
+        // BUILTIN_CLASSES, so `cls` is undefined and the old chain fell
+        // through to `hit`/`fire` and offered nothing), AND verbs registered
+        // on an engine class that is not behind a receiver prefix (a literal
+        // `WormEntity:grapple` -- WormEntity is found by cls, the verb is not).
+        const overlayVerbs = customVerbs.filter((v) => v.class.toLowerCase() === obj.toLowerCase());
+        if (cls || overlayVerbs.length > 0) {
+          if (cls) {
+            for (const m of cls.members) {
+              if (!query || m.name.toLowerCase().includes(query)) {
+                if (m.kind === 'method') {
+                  const params = m.parameters?.map((p) => p.name).join(', ') || '';
+                  items.push({
+                    label: m.name,
+                    kind: 'method',
+                    detail: `${obj}${sep}${m.name}(${params})`,
+                    insertText: `${m.name}(${params})`,
+                    documentation: m.description,
+                  });
+                } else {
+                  items.push({
+                    label: m.name,
+                    kind: m.kind === 'variable' ? 'variable' : 'property',
+                    detail: `${obj}${sep}${m.name} (${m.returnType || 'any'})`,
+                    insertText: m.name,
+                    documentation: m.description,
+                  });
+                }
               }
+            }
+          }
+          const seen = new Set(cls ? cls.members.map((m) => m.name) : []);
+          for (const v of overlayVerbs) {
+            if (seen.has(v.name)) continue;
+            if (query && !v.name.toLowerCase().includes(query)) continue;
+            if (v.kind === 'method') {
+              const params = v.parameters.map((p) => p.name).join(', ');
+              items.push({
+                label: v.name,
+                kind: 'method',
+                detail: `${obj}${sep}${v.name}(${params})`,
+                insertText: `${v.name}(${params})`,
+                documentation: v.description,
+              });
+            } else {
+              items.push({
+                label: v.name,
+                kind: v.kind === 'variable' ? 'variable' : 'property',
+                detail: `${obj}${sep}${v.name} (${v.returnType || 'any'})`,
+                insertText: v.name,
+                documentation: v.description,
+              });
             }
           }
         } else if (obj === 'hit') {
@@ -826,6 +988,96 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       }
     }
 
+    // 1.5 String-enum values: `obj.kind == "`, `obj.kind ~= "`, `worm.state == "`,
+    // `worm:set_state("`. The member-name triggers below cannot help here -- they
+    // fire on `obj.kind` and stop at the identifier, whereas the caret now sits
+    // INSIDE a string, so nothing matches and the popup goes quiet.
+    //
+    // This must come before the general identifier branch (4) or it would be
+    // swallowed by it, and before nothing else matters: the member regex is
+    // $-anchored on `[a-zA-Z0-9_]*`, so a trailing `"` disables it entirely.
+    //
+    // The candidate set is chosen by WHICH member is being compared, because the
+    // four worm-state tables are genuinely different and offering the wrong one
+    // is a false promise:
+    //   .kind         -> 9 kind_name() strings (a union, not a class)
+    //   .state        -> 12 READABLE: what worm.state actually returns
+    //   .state_label  -> 28 WORM_STATES: the DEBUG label table, log-only
+    //   :set_state(   -> 6 SETTABLE: anything else is a hard engine error
+    // `state_label` deliberately offers the full 28 while `state` offers 12 --
+    // suggesting `walking` after `.state` would hand back nil at runtime.
+    const stringMatch = lineText.match(
+      /([a-zA-Z0-9_]+)([.:])([a-zA-Z0-9_]+)\s*(==|~=)\s*"([^"]*)$/
+    );
+    if (stringMatch) {
+      const strObj = stringMatch[1];
+      const strSep = stringMatch[2];
+      const strMember = stringMatch[3];
+      const strOp = stringMatch[4]; // '==' or '~='
+      const strQuery = stringMatch[5].toLowerCase();
+
+      // (values, label, doc) per member. Sourced from the same tables the engine
+      // reads, so the popup can never suggest a state the engine rejects.
+      let candidates: { value: string; description: string }[] | null = null;
+      let enumLabel = '';
+
+      if (strMember === 'kind') {
+        // WorldHandle.kind -- a mine, an oil drum and a grave are all the SAME
+        // class discriminated at run time, so this is the only way to tell them.
+        const kindEnum = BUILTIN_ENUMERATIONS.find((e) => e.name === 'WorldHandle.kind');
+        if (kindEnum) {
+          candidates = kindEnum.values.map((v) => ({
+            value: String(v.value),
+            description: v.description || '',
+          }));
+          enumLabel = 'WorldHandle.kind';
+        }
+      } else if (strMember === 'state_label') {
+        const labelEnum = BUILTIN_ENUMERATIONS.find((e) => e.name === 'WormEntity.state_label');
+        if (labelEnum) {
+          candidates = labelEnum.values.map((v) => ({
+            value: String(v.value),
+            description: v.description || '',
+          }));
+          enumLabel = 'worm.state_label (debug label -- log only, not for game logic)';
+        }
+      } else if (strMember === 'state') {
+        candidates = READABLE_WORM_STATES.map((s) => ({
+          value: s,
+          description: 'A state worm.state can actually return.',
+        }));
+        enumLabel = 'worm.state (readable states)';
+      } else if (strMember === 'set_state') {
+        candidates = SETTABLE_WORM_STATES.map((s) => ({
+          value: s.name,
+          description: s.alias
+            ? 'Legacy alias for tumbling -- accepted, but prefer "tumbling".'
+            : `Settable state (0x${s.id.toString(16).toUpperCase()}).`,
+        }));
+        enumLabel = 'worm:set_state (accepted states -- anything else is a hard error)';
+      }
+
+      if (candidates) {
+        const items: AutocompleteItem[] = candidates
+          .filter((c) => !strQuery || c.value.toLowerCase().includes(strQuery))
+          .map((c) => ({
+            label: c.value,
+            kind: 'property' as const,
+            detail: enumLabel || `${strObj}${strSep}${strMember} ${strOp}`,
+            // The caret is already inside the quotes the user typed, so the
+            // replacement is the bare word -- inserting `"value"` here would
+            // leave a doubled quote and break the Lua string.
+            insertText: c.value,
+            documentation: c.description,
+          }));
+
+        if (items.length > 0) {
+          showAutocomplete(items, lineNum, colNum);
+          return;
+        }
+      }
+    }
+
     // 3. Arrow operator warning / helper: e.g. "wa->" or "a->"
     const arrowMatch = lineText.match(/([a-zA-Z0-9_]+)->$/);
     if (arrowMatch) {
@@ -850,89 +1102,378 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       return;
     }
 
-    // 4. General identifier autocomplete (length >= 3)
-    const wordMatch = lineText.match(/([a-zA-Z_][a-zA-Z0-9_]{2,})$/);
+    // 4. General identifier autocomplete.
+    //
+    // Replaces a branch that only ever searched BUILTIN_FUNCTIONS, whose names are
+    // all dotted (`wa.log`, `wa.world.size`). A bare `includes(word)` test against
+    // those can never match a plain local, so typing `drum`, `obj`, `wa` or `w`
+    // produced an empty list and the popup never opened -- which is what was
+    // reported. The list is now built from three sources, scope-first:
+    //
+    //   1. names visible at the cursor, innermost scope first (buildScopes)
+    //   2. engine variables (wa.*) and functions, as a fallback
+    //   3. the receiver registry prefixes, so `obj` / `mine` / `crate` resolve to
+    //      the handle they name even in a brand-new empty file
+    //
+    // The old `{2,}` minimum (3+ chars) is dropped to 2: `wa` is two characters
+    // and is the single most-typed token in this engine.
+    const wordMatch = lineText.match(/([a-zA-Z_][a-zA-Z0-9_]*)$/);
     if (wordMatch) {
       const word = wordMatch[1].toLowerCase();
       const items: AutocompleteItem[] = [];
+      const seen = new Set<string>();
 
-      // Add matching functions
+      const push = (label: string, item: Omit<AutocompleteItem, 'label'>) => {
+        if (seen.has(label)) return;
+        seen.add(label);
+        items.push({ label, ...item });
+      };
+
+      // 1. Scope-visible names, ranked by how close the scope is to the cursor.
+      //    This is the whole point of the A4 work: `t` declared in another
+      //    function no longer competes with the `t` two lines above you.
+      //    This is the whole point of the A4 work: `t` declared in another
+      //    function no longer competes with the `t` two lines above you.
+      const scopeModel = getScopeModel();
+      const visible: VisibleName[] = scopeModel ? visibleAt(scopeModel, lineNum) : [];
+      for (const v of visible) {
+        if (!v.name.toLowerCase().includes(word)) continue;
+        push(v.name, {
+          kind: 'variable',
+          rank: v.rank,
+          detail: `${v.name} - ${v.scopeLabel} (line ${v.line})`,
+          insertText: v.name,
+          documentation: `Declared at line ${v.line} in ${v.scopeLabel} as a ${v.kind}.`,
+        });
+      }
+
+      // 2. Engine variables, e.g. wa.version, wa.cavern.ceiling_y. These were
+      //    unreachable before: nothing in the old branch read BUILTIN_VARIABLES.
+      for (const vb of BUILTIN_VARIABLES) {
+        if (!vb.name.toLowerCase().includes(word)) continue;
+        push(vb.name, {
+          kind: 'variable',
+          rank: ENGINE_RANK,
+          detail: `${vb.name} (${vb.type})`,
+          insertText: vb.name,
+          documentation: vb.description,
+        });
+      }
+
+      // 3. Engine functions. Matched against the LAST dotted segment as well as
+      //    the full name, so `world.size` finds `wa.world.size`.
       for (const fn of BUILTIN_FUNCTIONS) {
-        if (fn.name.toLowerCase().includes(word)) {
-          items.push({
-            label: fn.name,
-            kind: 'function',
-            detail: fn.name,
-            insertText: fn.name,
-            documentation: fn.description,
+        const full = fn.name.toLowerCase();
+        const tail = full.slice(full.lastIndexOf('.') + 1);
+        if (!full.includes(word) && !tail.includes(word)) continue;
+        push(fn.name, {
+          kind: 'function',
+          rank: ENGINE_RANK + 1,
+          detail: fn.name,
+          insertText: fn.name,
+          documentation: fn.description,
+        });
+      }
+
+      // 3. Receiver conventions. Last, and below everything else: these are
+      //    NAMES people use for handles, not values in scope, so they only appear
+      //    when nothing else matched. This is what makes `obj` / `mine` / `crate`
+      //    suggest on a brand-new file with no declarations at all.
+      if (items.length === 0) {
+        for (const p of ALL_RECEIVER_PREFIXES) {
+          if (!p.toLowerCase().includes(word)) continue;
+          const row = resolveByName(p);
+          push(p, {
+            kind: 'variable',
+            rank: ENGINE_RANK + 2,
+            detail: `${p} - ${row?.className ?? 'handle'} receiver`,
+            insertText: p,
+            documentation: `Conventional name for a ${row?.className ?? 'WormForge'} handle. Type ":" or "." after it for members.`,
           });
         }
       }
 
+      // Innermost scope first, engine API last. Stable within a rank.
+      items.sort((a, b) => (a.rank ?? ENGINE_RANK) - (b.rank ?? ENGINE_RANK));
+
       if (items.length > 0) {
-        showAutocomplete(items, lineNum, colNum);
+        // Cap the list. A big pack can put 300+ names in file scope; a popup with
+        // 300 rows is unusable and re-sorts on every keystroke. The scope-ordered
+        // head is the useful part -- innermost declarations always survive the cut.
+        showAutocomplete(items.slice(0, 60), lineNum, colNum);
         return;
       }
     }
 
     setAutocompleteVisible(false);
+    lastAutoSignatureRef.current = null;
   };
 
   const lineHeightPx = Math.round(fontSize * lineHeight);
-  const charWidthPx = Math.max(6, Math.round(fontSize * 0.58));
   const isLight = theme === 'light';
+
+  // §34 -- the syntax palette for this mode. useMemo because resolving it walks
+  // the override map for all 14 tokens, and the highlight cache key below depends
+  // on the result being referentially stable between renders. The signature is
+  // kept separately as a STRING so the cache can key on the choice itself rather
+  // than on object identity.
+  const tokenPalette = useMemo<TokenClasses>(
+    () => resolveTokenClasses(isLight, syntaxPreset, syntaxOverridesDark, syntaxOverridesLight),
+    [isLight, syntaxPreset, syntaxOverridesDark, syntaxOverridesLight],
+  );
+  const themeSig = useMemo(
+    () =>
+      `${themeSignature(syntaxPreset, syntaxOverridesDark, syntaxOverridesLight)}::${Object.values(
+        tokenPalette,
+      ).join('|')}`,
+    [syntaxPreset, syntaxOverridesDark, syntaxOverridesLight, tokenPalette],
+  );
+
+  // ---- Caret geometry, measured instead of guessed ------------------------
+  //
+  // The popup position used to be computed as
+  //     top  = (lineNum - 1) * lineHeightPx + 30
+  //     left = (colNum  - 1) * charWidthPx  + 60
+  // which is a DOCUMENT coordinate, then applied as `position: absolute` inside
+  // the editor's scroll container. Three things were missing, and together they
+  // put the popup somewhere other than under the caret:
+  //
+  //   1. scrollTop / scrollLeft -- at line 2000 of a big pack the popup was placed
+  //      2000 lines below the viewport, i.e. effectively invisible
+  //   2. the textarea's own padding (p-2 pl-3) and its offset inside the editor
+  //   3. charWidthPx, a hardcoded 0.58em guess. The real monospace advance width
+  //      is whatever the font says, so the horizontal position drifted further the
+  //      further right you typed.
+  //
+  // The fix measures. A hidden <span> holds the text up to the caret using the
+  // EXACT same classes as the textarea, and the caret offset is read from
+  // getBoundingClientRect(). That gives the true pixel position regardless of font,
+  // zoom, or DPI -- no constants to tune.
+  const caretRef = useRef<HTMLSpanElement>(null);
+
+  // The popup's offsetParent. MUST be the element the popup is actually rendered
+  // inside -- not `editorContainerRef`. They differ by the toolbar height and the
+  // gutter width, and mixing them up offsets every position by a constant.
+  const popupHostRef = useRef<HTMLDivElement>(null);
+
+  // Text of the caret's line up to the caret, plus a marker span. Rendered inside
+  // a mirror of the textarea so the browser lays it out with identical metrics.
+  const caretLine = lines[cursorPos.line - 1] ?? '';
+  const caretPrefix = caretLine.slice(0, Math.max(0, cursorPos.column - 1));
+  const caretTail = caretLine.slice(Math.max(0, cursorPos.column - 1));
+
+  /**
+   * Caret position in the coordinate space the popup's `absolute` offsets resolve
+   * against, or null before the mirror has been laid out.
+   *
+   * THREE BUGS lived in the previous version. The reported symptom was "the popup
+   * scrolls DOWN further than I scroll", which is the signature of the first one.
+   *
+   * 1. SIGN. It did `m.top - h.top + ta.scrollTop`. The mirror is laid out inside a
+   *    NON-scrolling container, so `m.top - h.top` is already a VIEWPORT offset and
+   *    must NOT have scrollTop added. Adding it made the popup travel downward as
+   *    the view travelled downward -- it accelerated away from the caret instead of
+   *    tracking it. Correct is `- ta.scrollTop`.
+   *
+   * 2. WRONG HOST. The offsets were resolved against `editorContainerRef` (the whole
+   *    editor, toolbar included) but the popup is `absolute` inside the centre stage,
+   *    which sits below the toolbar and to the right of the gutter. Every position
+   *    was therefore off by the toolbar height and the gutter width, which is why it
+   *    looked right "strictly up top" in a fresh file and wrong everywhere else.
+   *    The host must be the popup's own offsetParent.
+   *
+   * 3. NO VERTICAL COMPONENT FROM THE MIRROR. The mirror holds one line of text, so
+   *    its top edge is the top of the LINE, not of the document. The caret's line
+   *    number has to contribute `(line - 1) * lineHeightPx`; measuring alone cannot
+   *    know it.
+   *
+   * Horizontal position comes from the mirror (true font metrics, no 0.58em guess);
+   * vertical comes from line arithmetic plus scroll compensation.
+   */
+  const measureCaret = (): { top: number; left: number } | null => {
+    const ta = textareaRef.current;
+    const marker = caretRef.current;
+    // The popup's offsetParent: the centre-stage div it is rendered inside.
+    const host = popupHostRef.current;
+    if (!ta || !marker || !host) return null;
+
+    const m = marker.getBoundingClientRect();
+    const h = host.getBoundingClientRect();
+
+    // Horizontal: measured text width, minus horizontal scroll. paddingLeft is the
+    // textarea's own `p-2 pl-3` (12px), which the mirror also carries.
+    const left = m.left - h.left - ta.scrollLeft;
+
+    // Vertical: the mirror sits at the top of the caret's own line, so add every
+    // line above it, then undo the scroll.
+    const top = (cursorPos.line - 1) * lineHeightPx - ta.scrollTop;
+
+    return { top, left };
+  };
 
   const showAutocomplete = (items: AutocompleteItem[], lineNum: number, colNum: number) => {
     if (items.length === 0) {
       setAutocompleteVisible(false);
+      lastAutoSignatureRef.current = null;
       return;
     }
     setAutocompleteItems(items);
-    setSelectedAutoIdx(0);
 
-    const top = Math.min((lineNum - 1) * lineHeightPx + 30, (lines.length * lineHeightPx) - 80);
-    const left = Math.min((colNum - 1) * charWidthPx + 60, window.innerWidth - 380);
+    const signature = items.map((i) => i.label).join('\u0000');
+    if (signature === lastAutoSignatureRef.current) {
+      // Same suggestions as the last render: keep the user's position, but
+      // clamp in case the list shrank underneath the highlight.
+      setSelectedAutoIdx((prev) => (prev < items.length ? prev : 0));
+    } else {
+      // New context (or a fresh popup after Escape/insert): start at the top.
+      lastAutoSignatureRef.current = signature;
+      setSelectedAutoIdx(0);
+    }
 
-    setAutocompletePos({ top: Math.max(20, top), left: Math.max(70, left) });
+    // Position under the caret, flipping above it when there is not enough room.
+    // Measured, so this is correct at any font size, zoom level or DPI.
+    const at = measureCaret();
+    if (at) {
+      const host = editorContainerRef.current;
+      const hostH = host?.clientHeight ?? 0;
+      const hostW = host?.clientWidth ?? 0;
+      // Popup geometry must match the classes/style on the popup element, since the
+      // position depends on how tall it is. `autoSize` rather than a constant so a
+      // window the user has resized flips at the right moment.
+      const rowH = 22;
+      const chromeH = 34;
+      const wantH = Math.min(items.length * rowH + chromeH, autoSize.h);
+      const wantW = autoSize.w;
+
+      let top = at.top + lineHeightPx;
+      // Flip above when the popup would hang off the bottom. Without this the list
+      // is unreachable on the last few lines of the viewport.
+      if (top + wantH > hostH - 8) top = Math.max(8, at.top - wantH);
+
+      let left = at.left;
+      // Keep it on screen when the caret is near the right edge.
+      if (left + wantW > hostW - 8) left = Math.max(8, hostW - wantW - 8);
+
+      setAutocompletePos({ top, left });
+    }
     setAutocompleteVisible(true);
   };
+
+  // ---- Resizable autocomplete window -------------------------------------
+  // Follows the existing manual mousemove/mouseup-on-window pattern used for the
+  // app's pane resizers (see App.tsx handleStartSidebarResize). No layout library.
+  const startAutoResize = (axis: 'w' | 'h', e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    autoDragRef.current = {
+      axis,
+      startX: e.clientX,
+      startY: e.clientY,
+      startW: autoSize.w,
+      startH: autoSize.h,
+    };
+
+    const onMove = (ev: MouseEvent) => {
+      const d = autoDragRef.current;
+      if (!d) return;
+      if (d.axis === 'w') {
+        const w = Math.min(AUTO_MAX_W, Math.max(AUTO_MIN_W, d.startW + (ev.clientX - d.startX)));
+        setAutoSize((s) => ({ ...s, w }));
+      } else {
+        const h = Math.min(AUTO_MAX_H, Math.max(AUTO_MIN_H, d.startH + (ev.clientY - d.startY)));
+        setAutoSize((s) => ({ ...s, h }));
+      }
+    };
+    const onUp = () => {
+      autoDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  // Keep the highlighted item visible.
+  //
+  // ArrowDown past the bottom of a shortened popup used to move the selection
+  // off-screen with no visual feedback, so the list appeared frozen while the
+  // selection was in fact moving. Browsers only scroll an element into view on
+  // focus or explicit scrollIntoView, not when a className changes, so this has
+  // to be driven from the selected index.
+  const autoListRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const list = autoListRef.current;
+    if (!list) return;
+    const rows = list.children;
+    const row = rows[selectedAutoIdx] as HTMLElement | undefined;
+    if (!row) return;
+    // Nearest keeps it minimal: scrolling the row fully into view on every step
+    // makes the list jumpy.
+    row.scrollIntoView({ block: 'nearest' });
+  }, [selectedAutoIdx, autocompleteItems]);
 
   const insertAutocomplete = (item: AutocompleteItem) => {
     if (!textareaRef.current) return;
     const selStart = textareaRef.current.selectionStart;
     const textBefore = code.slice(0, selStart);
 
-    // Replace partial word or insert
+    // Replace the word/prefix being typed, and ONLY that. Never the rest of the line.
+    //
+    // The old logic searched the whole current line for the last `.` or `:` and set
+    // `replaceStart` from it, so accepting a suggestion could rewrite everything
+    // from that separator onward. Combined with Enter accepting by default, a
+    // half-typed line could be replaced wholesale by an unrelated declaration.
+    //
+    // The rule now: replace at most the identifier immediately before the caret.
+    // If the popup is showing members (the user typed `obj.` or `obj:`), the member
+    // name is what gets replaced. Otherwise the partial word is. Either way the
+    // text AFTER the caret is untouched.
     const lineBreakIdx = textBefore.lastIndexOf('\n');
     const currentLine = textBefore.slice(lineBreakIdx + 1);
+    const caretInLine = selStart - (lineBreakIdx + 1);
 
-    let replaceStart = selStart;
-    // Check if replacing after -> fix
-    const arrowIdx = currentLine.lastIndexOf('->');
-    const colonIdx = currentLine.lastIndexOf(':');
-    const dotIdx = currentLine.lastIndexOf('.');
+    // The identifier characters immediately before the caret.
+    const wordBefore = currentLine.slice(0, caretInLine).match(/[A-Za-z0-9_]*$/);
+    const partialWord = wordBefore ? wordBefore[0] : '';
 
-    if (arrowIdx !== -1 && (item.insertText.startsWith('.') || item.insertText.startsWith(':'))) {
-      // Replace the -> with . or :
+    // What the popup was opened for. `member` means the user is completing after a
+    // `.` or `:`, so only the name after it may be replaced. Determined from the
+    // typed line, not from the item, so it is right even for an unrelated top hit.
+    const sepBefore = currentLine.slice(0, caretInLine - partialWord.length).match(/[.:]\s*$/);
+    const isMemberCompletion = sepBefore !== null;
+
+    let replaceStart = selStart - partialWord.length;
+
+    // `->` fix: the item starts with the separator the user should have typed, so
+    // swallow the whole `->` instead of leaving it behind.
+    const arrowIdx = currentLine.lastIndexOf('->', caretInLine - 1);
+    if (
+      arrowIdx !== -1 &&
+      caretInLine >= arrowIdx + 2 &&
+      currentLine.slice(caretInLine - partialWord.length, caretInLine).trim() === '' &&
+      (item.insertText.startsWith('.') || item.insertText.startsWith(':'))
+    ) {
       replaceStart = lineBreakIdx + 1 + arrowIdx;
-    } else if (colonIdx !== -1 && (dotIdx === -1 || colonIdx > dotIdx)) {
-      replaceStart = lineBreakIdx + 1 + colonIdx + 1;
-    } else if (dotIdx !== -1 && currentLine.includes('wa.') && item.label.startsWith('wa.')) {
-      const waIdx = currentLine.lastIndexOf('wa.');
-      replaceStart = lineBreakIdx + 1 + waIdx;
-    } else if (dotIdx !== -1) {
-      replaceStart = lineBreakIdx + 1 + dotIdx + 1;
-    } else {
-      const wordMatch = currentLine.match(/([a-zA-Z0-9_]+)$/);
-      if (wordMatch) {
-        replaceStart = selStart - wordMatch[1].length;
+    }
+    // `a:b` -> insert a method. The item already begins with `:`, so the typed `:`
+    // must be consumed or the result is `worm::hurt(1)`. Guarded on a colon
+    // sitting EXACTLY where the partial word starts: a looser check fired even
+    // when the caret was merely mid-line, which could double the separator.
+    else if (isMemberCompletion && item.insertText.startsWith(':')) {
+      const colonIdx = caretInLine - partialWord.length - 1;
+      if (currentLine[colonIdx] === ':') {
+        replaceStart = lineBreakIdx + 1 + colonIdx;
       }
     }
+    // Otherwise `replaceStart` is already correct: the partial word before the caret.
+    // Anything AFTER selStart is preserved by the slice below.
 
     const newCode = code.slice(0, replaceStart) + item.insertText + code.slice(selStart);
     const nextPos = replaceStart + item.insertText.length;
     applyProgrammaticChange(newCode, nextPos);
     setAutocompleteVisible(false);
+    lastAutoSignatureRef.current = null;
   };
 
   // Find in Code matches computation
@@ -943,14 +1484,40 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     const query = findCaseSensitive ? findQuery : findQuery.toLowerCase();
     if (!query) return [];
 
+    // Line numbers are computed by counting newlines ONCE into a prefix table,
+    // then binary-searched per match.
+    //
+    // The old version did `code.slice(0, pos).split('\n').length` for EVERY match,
+    // which is O(document x matches): on a 169 KB file with 200 matches that is
+    // ~34 million characters copied and split, on every keystroke while Find is
+    // open. This is the version that was reported as sluggish.
+    const newlines: number[] = [0];
+    for (let i = 0; i < code.length; i++) {
+      if (code.charCodeAt(i) === 10) newlines.push(i + 1);
+    }
+
+    // Index of the last newline at or before `pos`, via binary search.
+    const lineStarts = newlines;
+    const findLine = (pos: number): number => {
+      let lo = 0;
+      let hi = lineStarts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (lineStarts[mid] <= pos) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo;
+    };
+
     let pos = 0;
     while ((pos = targetCode.indexOf(query, pos)) !== -1) {
-      const textBefore = code.slice(0, pos);
-      const lineNum = textBefore.split('\n').length;
-      const lastNl = textBefore.lastIndexOf('\n');
-      const colNum = pos - (lastNl === -1 ? 0 : lastNl + 1) + 1;
-
-      matches.push({ index: pos, length: query.length, line: lineNum, col: colNum });
+      const li = findLine(pos);
+      matches.push({
+        index: pos,
+        length: query.length,
+        line: li + 1,
+        col: pos - lineStarts[li] + 1,
+      });
       pos += query.length || 1;
     }
     return matches;
@@ -967,6 +1534,9 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       textareaRef.current.scrollTop = targetScroll;
       if (highlightRef.current) highlightRef.current.scrollTop = targetScroll;
       if (gutterRef.current) gutterRef.current.scrollTop = targetScroll;
+      // Assigning scrollTop fires NO scroll event, so the virtualised window would
+      // keep rendering the old slice after a Find jump.
+      noteScrollTop();
     },
     [lineHeightPx]
   );
@@ -1051,6 +1621,9 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     textareaRef.current.scrollTop = targetScroll;
     if (highlightRef.current) highlightRef.current.scrollTop = targetScroll;
     if (gutterRef.current) gutterRef.current.scrollTop = targetScroll;
+    // Same reason as goToMatch: a programmatic scroll fires no scroll event, so
+    // the virtualised window has to be told.
+    noteScrollTop();
 
     setFlashingLine(line);
     const timer = setTimeout(() => setFlashingLine(null), 2000);
@@ -1069,7 +1642,19 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
         setSelectedAutoIdx((prev) => (prev - 1 + autocompleteItems.length) % autocompleteItems.length);
         return;
       }
-      if (e.key === 'Tab' || e.key === 'Enter') {
+      // Accept: Tab only.
+      //
+      // Enter used to accept too, which was actively harmful: the popup is open
+      // constantly while typing normal Lua, item 0 is highlighted by default, and
+      // Enter is the key you press to get to the next line. So every Enter deleted
+      // a partial word and inserted whatever happened to be suggestion #0 --
+      // "obj.worm_id == worm_id / e = ammo / return obj" plus Enter turned into a
+      // declaration like `endure`. Code that was mid-edit got replaced with a
+      // guess, and since Enter is how you commit a line, it happened constantly.
+      //
+      // Enter is now NEVER captured by the popup. Tab accepts, matching VS Code,
+      // which also uses Tab rather than Enter for exactly this reason.
+      if (e.key === 'Tab') {
         e.preventDefault();
         if (autocompleteItems[selectedAutoIdx]) {
           insertAutocomplete(autocompleteItems[selectedAutoIdx]);
@@ -1079,8 +1664,11 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       if (e.key === 'Escape') {
         e.preventDefault();
         setAutocompleteVisible(false);
+        lastAutoSignatureRef.current = null;
         return;
       }
+      // Enter deliberately falls through to the textarea, so it inserts a newline
+      // and closes the popup via the next keyup rather than swallowing the key.
     }
 
     // F3 Find in Code
@@ -1133,19 +1721,110 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     }
   };
 
+  // Per-line diagnostic index, shared by the gutter and the highlight backdrop.
+  //
+  // BOTH used to call `diagnostics.find((d) => d.line === lineNum)` INSIDE a
+  // per-line map -- a full scan of every diagnostic repeated once per line, i.e.
+  // O(lines x diagnostics) on every render, done twice per keystroke because the
+  // gutter and the backdrop each did it independently. One map, built once.
+  const diagByLine = useMemo(() => {
+    const m = new Map<number, SyntaxDiagnostic>();
+    for (const d of diagnostics) if (!m.has(d.line)) m.set(d.line, d);
+    return m;
+  }, [diagnostics]);
+
+  // ---- Virtualisation -----------------------------------------------------
+  //
+  // Measured on rules.lua (165 KB, 4,689 lines): rendering every line produced
+  // 4,689 <div> + 4,689 <span> = ~9,378 DOM nodes that React re-diffed on every
+  // keystroke. After removing the JS hot spots the profile showed NO remaining
+  // single-function bottleneck -- the cost WAS the node count. That is the part a
+  // JS profiler cannot attribute to a function, which is why it survived the
+  // earlier rounds of optimisation.
+  //
+  // Only the on-screen window is rendered. A spacer above and below preserves the
+  // total scroll height, so the scrollbar and the native textarea's own scrolling
+  // are unaffected -- the textarea still holds the whole document and does its own
+  // caret/scroll work; only the decorative backdrop behind it is windowed.
+  //
+  // Overscan of 20 lines means a fast flick renders a blank frame at worst, which
+  // is far less noticeable than the stutter this replaces.
+  // Overscan is 400 lines, not 20.
+  //
+  // Measured on the real file at 20, a fast mouse-wheel flick (~700 lines/sec at a
+  // 20px line height is 14,000 px/sec) outran the window: at 60fps the content
+  // moves ~233px, ~12 lines, per frame, and the rAF-throttled state update means
+  // the window can lag a frame or two behind the actual scroll position. 20 lines
+  // of overscan was not enough to cover that, and the backdrop showed blank while
+  // a fast scroll was in progress.
+  //
+  // 400 covers roughly 8,000px of travel -- about 34 frames at that speed, which
+  // is more than any plausible lag. The cost is trivial now that rendering is
+  // windowed at all: ~470 lines instead of 4,689 is still ~90% fewer DOM nodes,
+  // and the highlight cache means those extra lines cost one map lookup each.
+  const VISIBLE_OVERSCAN = 400;
+  const [scrollTop, setScrollTop] = useState(0);
+  const rafScrollRef = useRef<number | null>(null);
+
+  // rAF-throttled. A scroll gesture fires dozens of events and only the final one
+  // matters; setting state per event would re-render per event, which is the exact
+  // cost being removed.
+  const noteScrollTop = () => {
+    if (rafScrollRef.current !== null) return;
+    rafScrollRef.current = requestAnimationFrame(() => {
+      rafScrollRef.current = null;
+      setScrollTop(textareaRef.current?.scrollTop ?? 0);
+    });
+  };
+
+  useEffect(
+    () => () => {
+      if (rafScrollRef.current !== null) cancelAnimationFrame(rafScrollRef.current);
+    },
+    []
+  );
+
+  const lh = Math.max(1, lineHeightPx);
+  const viewRows = Math.ceil((editorContainerRef.current?.clientHeight ?? 600) / lh) + 2;
+  const firstVisible = Math.max(0, Math.floor(scrollTop / lh) - VISIBLE_OVERSCAN);
+  const lastVisible = Math.min(lines.length, firstVisible + viewRows + VISIBLE_OVERSCAN * 2);
+  const topSpacerPx = firstVisible * lineHeightPx;
+  const bottomSpacerPx = Math.max(0, (lines.length - lastVisible) * lineHeightPx);
+  const renderedLineCount = lastVisible - firstVisible;
+
   // Syntax Highlighting Engine
   const highlightedCode = useMemo(() => {
     const currentMatch = findMatches[findMatchIndex];
+    const hasMatchByLine = new Set<number>();
+    for (const m of findMatches) hasMatchByLine.add(m.line);
 
-    return lines.map((lineText, lineIdx) => {
-      const lineNum = lineIdx + 1;
-      const diag = diagnostics.find((d) => d.line === lineNum);
-      const isCurrent = cursorPos.line === lineNum;
-      const isFlashing = flashingLine === lineNum;
-      const hasMatch = findOpen && findQuery.trim() && findMatches.some((m) => m.line === lineNum);
-      const isCurrentMatchLine = findOpen && currentMatch && currentMatch.line === lineNum;
+    // The windowed slice of lines. `diagByLine` replaces the per-line
+    // `diagnostics.find` this used to do.
+    const slice: { lineText: string; lineIdx: number }[] = [];
+    for (let i = firstVisible; i < lastVisible; i++) slice.push({ lineText: lines[i], lineIdx: i });
 
-      return (
+    return (
+      <>
+        {/* Spacer preserves the scroll height of the lines above the window. */}
+        <div style={{ height: `${topSpacerPx}px` }} aria-hidden="true" />
+        {slice.map(({ lineText, lineIdx }) => {
+          const lineNum = lineIdx + 1;
+          const diag = diagByLine.get(lineNum);
+          const isCurrent = cursorPos.line === lineNum;
+          const isFlashing = flashingLine === lineNum;
+          const hasMatch = findOpen && !!findQuery.trim() && hasMatchByLine.has(lineNum);
+          const isCurrentMatchLine = findOpen && currentMatch && currentMatch.line === lineNum;
+
+          // INFO gets NO tint and NO underline. These are the advisory findings --
+          // desync advice, handle-union notices, the worm-msg-filter optimisation
+          // -- which are CORRECT as written and will not break the match. The
+          // console already gives `info` its own pill precisely so it stops
+          // burying the warnings you need to read; tinting the source line amber
+          // for one put it back on equal footing with `warning`, which is the
+          // thing being warned ABOUT. Light blue dot in the gutter, nothing else.
+          // `error` (rose) and `warning` (amber) keep both the tint and the
+          // dotted underline: those two mean something is actually wrong.
+          return (
         <div
           key={lineIdx}
           style={{ height: `${lineHeightPx}px`, lineHeight: `${lineHeightPx}px` }}
@@ -1168,18 +1847,19 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
                 : 'bg-amber-950/20'
               : ''
           } ${
-            diag
-              ? diag.severity === 'error'
-                ? isLight
-                  ? 'bg-rose-100/50'
-                  : 'bg-rose-950/20'
-                : isLight
+            diag && (diag.severity === 'error'
+              ? isLight
+                ? 'bg-rose-100/50'
+                : 'bg-rose-950/20'
+              : diag.severity === 'warning'
+              ? isLight
                 ? 'bg-amber-100/40'
                 : 'bg-amber-950/20'
-              : ''
+              : '')
           }`}
         >
-          {diag && (
+          {/* Underline only for severities that imply something is wrong. */}
+          {diag && diag.severity !== 'info' && (
             <span
               className={`absolute bottom-0 left-0 right-0 h-0.5 pointer-events-none ${
                 diag.severity === 'error'
@@ -1191,18 +1871,35 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
           <span
             className="whitespace-pre font-mono"
             dangerouslySetInnerHTML={{
-              __html: isToml ? highlightTomlLine(lineText, isLight) : highlightLuaLine(lineText, isLight),
+              __html: isToml
+                ? highlightTomlLine(lineText, isLight, tokenPalette)
+                : cachedHighlightLuaLine(lineText, isLight, themeSig, tokenPalette),
             }}
           />
         </div>
-      );
-    });
+          );
+        })}
+        {/* Spacer preserves the scroll height of the lines below the window. */}
+        <div style={{ height: `${bottomSpacerPx}px` }} aria-hidden="true" />
+      </>
+    );
   }, [
     lines,
-    diagnostics,
+    // The window is part of the output, so the slice bounds belong here. Without
+    // them the memo would keep rendering the old window after a scroll.
+    firstVisible,
+    lastVisible,
+    topSpacerPx,
+    bottomSpacerPx,
+    diagByLine,
     cursorPos.line,
     lineHeightPx,
     isLight,
+    // §34: the palette and its signature must be in this list. Without them the
+    // memo keeps returning markup built for the previous preset, because nothing
+    // else in the editor's state changes when the user picks a different theme.
+    tokenPalette,
+    themeSig,
     isToml,
     flashingLine,
     findOpen,
@@ -1219,12 +1916,19 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     const timeDiff = now - lastTypingTimeRef.current;
     lastTypingTimeRef.current = now;
 
-    const isWordBreak = /\s$/.test(newCode) || newCode.endsWith('\n');
-    if (
-      !lastSnapshot ||
-      (timeDiff > 600 && isWordBreak) ||
-      Math.abs(newCode.length - (lastSnapshot?.code.length || 0)) > 15
-    ) {
+    // New undo entry, or fold this keystroke into the one being typed? See
+    // services/undoPolicy.ts -- the short version is that this used to require a pause
+    // AND a word boundary, so an ordinary character satisfied neither, got folded into
+    // the entry holding the text before you started typing, and destroyed it. The stack
+    // never grew past one entry, so Ctrl+Z did nothing at all.
+    const newEntry = startsNewUndoEntry({
+      hasSnapshot: !!lastSnapshot,
+      timeSinceLastEdit: timeDiff,
+      atWordBoundary: isWordBoundary(newCode, e.target.selectionStart),
+      lengthDelta: newCode.length - (lastSnapshot?.code.length ?? 0),
+    });
+
+    if (newEntry) {
       if (hist.undo.length >= 250) hist.undo.shift();
       hist.undo.push({
         code: newCode,
@@ -1449,9 +2153,11 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
               : 'bg-[#14171d] border-[#242932] text-[#516072]'
           }`}
         >
-          {lines.map((_, i) => {
-            const lineNum = i + 1;
-            const diag = diagnostics.find((d) => d.line === lineNum);
+          {/* Same window as the highlight backdrop, so the two never disagree. */}
+          <div className="shrink-0" style={{ height: `${topSpacerPx}px` }} aria-hidden="true" />
+          {lines.slice(firstVisible, lastVisible).map((_, i) => {
+            const lineNum = firstVisible + i + 1;
+            const diag = diagByLine.get(lineNum);
             const isCurrent = cursorPos.line === lineNum;
             return (
               <div
@@ -1461,15 +2167,23 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
                   lineHeight: `${lineHeightPx}px`,
                   fontSize: `${fontSize - 1}px`,
                 }}
-                className={`code-editor-line flex items-center justify-end w-full gap-1 ${
+                className={`code-editor-line shrink-0 flex items-center justify-end w-full gap-1 ${
                   isCurrent ? (isLight ? 'text-amber-700 font-bold' : 'text-amber-400 font-bold') : ''
                 }`}
               >
                 {diag && (
                   <span
                     title={diag.message}
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      diag.severity === 'error' ? 'bg-rose-500' : 'bg-amber-500'
+                    // Three distinct severities, not two. `info` is sky/blue to
+                    // match the console's Info pill and its sky icon; it used to
+                    // be amber, the same colour as `warning`, which is exactly
+                    // the confusion this fixes.
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      diag.severity === 'error'
+                        ? 'bg-rose-500'
+                        : diag.severity === 'warning'
+                        ? 'bg-amber-500'
+                        : 'bg-sky-400'
                     }`}
                   />
                 )}
@@ -1477,10 +2191,12 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
               </div>
             );
           })}
+          <div className="shrink-0" style={{ height: `${bottomSpacerPx}px` }} aria-hidden="true" />
         </div>
 
-        {/* Editor Center Stage */}
-        <div className="relative flex-1 h-full overflow-hidden">
+        {/* Editor Center Stage -- this is the popup's offsetParent. `popupHostRef` MUST
+          * point here, not at the outer container. */}
+        <div ref={popupHostRef} className="relative flex-1 h-full overflow-hidden">
           {/* Syntax Highlight Backdrop */}
           <div
             ref={highlightRef}
@@ -1489,6 +2205,23 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
             className="absolute inset-0 p-2 pl-3 pointer-events-none overflow-hidden whitespace-pre font-mono"
           >
             {highlightedCode}
+          </div>
+
+          {/* Caret measurement mirror.
+          * Layout-identical to the textarea above (same padding, font, line-height,
+          * whitespace handling) so the marker's rect IS the caret's position. Only
+          * the text before the caret is rendered -- its width is what matters.
+          * Hidden but still laid out, hence visibility rather than display:none. */}
+          <div
+            aria-hidden="true"
+            style={{ fontSize: `${fontSize}px`, lineHeight: `${lineHeightPx}px` }}
+            className={`absolute p-2 pl-3 whitespace-pre font-mono pointer-events-none invisible ${
+              isLight ? 'text-slate-800' : 'text-[#e0e6ed]'
+            }`}
+          >
+            {caretPrefix}
+            <span ref={caretRef} className="inline-block w-0" />
+            {caretTail}
           </div>
 
           {/* Actual Input Textarea */}
@@ -1520,22 +2253,45 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
               style={{
                 top: `${autocompletePos.top}px`,
                 left: `${autocompletePos.left}px`,
+                width: `${autoSize.w}px`,
+                height: `${autoSize.h}px`,
               }}
-              className={`absolute z-40 rounded-md shadow-2xl w-80 max-h-64 overflow-y-auto text-xs font-sans divide-y border ${
+              className={`absolute z-40 flex flex-col rounded-md shadow-2xl text-xs font-sans border ${
                 isLight
-                  ? 'bg-white border-slate-300 text-slate-800 divide-slate-100 shadow-xl'
-                  : 'bg-[#1a1e26] border-[#333d4e] text-[#d0dbe7] divide-[#242b36]'
+                  ? 'bg-white border-slate-300 text-slate-800 shadow-xl'
+                  : 'bg-[#1a1e26] border-[#333d4e] text-[#d0dbe7]'
               }`}
             >
+              {/* Resize handles. Bottom-right corner resizes both axes at once;
+                  the right edge is width only and the bottom edge height only, so
+                  a long list can be widened without also making it taller. */}
+              <div
+                onMouseDown={(e) => startAutoResize('h', e)}
+                title="Drag to resize height"
+                className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize z-10"
+              />
+              <div
+                onMouseDown={(e) => startAutoResize('w', e)}
+                title="Drag to resize width"
+                className="absolute top-0 bottom-0 right-0 w-1.5 cursor-ew-resize z-10"
+              />
+              <div
+                onMouseDown={(e) => startAutoResize('w', e)}
+                title="Drag to resize"
+                className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-20"
+              />
               <div
                 className={`px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wider flex items-center justify-between ${
                   isLight ? 'bg-slate-100 text-slate-600' : 'bg-[#14171d] text-[#8ca0b8]'
                 }`}
               >
                 <span>Suggestions ({autocompleteItems.length})</span>
-                <span className="text-[10px] text-[#556475] font-mono">Tab/Enter to insert</span>
+                <span className="text-[10px] text-[#556475] font-mono">Tab to accept</span>
               </div>
-              <div className="py-0.5">
+              {/* min-h-0 is required: this is a flex child, and without it the
+                  browser refuses to shrink it below its content height, so the
+                  list would spill out of the popup instead of scrolling. */}
+              <div ref={autoListRef} className="flex-1 min-h-0 overflow-y-auto py-0.5">
                 {autocompleteItems.map((item, idx) => (
                   <div
                     key={idx}

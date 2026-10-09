@@ -12,7 +12,7 @@ interface CreateModModalProps {
 
 /**
  * Two plain text fields, nothing more. The parent does the actual work.
- * Mirrors the existing KeycodeModal layout (fixed overlay, dark panel).
+ * Mirrors the existing KeyboardReference layout (fixed overlay, dark panel).
  */
 export const CreateModModal: React.FC<CreateModModalProps> = ({
   isOpen,

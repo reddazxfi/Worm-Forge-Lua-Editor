@@ -4,9 +4,20 @@ version = "1.0.0"
 description = "WormForge Lua Code Editor with Engine Verbs and AST Inspector"
 authors = ["LucianoWorms"]
 edition = "2021"
+# The crate builds TWO binaries: the app (src/main.rs) and the throwaway sweep
+# harness declared below. Without this, `tauri build` cannot tell which target is
+# the app and fails with "failed to find main binary, make sure you have a
+# `package > default-run`". Name the app explicitly.
+default-run = "wormforge-code-editor"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+
+[[bin]]
+# Throwaway harness for scripts/__sweep.ts: runs `checks::run` over a JSON list of
+# files and prints one JSON object of rule ids per file. Deleted with that script.
+name = "wasmforge-sweep"
+path = "src/bin/sweep.rs"
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -19,6 +30,13 @@ serde_json = "1"
 # no Lua installation needed on this machine. Only the front end is used, via
 # Chunk::into_function() in src/main.rs, which compiles without executing.
 mlua = { version = "0.10", features = ["lua54", "vendored"] }
+# Track B, phase 1: a real lossless Lua parser, replacing the hand-written
+# tokenizer in src/services/parser.ts. The `lua54` feature is what makes
+# full_moon accept Lua 5.4 syntax (the version mlua above compiles against), so
+# the two front ends agree on what is valid. Default features include `serde`,
+# which is unused here -- the payload is built by hand below, so the AST is
+# never serialized wholesale.
+full_moon = { version = "3", default-features = false, features = ["lua54"] }
 
 [profile.release]
 opt-level = "s"
