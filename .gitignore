@@ -19,3 +19,14 @@ src-tauri/gen/
 # Excludes the vendored engine source, build output, lockfiles and the root
 # parser.ts backup. Regenerate with: npx repomix .
 repomix-output.xml
+
+# Local scratch/handoff material. Useful while working, never part of the app.
+# `docs/` holds screenshots, plans and test logs that are not shipped.
+docs/
+compacted-context.md
+compacted-history.md
+PROGRESS.md
+SYNC_PROMPT.md
+repomix.config.json
+WormForge-main-source/
+ModsLatest/
