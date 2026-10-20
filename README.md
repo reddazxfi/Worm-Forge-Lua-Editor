@@ -7,7 +7,7 @@ WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully cr
 
 ---
 
-📁[WormForge Repo](https://github.com/ropahektic/WormForge)
+📁[WormForge Repo](https://github.com/EdLud/WormForge)
 
 ---
 
@@ -35,7 +35,7 @@ WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully cr
 | `Ctrl` + `Z` / `Ctrl` + `Y` | Undo / redo — history is per-file and survives tab switches |
 | `Ctrl` + `F` | Find in file |
 | `F3` | Jump to next match |
-| `Tab` / `Enter` | Accept the autocomplete suggestion |
+| `Tab` | Accept the autocomplete suggestion (Enter always inserts a newline) |
 | `Esc` | Dismiss the autocomplete popup |
 
 ---
@@ -71,7 +71,7 @@ explanation of why it was flagged. 🎯
 
 ### 🚨 Runtime-Fatal Name Detection
 
-Because the compiler doesn't *run* your code, a chunk full of invented globals is perfectly valid Lua, Not anymore! Proper scoping now catches the following errors!
+Because the compiler doesn't *run* your code, a chunk full of invented globals is perfectly valid Lua. Not anymore! Proper scoping now catches the following errors!
 
 ```lua
 eaea:abstract(asynca)          -- compiles. dies instantly.
@@ -81,7 +81,7 @@ local e = awasd.ra             -- compiles. dies instantly.
 
 That chunk loads fine and then crashes at `InitGraphic` — and because every mod shares one Lua state, **one bad mod takes every other mod down with it.** The editor flags every name that is read but never defined, so you find out here rather than in a match.
 
-It also understands the Lua you'd actually write: callback parameters, `for` loop variables, method definitions (`function Worm:ammo(x)` binds `self` implicitly), table keys, and plain global assignment. Verified against all 25 Lua files in the engine repo's example packs with **zero false positives**.
+It also understands the Lua you'd actually write: callback parameters, `for` loop variables, method definitions (`function Worm:ammo(x)` binds `self` implicitly), table keys, and plain global assignment. Verified against the engine repo's example packs with **zero false positives**.
 
 ---
 
@@ -127,7 +127,7 @@ src-tauri\target\release\wormforge-code-editor.exe
 ```
 🎉 *(The first build compiles Rust crates **and** the vendored Lua 5.4 C sources, and may take several minutes. Grab a coffee!)* ☕
 
-> 💡 **Rebuilding after a TypeScript-only change?** Use `npx tauri build` instead. It reuses the cached Rust codegen and is dramatically faster — `build-tauri.bat` wipes `node_modules`, `package-lock.json`, and `dist` before starting. Use the full script when something is genuinely wedged.
+> 💡 **Rebuilding after a TypeScript-only change?** Use `npx tauri build` instead. It reuses the cached Rust codegen and is dramatically faster — `build-tauri.bat` wipes `node_modules` and `dist`, then installs exactly what `package-lock.json` pins. Use the full script when something is genuinely wedged.
 
 ---
 
@@ -150,12 +150,12 @@ src-tauri\target\release\wormforge-code-editor.exe
 
 ## ⚠️ Known Limitations
 
-- The semantic checker has **two implementations** kept in step: a TypeScript one and a Rust `full_moon` one. A differential sweep runs both over the engine's whole mod corpus on demand; it currently reports **0 real drift**, plus 4 findings where Rust is deliberately and adjudicated-correctly ahead. 🧪
+- The semantic checker has **two implementations** kept in step: a TypeScript one and a Rust `full_moon` one. A differential sweep runs both over the engine's whole mod corpus on demand; it currently reports **0 real drift**, and the handful of differences are adjudicated in the sweep script. 🧪
 - Syntax checking is **not AST-based** on the TypeScript side. Despite the "AST Inspector" label in the UI, that layer is a hand-written tokenizer plus two stacks. The real Lua 5.4 compiler in the desktop build is what makes syntax checking authoritative. 🤖
 - **The real compiler requires a current build.** An `.exe` predating the compiler silently falls back to the built-in parser, and the console says so.
-- The undefined-name check is **not scope-aware**: a name counts as defined if it's bound *anywhere* in the file, so a forward reference is never flagged. (The *autocomplete* is scope-aware — see Key Features.)
+- The undefined-name check is **scope-aware in the Rust checker** (and in autocomplete); the TypeScript fallback used outside the desktop app is a flat file-wide pass.
 - Unknown-method checks only cover a **fixed receiver list** (`a`, `actor`, `worm`, `m`, `missile`, `inv`/`store`/`inventory`, `mine`/`drum`/`oil`/`crate`/`grave`/`obj`/`object`). Receivers narrowed by a `.kind` test are treated as a runtime union and reported as an `info` notice rather than a warning.
-- The API sidebar and autocomplete follow engine **0.8.31** and may lag behind newer engine versions. Use Add Verb built-in function to cover the gaps, or wait for updates.
+- The API sidebar and autocomplete follow engine **0.9.11** (Lua API 4.0) and may lag behind newer engine versions. Use the **+ Custom Verb** button to cover the gaps, or wait for updates. A registered verb feeds autocomplete **and** both checkers, so the same registration also silences the `wa-namespace-typo` warning. For a namespaced function such as `wa.one.two()`, choose **+ New Class**, enter `wa.one` as the namespace/class and `two` as the member — dots belong in the namespace field, not the member name. Verbs persist to `custom_verbs.cfg`.
 - Built with heavy AI assistance (vibecoded). Expect rough edges. 🤖
 
 ---
@@ -170,7 +170,7 @@ Contributions are **warmly welcomed**! 💖 Feel free to open an issue or submit
 
 ## 🧪 Development
 
-Five gates, and **`npm run lint` alone is not enough**:
+Six gates, and **`npm run lint` alone is not enough**:
 
 | Command | Checks |
 |---|---|
@@ -179,8 +179,9 @@ Five gates, and **`npm run lint` alone is not enough**:
 | `cd src-tauri; cargo test` | The Rust checker |
 | `npx tsx scripts/__sweep.ts` | Rust vs TypeScript over the engine's mod corpus |
 | `npx tsx scripts/genEngineData.ts --check` | The generated engine tables are current |
+| `npx tsx scripts/genRecordFields.ts --check` | The generated record-field table is current |
 
-The last two catch the failure mode no unit test can see: the two checker
+The sweep and the two `--check` generators catch the failure mode no unit test can see: the two checker
 implementations silently drifting apart, or a hand-edited data table falling out
 of sync with its generated Rust copy. 🧪
 
@@ -194,7 +195,7 @@ of sync with its generated Rust copy. 🧪
 
 MIT. See [LICENSE](LICENSE). ⚖️
 
-Not affiliated with Team17 or Worms Armageddon. This is a third-party tool for the [WormForge](https://github.com/ropahektic/WormForge) modding engine, which is MIT-licensed and maintained separately.
+Not affiliated with Team17 or Worms Armageddon. This is a third-party tool for the [WormForge](https://github.com/EdLud/WormForge) modding engine, which is MIT-licensed and maintained separately.
 
 <div align="center">
 

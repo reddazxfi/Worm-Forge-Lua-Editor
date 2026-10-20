@@ -1,6 +1,8 @@
 import React from 'react';
-import { BookOpen, Copy, Check, Plus, Code2, ArrowRight, FolderOpen } from 'lucide-react';
+import { BookOpen, Copy, Check, Plus, Code2, ArrowRight, FolderOpen, Link2 } from 'lucide-react';
 import { ClassDef, EnumDef, FunctionDef, MemberDef, VariableDef } from '../types/wormforge';
+import { TableFields } from './TableFields';
+import type { TableDoc } from '../data/tableDocs';
 
 interface DocPaneProps {
   selectedItem: any;
@@ -25,6 +27,7 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
   }
 
   // Determine what type of item it is
+  const isTableDoc = (selectedItem as TableDoc)?.tableDoc === true;
   const isClass = 'members' in selectedItem;
   const isEnum = 'values' in selectedItem;
   const isFunc = 'parameters' in selectedItem && !isClass;
@@ -35,6 +38,11 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
   const activeMember: MemberDef | undefined = selectedItem.activeMember;
 
   const getSignature = () => {
+    if (isTableDoc) {
+      const doc = selectedItem as TableDoc;
+      const head = doc.fields.slice(0, 4).map((f) => f.name).join(', ');
+      return `{ ${head}${doc.fields.length > 4 ? ', ...' : ''} }`;
+    }
     if (activeMember) {
       if (activeMember.isCustom) {
         const sep = activeMember.kind === 'method' ? ':' : '.';
@@ -68,11 +76,14 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
   const description =
     activeMember?.description ||
     selectedItem.description ||
+    // A table doc carries `summary`, not `description`: it describes a shape,
+    // not an engine component, so the generic tagline would be a lie.
+    (isTableDoc ? (selectedItem as TableDoc).summary : '') ||
     'WormForge engine component for Worms Armageddon modding.';
   const exampleCode =
     activeMember?.example ||
     selectedItem.example ||
-    (isFunc ? `${signature}\n` : isVar ? `local val = ${selectedItem.name}\n` : `${signature}\n`);
+    (!isTableDoc && isFunc ? `${signature}\n` : !isTableDoc && isVar ? `local val = ${selectedItem.name}\n` : '');
 
   const handleCopy = () => {
     navigator.clipboard.writeText(exampleCode);
@@ -142,19 +153,31 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
           >
             {copiedTarget === 'top' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
           </button>
-          <button
-            onClick={() => onInsertCode(exampleCode)}
-            title="Insert into code editor"
-            className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-600 border border-amber-500/40 font-medium text-[11px] flex items-center gap-1 transition-colors"
-          >
-            <Plus className="w-3 h-3" />
-            <span>Insert</span>
-          </button>
+          {exampleCode && (
+            <button
+              onClick={() => onInsertCode(exampleCode)}
+              title="Insert into code editor"
+              className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-600 border border-amber-500/40 font-medium text-[11px] flex items-center gap-1 transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Insert</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Signature and Description Body */}
       <div className="p-3 space-y-2.5 overflow-y-auto flex-1 select-text">
+        {isTableDoc && (
+          <div className="flex items-baseline gap-1.5">
+            <span className={`text-[12px] font-semibold ${isLight ? 'text-teal-800' : 'text-teal-300'}`}>
+              {(selectedItem as TableDoc).title}
+            </span>
+            <span className={`text-[10px] font-mono ${isLight ? 'text-slate-500' : 'text-[#66788c]'}`}>
+              {(selectedItem as TableDoc).id}
+            </span>
+          </div>
+        )}
         {/* Signature Box */}
         <div
           onClick={() => copyContent(signature, 'signature')}
@@ -203,6 +226,69 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
             </span>
           )}
         </p>
+
+        {/* Spec-table documentation. The enums list answers "what values"; this
+            answers "what keys", which is the question launch/spawn actually raise. */}
+        {isTableDoc && (
+          <>
+            <div className="space-y-1">
+              <span
+                className={`text-[10.5px] font-semibold tracking-wider uppercase ${
+                  isLight ? 'text-slate-500' : 'text-[#637488]'
+                }`}
+              >
+                Accepted by
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {(selectedItem as TableDoc).usedBy.map((u) => (
+                  <span
+                    key={u}
+                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                      isLight
+                        ? 'bg-teal-50 text-teal-700 border-teal-200'
+                        : 'bg-teal-500/10 text-teal-300 border-teal-500/30'
+                    }`}
+                  >
+                    {u}
+                  </span>
+                ))}
+              </div>
+              <div className={`flex items-start gap-1 text-[10.5px] ${isLight ? 'text-slate-500' : 'text-[#66788c]'}`}>
+                <Link2 className="w-3 h-3 mt-0.5 shrink-0" />
+                <span>{selectedItem.source}</span>
+              </div>
+            </div>
+
+            {selectedItem.note && (
+              <div
+                className={`rounded border px-2 py-1.5 text-[10.5px] leading-snug ${
+                  isLight
+                    ? 'bg-amber-50 border-amber-200 text-amber-800'
+                    : 'bg-amber-500/10 border-amber-500/25 text-amber-200/90'
+                }`}
+              >
+                {selectedItem.note}
+              </div>
+            )}
+
+            <div className="mt-2 space-y-1">
+              <span
+                className={`text-[10.5px] font-semibold tracking-wider uppercase ${
+                  isLight ? 'text-slate-500' : 'text-[#637488]'
+                }`}
+              >
+                Keys ({(selectedItem as TableDoc).fields.length}) — click a table to expand
+              </span>
+              <div
+                className={`border rounded p-1 max-h-[22rem] overflow-y-auto ${
+                  isLight ? 'border-slate-200 bg-white' : 'border-[#262c35] bg-[#171a20]'
+                }`}
+              >
+                <TableFields fields={(selectedItem as TableDoc).fields} isLight={isLight} />
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Parameters Breakdown if method or function */}
         {((activeMember && activeMember.parameters && activeMember.parameters.length > 0) ||

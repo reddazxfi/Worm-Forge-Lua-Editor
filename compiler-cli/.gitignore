@@ -1,0 +1,10 @@
+/target
+
+# Release artifacts: built locally with `cargo build --release` and attached to
+# a GitHub release. They are not source and go stale the moment checks.rs moves.
+/*.exe
+/*.zip
+
+# The vendored engine corpus copy used for local sweeps. Large and regenerable;
+# the app keeps its own generated corpus in src/data/existingMods.ts.
+/highlander_code/

@@ -26,6 +26,8 @@ import { EngineAdditionModal } from './components/EngineAdditionModal';
 import { ConfigModal } from './components/ConfigModal';
 import { UnsavedChangesModal } from './components/UnsavedChangesModal';
 import { ModsListScreen, ModsListTile } from './components/ModsListScreen';
+import { ModFilesScreen } from './components/ModFilesScreen';
+import { ProfilesScreen } from './components/ProfilesScreen';
 import { CreateModModal } from './components/CreateModModal';
 
 import {
@@ -39,6 +41,7 @@ import {
   BUILTIN_VARIABLES,
 } from './data/wormforgeDefinitions';
 import { EXISTING_MODS } from './data/existingMods';
+import { TABLE_DOCS } from './data/tableDocs';
 import { INITIAL_TEMPLATE } from './data/templates';
 import { parseAndValidate } from './services/parser';
 import {
@@ -52,7 +55,14 @@ import {
 import { formatLua } from './services/formatLua';
 import { compileWithEngine, parseWithAst, mergeExtractedSymbols, CheckEngine } from './services/luaCompiler';
 import { mergeDiagnostics, countSeverities } from './services/diagnostics';
-import { openModFolder, saveModFile, saveFileAs, cleanFolderPath, loadFolderFromPath, isDesktop, baseName, listModEntries, createModFolder, pickStartupFile } from './services/modFolder';
+import { openModFolder, saveModFile, saveFileAs, cleanFolderPath, loadFolderFromPath, isDesktop, baseName, listModEntries, createModFolder, pickStartupFile, isLuaFile, type OpenedFolder } from './services/modFolder';
+import { buildWorkspaceModel, openMode } from './services/workspaceTree';
+import type { WorkspaceModel } from './services/workspaceTree';
+import {
+  listInstalledProfiles,
+  profilesDirFromModsRoot,
+  type InstalledProfile,
+} from './services/profilesFolder';
 import { EditorConfig, loadConfig, saveConfig } from './services/config';
 import { resetPersistedSession } from './services/session';
 
@@ -165,6 +175,10 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   // Imperative handle on the editor, used to insert snippets at the caret
   const editorRef = useRef<CodeEditorHandle>(null);
 
+  // Which syntax check is the newest. A result whose tag no longer matches is
+  // discarded -- see the guard inside runSyntaxCheck.
+  const checkSeqRef = useRef(0);
+
   // False until the startup auto-load has resolved and disk is authoritative.
   //
   // WHY THIS EXISTS
@@ -178,6 +192,13 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   // a neutral panel rather than conditionally re-rendered, so no existing layout is
   // restructured -- the same approach the mods-list screen already uses.
   const [sessionReady, setSessionReady] = useState(false);
+  // The boot overlay must not be a trap. If the startup scan never settles (a
+  // stuck IPC call, a network drive that stopped answering), the app would sit
+  // on "Restoring session..." forever with no way out. After this timeout the
+  // overlay grows Reload / Reset actions. `bootWaitKey` lets "Keep waiting"
+  // re-arm the timer without reloading.
+  const [bootStalled, setBootStalled] = useState(false);
+  const [bootWaitKey, setBootWaitKey] = useState(0);
   // Mirrors `sessionReady` for the compiler/syntax checker, which is a
   // useCallback and so cannot read the state without being re-created on every
   // flip. False until the startup auto-load resolves; until then runSyntaxCheck
@@ -196,6 +217,29 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   const [mods, setMods] = useState<ModsListTile[]>([]);
   const [modsLoading, setModsLoading] = useState(false);
   const [modsError, setModsError] = useState<string | null>(null);
+  /**
+   * The second level of the mods browser: one mod's files, shown in the same
+   * grid. Null means the mod list is what is on screen.
+   *
+   * `opened` is kept rather than re-read on click, so choosing a file does not
+   * re-walk the folder (mods/px has 3073 files on disk) and cannot race a file
+   * that changed on disk in between.
+   */
+  const [modFilesView, setModFilesView] = useState<{
+    mod: ModsListTile;
+    opened: OpenedFolder;
+    model: WorkspaceModel;
+  } | null>(null);
+  /** The mod currently being read from disk, so its tile can say so. */
+  const [openingModPath, setOpeningModPath] = useState<string | null>(null);
+  // ----- Installed profiles (Phase C) -----
+  // `WormForge/Profiles` is derived from the mods folder, not configured
+  // separately -- see profilesDirFromModsRoot.
+  const profilesRoot = profilesDirFromModsRoot(config.modsRootPath);
+  const [showProfiles, setShowProfiles] = useState(false);
+  const [profiles, setProfiles] = useState<InstalledProfile[]>([]);
+  const [profilesLoaded, setProfilesLoaded] = useState(false);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -349,7 +393,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
     },
     {
       time: new Date().toLocaleTimeString(),
-      text: 'Loaded WormForge API definitions (0.8.22 engine specifications).',
+      text: 'Loaded WormForge API definitions (0.9.11 engine specifications).',
       type: 'success',
     },
   ]);
@@ -396,11 +440,23 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       // effect below performs that first check.
       if (!bootedRef.current) return;
 
-      const file = fileName || activeFile;
-      const lower = file.toLowerCase();
+      // Every call supersedes the last, INCLUDING the ones that only clear the
+      // panel for a non-Lua file. Two awaits follow (the Lua 5.4 compiler, then
+      // full_moon); without this tag, a fast tab switch can paint the PREVIOUS
+      // file's findings under the current file's name: click a 165 KB
+      // `rules.lua`, then a small helper, and whichever IPC call finishes last
+      // wins. Re-checking on every tab click (see `activateFile`) makes that easy
+      // to hit rather than rare.
+      const seq = ++checkSeqRef.current;
 
-      // If document is not Lua (.toml, .md, .txt, .json, .ini), skip Lua AST errors
-      if (lower.endsWith('.toml') || lower.endsWith('.md') || lower.endsWith('.txt') || lower.endsWith('.json') || lower.endsWith('.ini')) {
+      const file = fileName || activeFile;
+
+      // Only `.lua` is checked. The old deny-list of non-Lua text extensions
+      // meant a `.py`/`.ini`/extensionless import was fed to the Lua 5.4
+      // compiler and to full_moon as though it were source, which reports a
+      // syntax error on line 1 of a perfectly valid document. The engine only
+      // ever loads `.lua`, so only `.lua` is checked -- see `isLuaFile`.
+      if (!isLuaFile(file)) {
         setDiagnostics([]);
         setCheckEngine(null);
         setHasRunCheck(true);
@@ -410,6 +466,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       const now = new Date().toLocaleTimeString();
       const chunkName = baseName(file);
       const outcome = await compileWithEngine(codeToTest, chunkName);
+      if (seq !== checkSeqRef.current) return;
 
       // The game compiler is the authority on "does this load". If it says no,
       // stop there: a real syntax error plus token-pass noise is worse than the
@@ -443,6 +500,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       //      partial extraction is better than nothing
       //   3. the AST succeeded
       const ast = await parseWithAst(codeToTest, verbsForRust(customVerbs));
+      if (seq !== checkSeqRef.current) return;
 
       let symbolsOut = result.symbols;
       if (ast.available && ast.report?.ok) {
@@ -536,6 +594,28 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
     [customVerbs, activeFile]
   );
 
+  /**
+   * The ONE way the active file changes.
+   *
+   * Every path that used to call `setActiveFile(...)` and then `runSyntaxCheck(...)`
+   * separately goes through here instead. The two calls had to agree, and one of
+   * them did not: `handleOpenWorkspaceFile` ran the check WITHOUT the file name, so
+   * `runSyntaxCheck` fell back to the PREVIOUSLY active file. Opening `mod.toml`
+   * from the sidebar therefore checked the TOML text as Lua, under the old file's
+   * name, and the console filled with syntax errors about a manifest.
+   *
+   * `codeOverride` exists for the handlers that build a new `files` map in the same
+   * tick (loading a template, opening a folder): `files[name]` is still the old
+   * buffer at that moment, and reading it would check the previous contents.
+   */
+  const activateFile = useCallback(
+    (name: string, codeOverride?: string) => {
+      setActiveFile(name);
+      runSyntaxCheck(codeOverride ?? files[name] ?? '', name);
+    },
+    [files, runSyntaxCheck]
+  );
+
   // Re-check whenever the verb OVERLAY changes and the app has booted.
   // Two cases need this: (1) hydration resolving AFTER the sessionReady boot
   // check -- diagnostics on screen were computed without the cfg's verbs and
@@ -576,8 +656,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
 
         setFiles(newFiles);
         setOpenFiles(newOpen);
-        setActiveFile(primaryFile);
-        runSyntaxCheck(newFiles[primaryFile], primaryFile);
+        activateFile(primaryFile, newFiles[primaryFile]);
 
         setLogs((prev) => [
           ...prev,
@@ -589,7 +668,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
         ]);
       }
     },
-    [files, openFiles, runSyntaxCheck]
+    [files, openFiles, activateFile]
   );
 
   // Auto-Load on Startup Check
@@ -656,7 +735,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
         if (targetDir) {
           loadFolderFromPath(targetDir)
           .then((res) => {
-            if (!res) return;
+            if (cancelled || !res) return;
             const names = Object.keys(res.files).sort();
             if (names.length === 0) {
               setLogs((prev) => [
@@ -687,8 +766,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
             setSavedFiles(res.files);
             setFiles(res.files);
             setOpenFiles([target]);
-            setActiveFile(target);
-            runSyntaxCheck(res.files[target] ?? '', target);
+            activateFile(target, res.files[target] ?? '');
             setLogs((prev) => [
               ...prev,
               {
@@ -699,6 +777,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
             ]);
           })
           .catch((err) => {
+            if (cancelled) return;
             setLogs((prev) => [
               ...prev,
               {
@@ -708,7 +787,13 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
               },
             ]);
           }).finally(finish);
-          return;
+          // This branch used to `return` without a cleanup, so the async scan
+          // could not be cancelled: after unmount it still called every setter,
+          // and in dev StrictMode the first scan's result could land after the
+          // second mount's. One cleanup for every exit keeps that honest.
+          return () => {
+            cancelled = true;
+          };
         }
       }
     }
@@ -718,6 +803,37 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       cancelled = true;
     };
   }, []);
+
+  // Watchdog for the boot gate. 20 seconds is generous for a large mod folder
+  // (the scan is sequential) but short enough that a hung IPC call does not
+  // look like a frozen app. The overlay stays usable either way: it only grows
+  // actions, it does not hide the editor on its own.
+  useEffect(() => {
+    if (sessionReady) {
+      setBootStalled(false);
+      return;
+    }
+    const id = window.setTimeout(() => setBootStalled(true), 20000);
+    return () => window.clearTimeout(id);
+  }, [sessionReady, bootWaitKey]);
+
+  const handleKeepWaiting = () => {
+    setBootStalled(false);
+    setBootWaitKey((k) => k + 1);
+  };
+
+  const handleReloadWindow = () => {
+    try {
+      window.location.reload();
+    } catch {
+      // Nothing else to try; the native window controls still work.
+    }
+  };
+
+  const handleResetSessionAndReload = () => {
+    resetPersistedSession();
+    handleReloadWindow();
+  };
 
   // The startup syntax check, gated on `sessionReady`.
   //
@@ -754,7 +870,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   const handleInsertCode = (snippet: string) => {
     const next = editorRef.current?.insertSnippet(snippet) ?? null;
     if (next !== null) {
-      runSyntaxCheck(next);
+      runSyntaxCheck(next, activeFile);
     }
     setLogs((prev) => [
       ...prev,
@@ -773,7 +889,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
     const { code: formatted, suspect } = formatLua(activeCode);
 
     handleCodeChange(formatted);
-    runSyntaxCheck(formatted);
+    runSyntaxCheck(formatted, activeFile);
 
     // An unbalanced chunk re-indents unpredictably, and the checker will say so
     // a moment later. Say it up front rather than letting the user wonder why
@@ -823,23 +939,29 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
    * activeFile) rather than a second, drifting copy of it.
    */
   const applyOpenedFolder = useCallback(
-    (res: { name: string; root: string; files: Record<string, string> }) => {
+    (res: { name: string; root: string; files: Record<string, string> }, preferredFile?: string) => {
       // THE MANIFEST DECIDES. `mod.toml`'s `entry` names the file the engine
       // actually loads, so that is what opens. The old behaviour -- "the first
       // `.lua` in sorted order" -- opened whatever happened to sort first, which
       // in a real pack is a scratch file (`highlander1asdasd.lua`) rather than
       // `rules.lua`. pickStartupFile falls back inside itself when there is no
       // manifest or no usable `entry`.
-      const first = pickStartupFile(res.files);
+      //
+      // `preferredFile` overrides it when the user just picked a specific file
+      // in the mod browser. It is still checked against the loaded map, so a
+      // stale path cannot leave the editor pointing at a buffer that is not there.
+      const first =
+        preferredFile && res.files[preferredFile] !== undefined
+          ? preferredFile
+          : pickStartupFile(res.files);
       if (!first) return;
       setModFolder({ name: res.name, root: res.root });
       setSavedFiles(res.files);
       setFiles(res.files);
       setOpenFiles([first]);
-      setActiveFile(first);
-      runSyntaxCheck(res.files[first] ?? '', first);
+      activateFile(first, res.files[first] ?? '');
     },
-    [runSyntaxCheck]
+    [activateFile]
   );
 
   // ----- Mods-list launch screen handlers -----
@@ -872,29 +994,112 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   // "Mods" button and by the config toggle.
   const handleShowModsList = useCallback(() => {
     setShowModsList(true);
+    // Always land on the mod list, not on whichever mod or profile was last open.
+    setModFilesView(null);
+    setShowProfiles(false);
     refreshMods();
   }, [refreshMods]);
 
-  // A mod tile is just a folder path, so reuse the existing path loader.
-  const handleOpenModTile = useCallback(
-    async (mod: ModsListTile) => {
-      if (dirtyFiles.length > 0 && !window.confirm('You have unsaved changes. Open another mod anyway?')) {
+  /**
+   * Reads `WormForge/Profiles`.
+   *
+   * The mods list is refreshed alongside only when it is empty, because the
+   * cross-links need each mod's declared components and re-walking 3000 files
+   * per mod on every visit would be a pointless cost.
+   */
+  const refreshProfiles = useCallback(async () => {
+    if (!profilesRoot) {
+      setProfiles([]);
+      setProfilesLoaded(true);
+      setProfilesError(
+        'Could not work out where Profiles lives: the mods folder has no parent directory.'
+      );
+      return;
+    }
+    try {
+      const list = await listInstalledProfiles(config.modsRootPath);
+      if (list === null) {
+        setProfiles([]);
+        setProfilesLoaded(true);
+        setProfilesError(
+          isDesktop()
+            ? `Could not read ${profilesRoot}.`
+            : 'Installed profiles are only available in the desktop app.'
+        );
         return;
       }
+      setProfiles(list);
+      setProfilesLoaded(true);
+      setProfilesError(null);
+    } catch (e: any) {
+      setProfiles([]);
+      setProfilesLoaded(true);
+      setProfilesError(e?.message ?? String(e));
+    }
+  }, [profilesRoot, config.modsRootPath]);
+
+  const handleShowProfiles = useCallback(() => {
+    setShowProfiles(true);
+    setModFilesView(null);
+    refreshProfiles();
+    if (mods.length === 0) refreshMods();
+  }, [refreshProfiles, refreshMods, mods.length]);
+
+  /**
+   * Puts an already-read mod into the editor, optionally at a chosen file.
+   *
+   * Returns false when the unsaved-changes prompt was declined. The check lives
+   * HERE rather than on the mod tile, because browsing into a mod no longer
+   * replaces the buffers -- only opening one of its files does.
+   */
+  const openModIntoEditor = useCallback(
+    (opened: OpenedFolder, mod: ModsListTile, file?: string) => {
+      if (dirtyFiles.length > 0 && !window.confirm('You have unsaved changes. Open another mod anyway?')) {
+        return false;
+      }
+      applyOpenedFolder(opened, file);
+      setShowModsList(false);
+      setModFilesView(null);
+      addLog(
+        `Opened mod "${mod.id}" from ${opened.name} (${Object.keys(opened.files).length} files)` +
+          `${file ? `, showing ${file}` : ''}.`,
+        'success'
+      );
+      return true;
+    },
+    [dirtyFiles, applyOpenedFolder]
+  );
+
+  // A mod tile is just a folder path, so reuse the existing path loader.
+  //
+  // ONE LUA OR LESS: open it. Nothing to choose between, and the manifest already
+  // says which file the engine starts.
+  //
+  // MORE THAN ONE: stay in this window and list them. Opening an arbitrary one
+  // and leaving the user to find the other 56 in the sidebar is the behaviour
+  // this replaces -- `mods/px` has 57 Lua files and four declared entrypoints.
+  const handleOpenModTile = useCallback(
+    async (mod: ModsListTile) => {
+      setOpeningModPath(mod.path);
       try {
         const res = await loadFolderFromPath(mod.path);
         if (!res || Object.keys(res.files).length === 0) {
           addLog(`Mod "${mod.id}" has no readable .lua/.toml files.`, 'warn');
           return;
         }
-        applyOpenedFolder(res);
-        setShowModsList(false);
-        addLog(`Opened mod "${mod.id}" from ${res.name} (${Object.keys(res.files).length} files).`, 'success');
+        const model = buildWorkspaceModel(res.files);
+        if (openMode(model) === 'browse') {
+          setModFilesView({ mod, opened: res, model });
+          return;
+        }
+        openModIntoEditor(res, mod);
       } catch (e: any) {
         addLog(`Failed to open mod "${mod.id}": ${e?.message ?? String(e)}`, 'error');
+      } finally {
+        setOpeningModPath(null);
       }
     },
-    [dirtyFiles, applyOpenedFolder]
+    [openModIntoEditor]
   );
 
   const handleCreateMod = useCallback(
@@ -914,6 +1119,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
         }
         setIsCreateOpen(false);
         setShowModsList(false);
+        setModFilesView(null);
         addLog(`Created mod "${modName}" in ${root}.`, 'success');
         await refreshMods();
       } catch (e: any) {
@@ -936,12 +1142,19 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
     }
   }, [modsListEnabled, handleShowModsList]);
 
+  /**
+   * A sidebar tree click.
+   *
+   * Passes the name through to the checker. Before this, the check ran with no
+   * file name, so `runSyntaxCheck` fell back to whatever was active a moment
+   * earlier: clicking `mod.toml` in the tree checked the manifest text as Lua
+   * under the previous file's name and filled the console with syntax errors.
+   */
   const handleOpenWorkspaceFile = (name: string) => {
     if (!openFiles.includes(name)) {
       setOpenFiles((prev) => [...prev, name]);
     }
-    setActiveFile(name);
-    runSyntaxCheck(files[name] ?? '');
+    activateFile(name);
   };
 
   // Writes each file to disk. Returns the names that FAILED, so callers such as
@@ -981,15 +1194,21 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   unsavedFilesRef.current = dirtyFiles;
   const forceCloseRef = useRef(false);
 
-  const closeAppWindow = async () => {
+  const closeAppWindow = async (): Promise<boolean> => {
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       await getCurrentWindow().destroy();
-    } catch {}
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   // Browser: beforeunload is the only hook that can intercept a tab close.
+  // Desktop has the native hook below; running this one there as well can stack
+  // a second "leave site?" prompt on top of the app's own dialog.
   useEffect(() => {
+    if (isDesktop()) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (unsavedFilesRef.current.length === 0) return;
       e.preventDefault();
@@ -1035,13 +1254,22 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
     }
     forceCloseRef.current = true;
     setPendingClose(false);
-    await closeAppWindow();
+    if (!(await closeAppWindow())) {
+      // destroy() can fail (a plugin/permission mismatch, an old EXE). Leaving
+      // forceClose set would silently bypass the unsaved-changes prompt on the
+      // next close, which is exactly how work gets lost.
+      forceCloseRef.current = false;
+      addLog('Could not close the window automatically. Close it again to finish.', 'error');
+    }
   };
 
   const handleDiscardAndClose = async () => {
     forceCloseRef.current = true;
     setPendingClose(false);
-    await closeAppWindow();
+    if (!(await closeAppWindow())) {
+      forceCloseRef.current = false;
+      addLog('Could not close the window automatically. Close it again to finish.', 'error');
+    }
   };
 
   // Third close option: throw the session away entirely.
@@ -1093,8 +1321,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       const fileName = file.name;
       setFiles((prev) => ({ ...prev, [fileName]: content }));
       if (!openFiles.includes(fileName)) setOpenFiles((prev) => [...prev, fileName]);
-      setActiveFile(fileName);
-      runSyntaxCheck(content, fileName);
+      activateFile(fileName, content);
       setLogs((prev) => [
         ...prev,
         {
@@ -1142,6 +1369,19 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       },
     ]);
   };
+
+  // The opened mod, classified for the sidebar: entrypoints, a real nested
+  // directory tree, bundled profiles, the manifest, and everything else.
+  //
+  // Derived from the buffers (`files`) rather than a second scan, so it can never
+  // describe a file the editor does not have. Recomputed on every keystroke, which
+  // is an O(files) walk plus one manifest parse -- measured against mods/tools
+  // (~20 text files) and mods/px (~30 text files out of 3073 on disk, since the
+  // loader only reads text), so it is microseconds.
+  const workspaceModel = useMemo(
+    () => (modFolder ? buildWorkspaceModel(files) : null),
+    [modFolder, files]
+  );
 
   // Select Item from Upper Corner Tree
   const handleSelectTreeItem = (type: string, item: any) => {
@@ -1283,13 +1523,13 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       {/* Top Header */}
       <StudioHeader
         activeFile={activeFile}
-        onSelectFile={setActiveFile}
+        onSelectFile={activateFile}
         openFiles={openFiles}
         onCloseFile={(f) => {
           if (openFiles.length <= 1) return;
           const nextOpen = openFiles.filter((item) => item !== f);
           setOpenFiles(nextOpen);
-          if (activeFile === f) setActiveFile(nextOpen[0]);
+          if (activeFile === f) activateFile(nextOpen[0]);
         }}
         onLoadTemplate={handleLoadTemplate}
         onOpenConfig={() => setIsConfigModalOpen(true)}
@@ -1307,7 +1547,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
         <div className="flex items-center gap-2">
           {/* Primary SYNTAX CHECK Button */}
           <button
-            onClick={() => runSyntaxCheck(activeCode)}
+            onClick={() => runSyntaxCheck(activeCode, activeFile)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold shadow-xs transition-all ${
               errorCount > 0
                 ? 'bg-rose-500 hover:bg-rose-600 text-white'
@@ -1520,8 +1760,9 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
               functions={symbols.functions || []}
               classes={combinedClasses}
               existingMods={EXISTING_MODS}
+              tableDocs={TABLE_DOCS}
+              workspace={workspaceModel}
               workspaceName={modFolder?.name}
-              workspaceFiles={modFolder ? Object.keys(files).sort() : undefined}
               dirtyFiles={dirtyFiles}
               activeFile={activeFile}
               onOpenWorkspaceFile={handleOpenWorkspaceFile}
@@ -1603,6 +1844,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
               syntaxOverridesLight={config.syntaxOverridesLight}
               jumpTarget={jumpTarget}
               customVerbs={customVerbs}
+              autocompleteEnabled={config.autocomplete}
             />
           </div>
 
@@ -1675,11 +1917,17 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
         onClose={() => setIsConfigModalOpen(false)}
         config={config}
         customVerbs={customVerbs}
-        onImportVerbs={(imported) => {
-          // Merge, keeping EXISTING rows on collision (first-wins, same rule
-          // loadCustomVerbs applies between disk and mirror): an import is a
-          // contribution, never a silent overwrite of verbs the user just
-          // registered in this session.
+        onImportVerbs={(imported, mode) => {
+          // Merge (default) keeps EXISTING rows on collision (first-wins, same
+          // rule loadCustomVerbs applies between disk and mirror): an import is
+          // a contribution, never a silent overwrite of verbs the user just
+          // registered in this session. Replace swaps the whole list -- the
+          // escape hatch for a renamed method whose old name would otherwise
+          // linger as a stale row no import could ever remove.
+          if (mode === 'replace') {
+            setCustomVerbs([...imported]);
+            return;
+          }
           setCustomVerbs((prev) => {
             const seen = new Set(prev.map((v) => `${v.class.toLowerCase()}:${v.name.toLowerCase()}`));
             const merged = [...prev];
@@ -1692,6 +1940,11 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
             return merged;
           });
         }}
+        onRemoveVerb={(verb) => {
+          const key = `${verb.class.toLowerCase()}:${verb.name.toLowerCase()}`;
+          setCustomVerbs((prev) => prev.filter((v) => `${v.class.toLowerCase()}:${v.name.toLowerCase()}` !== key));
+        }}
+        onClearVerbs={() => setCustomVerbs([])}
         onUpdateConfig={handleUpdateConfig}
         existingMods={EXISTING_MODS}
       />
@@ -1701,12 +1954,70 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
           screen below, so no existing layout is restructured. */}
       {!sessionReady && (
         <div
-          className={`absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 text-xs ${
+          className={`absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 px-6 text-xs ${
             isLight ? 'bg-white text-slate-600' : 'bg-[#111418] text-[#93a6bd]'
           }`}
         >
-          <RefreshCw className={`w-4 h-4 ${isLight ? 'text-slate-400' : 'text-[#5c6b80]'}`} />
-          <span>Restoring session...</span>
+          {!bootStalled ? (
+            <>
+              <RefreshCw className={`w-4 h-4 ${isLight ? 'text-slate-400' : 'text-[#5c6b80]'}`} />
+              <span>Restoring session...</span>
+            </>
+          ) : (
+            <div
+              className={`w-full max-w-md rounded-lg border p-4 text-left ${
+                isLight ? 'border-slate-300 bg-slate-50' : 'border-[#2b333e] bg-[#171b21]'
+              }`}
+            >
+              <div className={`mb-1 text-[13px] font-semibold ${isLight ? 'text-slate-800' : 'text-[#dbe4ef]'}`}>
+                Restoring is taking longer than expected
+              </div>
+              <p className={`mb-3 leading-relaxed ${isLight ? 'text-slate-600' : 'text-[#93a6bd]'}`}>
+                {config.startupModFolder
+                  ? `Opening "${config.startupModFolder}" has not finished. It may be on a slow or disconnected drive.`
+                  : 'The startup folder scan has not finished. It may be on a slow or disconnected drive.'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleKeepWaiting}
+                  className={`rounded border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                    isLight
+                      ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                      : 'border-[#2b333e] bg-[#212730] text-[#dbe4ef] hover:bg-[#28303c]'
+                  }`}
+                >
+                  Keep waiting
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReloadWindow}
+                  className={`rounded border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                    isLight
+                      ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                      : 'border-[#2b333e] bg-[#212730] text-[#dbe4ef] hover:bg-[#28303c]'
+                  }`}
+                >
+                  Reload
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetSessionAndReload}
+                  className={`rounded border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                    isLight
+                      ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                      : 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                  }`}
+                >
+                  Reset session &amp; reload
+                </button>
+              </div>
+              <p className={`mt-3 text-[10.5px] leading-relaxed ${isLight ? 'text-slate-500' : 'text-[#66788c]'}`}>
+                Reset clears the restored buffers, remembered folder and open tabs. Mod files,
+                settings and custom verbs are not touched.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -1730,19 +2041,46 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
           here. */}
       {showModsList && (
         <div className="absolute inset-0 z-40 flex flex-col">
-          <ModsListScreen
-            mods={mods}
-            isLoading={modsLoading}
-            error={modsError}
-            isLight={isLight}
-            onOpenMod={handleOpenModTile}
-            onRefresh={refreshMods}
-            onCreateNew={() => {
-              setCreateError(null);
-              setIsCreateOpen(true);
-            }}
-            onOpenConfig={() => setIsConfigModalOpen(true)}
-          />
+          {showProfiles ? (
+            <ProfilesScreen
+              profilesRoot={profilesRoot}
+              profiles={profiles}
+              loaded={profilesLoaded}
+              error={profilesError}
+              mods={mods}
+              isLight={isLight}
+              onBack={() => setShowProfiles(false)}
+              onRefresh={refreshProfiles}
+              onOpenConfig={() => setIsConfigModalOpen(true)}
+            />
+          ) : modFilesView ? (
+            <ModFilesScreen
+              folderName={modFilesView.mod.folderName}
+              modId={modFilesView.model.id}
+              modName={modFilesView.model.name}
+              model={modFilesView.model}
+              isLight={isLight}
+              onOpenFile={(path) => openModIntoEditor(modFilesView.opened, modFilesView.mod, path)}
+              onBack={() => setModFilesView(null)}
+              onOpenConfig={() => setIsConfigModalOpen(true)}
+            />
+          ) : (
+            <ModsListScreen
+              mods={mods}
+              isLoading={modsLoading}
+              openingPath={openingModPath}
+              error={modsError}
+              isLight={isLight}
+              onOpenMod={handleOpenModTile}
+              onRefresh={refreshMods}
+              onCreateNew={() => {
+                setCreateError(null);
+                setIsCreateOpen(true);
+              }}
+              onOpenProfiles={handleShowProfiles}
+              onOpenConfig={() => setIsConfigModalOpen(true)}
+            />
+          )}
         </div>
       )}
 

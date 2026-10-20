@@ -147,17 +147,29 @@ describe('the example corpus', () => {
 
   it('contains the packs it claims to', () => {
     expect(files.length).toBeGreaterThan(50);
-    // The two packs that teach module loading MUST be present: they are the only
-    // reference for `require` and for component packs.
+    // The two packs that teach something the rest cannot: `px.ports` is the only
+    // MODULE pack (its rules.lua is only require() calls) and the only one with
+    // scheme/ + components/ + lib/; `example.components` is the smallest COMPONENT
+    // bundle. Both are the only reference for pack-scoped require and for
+    // component packs.
     const ids = EXISTING_MODS.map((m) => m.id);
-    expect(ids).toContain('example.highlander');
-    expect(ids).toContain('example.componentdemo');
+    expect(ids).toContain('px.ports');
+    expect(ids).toContain('example.components');
+  });
+
+  it('every pack id is the one its own mod.toml declares', () => {
+    // The corpus shows users the id the ENGINE uses. A corpus-only id is a name that
+    // does not work in a mod.toml, and the generator used to invent them
+    // (`example.highlander`, which never existed as a manifest id).
+    for (const mod of EXISTING_MODS) {
+      if (!mod.id.startsWith('example.')) continue;
+      expect(mod.id, `${mod.id} looks invented`).not.toBe('example.highlander');
+    }
   });
 
   it('never tells users that require is nil in the sandbox', () => {
-    // KNOWN UPSTREAM, not ours. Two engine-checkout files still carry the old
-    // advice -- `mods/examples/KillTheKing/init.lua:6` and
-    // `highlander_code/Kill The King v0.5.lua:6`, both saying:
+    // KNOWN UPSTREAM, not ours. One engine-checkout file still carries the old
+    // advice -- `mods/KillTheKing/init.lua:6`, saying:
     //
     //   INLINED CONFIG: No require("config") because require/dofile are nil in sandbox.
     //
@@ -175,7 +187,7 @@ describe('the example corpus', () => {
     // noticed when it stopped being true.
     // Keyed `mod/path`, not path alone: several packs have an `init.lua`, so the
     // bare filename does not identify which one is stale.
-    const KNOWN_STALE = ['example.killtheking/init.lua', 'work.kill_the_king_v0_5/Kill The King v0.5.lua'];
+    const KNOWN_STALE = ['example.kill_the_king/init.lua'];
 
     const stale = files
       .filter((f) => /require.*\bnil\b/i.test(f.content))
@@ -186,17 +198,118 @@ describe('the example corpus', () => {
     expect([...new Set(stale)].sort()).toEqual([...KNOWN_STALE].sort());
   });
 
+  // EXPECTED INFO FINDINGS ON THE CORPUS.
+  //
+  // These are real findings about real code -- the names genuinely are undefined --
+  // and they are pinned at `info` rather than `warning`, which is a stronger
+  // statement than a warning-pin ever was: it asserts the severity AND the
+  // position, so a regression that promoted them back to `warning` would fail here
+  // rather than pass quietly.
+  //
+  // Why `info` is the right severity: all three read as
+  // `HIGHLANDER_ROOT or "mods/px/"`. `HIGHLANDER_ROOT` is set only by the engine's
+  // own `cargo test` harnesses (crates/lua-host/src/lib.rs:3650, :3658, :3793 --
+  // all three inside `#[test]`) and nothing injects it at runtime, so warning that a
+  // pack "stops every mod loading" was false: the `or` is precisely what prevents
+  // that. The finding stays visible; it just stops shouting.
+  const KNOWN_INFO: Record<string, string[]> = {
+    'px.ports/rules.lua:15:14': ['undefined-global'],
+    'px.ports/test_pools.lua:4:14': ['undefined-global'],
+    'px.ports/test_portals.lua:3:14': ['undefined-global'],
+  };
+
+  it('every expected-info finding is still raised, at info', () => {
+    const present = new Map<string, string[]>();
+    for (const f of files) {
+      for (const d of parseAndValidate(f.content).diagnostics) {
+        const k = `${f.mod}/${f.path}:${d.line}:${d.column}`;
+        const list = present.get(k) ?? [];
+        list.push(`${d.rule ?? ''}:${d.severity}`);
+        present.set(k, list);
+      }
+    }
+    const wrong: string[] = [];
+    for (const [key, rules] of Object.entries(KNOWN_INFO)) {
+      const got = present.get(key);
+      if (!got) {
+        wrong.push(`${key}: no longer reported at all`);
+        continue;
+      }
+      for (const rule of rules) {
+        if (!got.includes(`${rule}:info`)) {
+          wrong.push(`${key}: expected ${rule}:info, got ${got.join(', ')}`);
+        }
+      }
+    }
+    expect(wrong, 'expected-info findings changed severity or disappeared').toEqual([]);
+  });
+
+  // The whole point of generating the corpus: the checker must be SILENT on the
+  // engine's own packs. Anything it raises there is the checker's, not the pack's
+  // -- `python WormForge-main-source/tools/check_sim_math.py WormForge-main-source/mods`
+  // reports `passed`, which is the engine holding us to its own rule.
+  //
+  // The exceptions below are each justified by the engine's own source. They are
+  // pinned EXACTLY (`mod/path:line:column` -> the rule ids allowed there) so that:
+  //   - a NEW finding on a new pack still fails this test, and
+  //   - an entry that stops matching anything also fails it, which is the signal
+  //     to tighten the rule rather than leave the pin to rot.
+  // Never delete a rule to make this list shorter.
+  //
+  // The value is a LIST because `undefined-global` legitimately arrives TWICE at one
+  // position: parser.ts runs a flat pass and a scope-aware pass that share the rule
+  // id on purpose, and `mergeDiagnostics` is what collapses them into the single
+  // console row the user sees. This test reads raw `parseAndValidate` output, so it
+  // sees both -- and that is the honest thing for it to assert about.
+  const KNOWN_UPSTREAM: Record<string, string[]> = {
+    // `wa.audit.begin` / `wa.audit.finish` exist ONLY under the `diagnostics`
+    // cargo feature (api.rs:32: `#[cfg(feature = "diagnostics")]`). `mods/tools`
+    // is the engine's diagnostics harness and needs that build. In the default
+    // build the calls really do fail, which is what `wa-namespace-typo` says --
+    // and api4.test.ts separately pins that wa.audit must keep being flagged.
+    'example.tools/audit/audit.lua:157:5': ['wa-namespace-typo'],
+    'example.tools/audit/audit.lua:253:5': ['wa-namespace-typo'],
+
+    // A `test_*.lua` host mock. The engine's own checker skips these outright
+    // (check_sim_math.py:88 -- "host-only mocks, not shipped callbacks"), and
+    // `test_collect_viewer.lua` drives a real object through CRT trig from a
+    // harness. We do NOT skip `test_*` in the product checker: a shipped user
+    // pack with a test helper still desyncs. This is pinned instead.
+    'core.utilities/test_collect_viewer.lua:59:18': ['lockstep-rng'],
+    'core.utilities/test_collect_viewer.lua:59:52': ['lockstep-rng'],
+  };
+
   it.each(files.map((f) => [f.mod, f.path, f.content] as const))(
     '%s / %s produces no error or warning',
-    (_mod, _path, content) => {
+    (mod, path, content) => {
       const found = parseAndValidate(content).diagnostics.filter(
         (d) => d.severity !== 'info'
       );
+      const key = `${mod}/${path}`;
+      const unexplained = found.filter(
+        (d) => !(KNOWN_UPSTREAM[`${key}:${d.line}:${d.column}`] ?? []).includes(d.rule ?? '')
+      );
       expect(
-        found.map((d) => `L${d.line}:${d.column} ${d.rule ?? ''} ${d.message}`)
+        unexplained.map((d) => `L${d.line}:${d.column} ${d.rule ?? ''} ${d.message}`)
       ).toEqual([]);
     }
   );
+
+  it('the KNOWN_UPSTREAM list has no stale entries', () => {
+    // An entry that no longer matches anything is worse than no entry: it says
+    // "this exception is understood" about a finding that is now something else.
+    // If this fails, look at what the finding became before touching the rule.
+    const present = new Set<string>();
+    for (const f of files) {
+      for (const d of parseAndValidate(f.content).diagnostics.filter((x) => x.severity !== 'info')) {
+        present.add(`${f.mod}/${f.path}:${d.line}:${d.column}:${d.rule}`);
+      }
+    }
+    const stale = Object.keys(KNOWN_UPSTREAM).filter((k) =>
+      ![...present].some((p) => p.startsWith(`${k}:`))
+    );
+    expect(stale, 'these KNOWN_UPSTREAM entries no longer match any finding').toEqual([]);
+  });
 
   // `info` findings are EXPECTED on real packs and must not be treated as
   // corpus defects: the desync advisories (`lockstep-pairs`) and

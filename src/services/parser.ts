@@ -18,9 +18,12 @@ import {
   ALL_HANDLE_CLASSES,
   customMembersFor,
   getClass,
+  ITERATOR_ELEMENT,
+  LOOP_ITERATOR_WRAPPERS,
   resolveForCheck,
   rowForClass,
   traceLocalTypes,
+  type HandleClassName,
 } from '../data/handleRegistry';
 import { buildScopes, visibleAt } from './scope';
 import {
@@ -151,6 +154,23 @@ function scanUndefinedGlobals(meaningful: Token[]): SyntaxDiagnostic[] {
     // `x = 1` and `{ key = 1 }` are bindings/keys, handled in pass 1.
     if (meaningful[i + 1]?.value === '=') continue;
 
+    // Same `or` carve-out as the scoped pass below, and it has to be here too: both
+    // passes fire at the same position, so if only one of them downgraded, which
+    // version reached the console would depend on which won the merge.
+    if (isNilGuarded(meaningful, i)) {
+      out.push({
+        line: t.line,
+        column: t.column,
+        message: `Undefined name "${t.value}" reads nil here, but the \`or\` fallback handles it.`,
+        detail:
+          `Nothing in this file defines it, and nothing injects it at runtime either -- the ` +
+          `engine's own \`cargo test\` harnesses set a few names like this for \`mods/px\`.`,
+        severity: 'info',
+        rule: 'undefined-global',
+      });
+      continue;
+    }
+
     out.push({
       line: t.line,
       column: t.column,
@@ -210,6 +230,23 @@ function scanUndefinedNamesInScope(code: string, meaningful: Token[]): SyntaxDia
     const visible = visibleAt(model, t.line);
     if (visible.some((v) => v.name === t.value)) continue;
 
+    // `X or default` is the standard Lua "this may be nil" idiom, and it is handled
+    // as an INFO rather than a warning -- see the same carve-out in scopes.rs.
+    if (isNilGuarded(meaningful, i)) {
+      out.push({
+        line: t.line,
+        column: t.column,
+        message: `Undefined name "${t.value}" reads nil here, but the \`or\` fallback handles it.`,
+        detail:
+          `Nothing here defines it, and nothing injects it at runtime either -- the engine's ` +
+          `own \`cargo test\` harnesses set a few names like this for \`mods/px\`, which is why ` +
+          `the pack reads them defensively.`,
+        severity: 'info',
+        rule: 'undefined-global',
+      });
+      continue;
+    }
+
     out.push({
       line: t.line,
       column: t.column,
@@ -226,6 +263,43 @@ function scanUndefinedNamesInScope(code: string, meaningful: Token[]): SyntaxDia
 }
 
 /**
+ * True when the identifier at `i` is the LEFT operand of an `or`.
+ *
+ * Mirrors scopes.rs, where the check is on `Expression::BinaryOperator` with
+ * `BinOp::Or`. The token test is equivalent for the shape that matters and, unlike
+ * building an expression tree, costs one comparison -- this file is a tokeniser with
+ * a bracket stack, so anything needing structure is where its bugs live.
+ *
+ * `X and Y or Z` also lands here, and correctly: Lua binds `and` tighter than `or`,
+ * so it parses as `(X and Y) or Z`, and a nil `X` is absorbed by the `or`.
+ */
+function isNilGuarded(meaningful: Token[], i: number): boolean {
+  // The obvious `meaningful[i + 1] === 'or'` is WRONG for `X and Y or Z`, which is
+  // the one case worth getting right. Lua binds `and` tighter than `or`, so that
+  // parses as `(X and Y) or Z`: a nil X is absorbed by the `or`, and scopes.rs -- which
+  // matches on `Expression::BinaryOperator { binop: BinOp::Or, lhs }` and compares
+  // positions -- already reports it as guarded. A next-token-only test would call it a
+  // warning here and drift from Rust on the same file.
+  //
+  // So: scan forward for the `or` that governs this identifier, stopping at anything
+  // that ends the expression or starts a new one. `.` and `:` are load-bearing --
+  // without them `t.missing or 1` would mark `t` guarded, which has nothing to do with
+  // `missing` being a field read.
+  const STOPS = new Set([
+    ',', ';', '(', ')', '{', '}', '=', '.', ':',
+    // Keywords that end the statement the identifier sits in.
+    'local', 'return', 'then', 'do', 'end', 'if', 'else', 'elseif', 'while', 'until',
+    'function', 'for', 'in', 'repeat', 'break', 'goto',
+  ]);
+  for (let k = i + 1; k < meaningful.length; k++) {
+    const v = meaningful[k].value;
+    if (v === 'or') return true;
+    if (STOPS.has(v)) return false;
+  }
+  return false;
+}
+
+/**
  * `wa.weapons.repalce(...)` -- a real namespace with a misspelled leaf.
  *
  * The namespace is genuine and the function is not, so this compiles cleanly, does
@@ -236,8 +310,9 @@ function scanUndefinedNamesInScope(code: string, meaningful: Token[]): SyntaxDia
  * Only CALLS are checked (`wa.a.b(...)`). A bare `wa.a.b` on the right of an
  * assignment is a field write, not a call, and is left to the member checks.
  *
- * Warning, never error: BUILTIN_FUNCTIONS is pinned to WormForge 0.8.22 and may
- * lag the engine, so a key this build does not know is SUSPICIOUS, not wrong.
+ * Warning, never error: BUILTIN_FUNCTIONS is pinned to WormForge 0.9.1 (API 4)
+ * and may lag the engine, so a key this build does not know is SUSPICIOUS, not
+ * wrong.
  */
 function scanWaNamespaceTypos(meaningful: Token[], userVerbs: CustomVerb[] = []): SyntaxDiagnostic[] {
   const known = new Set(BUILTIN_FUNCTIONS.map((f) => f.name));
@@ -307,17 +382,40 @@ function scanWaNamespaceTypos(meaningful: Token[], userVerbs: CustomVerb[] = [])
 
     const suggestion = namespaceKnown ? suggestWaFunction(leaf, knownPaths) : null;
 
+    // `wa.audit` is the ONE public namespace the engine installs behind a cargo
+    // feature, so it can be named rather than guessed at -- and saying "unknown"
+    // about a real API is wrong even when the build happens to lack it.
+    //
+    // crates/lua-host/src/api.rs:32:
+    //
+    //     #[cfg(feature = "diagnostics")]
+    //     if wa.get::<Value>("audit")...is_nil() { wa.set("audit", audit) }
+    //
+    // Nothing else in api.rs adds a public `wa.*` under a feature (the other
+    // diagnostics block installs `_debug_input` and `_debug_worm_state`, both
+    // underscore-prefixed), so this is the whole of it. Still a WARNING, and still
+    // correct for a stock build -- the call really does raise "attempt to call a
+    // nil value" there. Only the explanation changes. Mirrors
+    // DIAGNOSTICS_ONLY_NAMESPACE in checks.rs.
+    const diagnosticsOnly = parts[1] === 'audit' && parts.length >= 2;
+
     out.push({
       line: t.line,
       column: t.column,
-      message:
-        `Unknown wa.* function "${path}". ` +
-        (namespaceKnown
-          ? `"${namespace}" is a real namespace, but "${leaf}" is not a function in it.`
-          : `"${parts.slice(1, -1).join('.')}" is not a known wa namespace either.`) +
-        (suggestion ? ` Did you mean "${suggestion}"?` : ''),
-      detail:
-        'The call does nothing at runtime, so the code loads and the effect never happens.',
+      message: diagnosticsOnly
+        ? `"${path}" exists only in a build with the \`diagnostics\` feature.`
+        : `Unknown wa.* function "${path}". ` +
+          (namespaceKnown
+            ? `"${namespace}" is a real namespace, but "${leaf}" is not a function in it.`
+            : `"${parts.slice(1, -1).join('.')}" is not a known wa namespace either.`) +
+          (suggestion ? ` Did you mean "${suggestion}"?` : ''),
+      detail: diagnosticsOnly
+        ? `\`wa.audit\` is installed by crates/lua-host/src/api.rs under ` +
+          `#[cfg(feature = "diagnostics")], so a stock WormForge has no such namespace and ` +
+          `this call raises "attempt to call a nil value". It also needs ` +
+          `\`debug_input = true\` in the calling pack's mod.toml (actor.rs:2854). ` +
+          `\`mods/tools\` declares it; a pack you ship must too.`
+        : 'The call does nothing at runtime, so the code loads and the effect never happens.',
       severity: 'warning',
       rule: 'wa-namespace-typo',
     });
@@ -653,6 +751,325 @@ function pushUnknownMethod(
 }
 
 
+/**
+ * A (startLine, startCol, endLine, endCol) span, both ends inclusive.
+ * Same tuple the Rust checker uses for `render_regions`.
+ */
+type RenderRegion = [number, number, number, number];
+
+/**
+ * Body spans of every render context in the file: the function literals handed to
+ * `wa.on.draw(...)` / `wa.on.hud(...)`, plus every function those reach BY NAME.
+ *
+ * `math.cos`/`sin`/`atan` inside one of those bodies is presentation-only --
+ * per-client drawing never desyncs a match -- so lockstep-rng stays silent
+ * there. Mirrors `RenderScan` in checks.rs, which mirrors the ENGINE's own rule
+ * (`tools/check_sim_math.py`) rather than a guess at it.
+ *
+ * WHY THIS IS MORE THAN "the body of wa.on.draw(function() ... end)"
+ * It used to be exactly that, and it produced two classes of false error on the
+ * engine's own packs:
+ *
+ *   - `wa.on.hud` is the same kind of callback. spawn.rs:642: "wa.random: not
+ *     inside wa.on.draw or wa.on.hud. They run at render time."
+ *     docs/lua-pixel-units.md:49: "Draw/HUD callbacks may use CRT maths."
+ *   - A draw callback nearly always DELEGATES. `px/lib/turret.lua:573` declares
+ *     `local function sheet(...)` which rotates quad corners with `math.cos` and
+ *     `math.sin` at line 576, and calls it from the draw callback. That is
+ *     presentation. The engine's own checker passes the file; this one did not.
+ *
+ * So the rule is the engine's: a function is rendering if it is passed directly
+ * to `wa.on.draw(`/`wa.on.hud(`, or is referenced by name from something already
+ * rendering -- closed transitively. Everything else stays simulation.
+ *
+ * The conservative decline is kept and is also the engine's: only a FUNCTION
+ * LITERAL argument is a root. `wa.on.draw(handler)` has an invisible body at the
+ * call site, so its trig is not muted -- no false negatives.
+ *
+ * Block counting: Lua opens a block with `function`, `if`, `do` or `repeat`
+ * (`do` also closes every `for`/`while` header, so those are not counted
+ * separately) and closes it with `end` or `until`. `elseif`/`else` open nothing.
+ */
+function collectRenderRegions(meaningful: Token[]): RenderRegion[] {
+  const isOpen = (v: string) => v === 'function' || v === 'if' || v === 'do' || v === 'repeat';
+  const isClose = (v: string) => v === 'end' || v === 'until';
+
+  /** One `function ... end`, located by token index rather than by position. */
+  interface FnBody {
+    /** Index of the `function` keyword. Nested functions sort after their parent. */
+    fnKeyword: number;
+    /** Index of the first token of the body (just past the parameter list). */
+    start: number;
+    /** Index of the `end` that closes it. */
+    end: number;
+    /** Last dotted segment of the declared name, lowercased. null when anonymous. */
+    name: string | null;
+  }
+
+  const bodies: FnBody[] = [];
+
+  for (let i = 0; i < meaningful.length; i++) {
+    if (meaningful[i].value !== 'function') continue;
+
+    // The name is whatever sits between `function` and the parameter list: `sheet`
+    // in `local function sheet(`, `a.b.name` in `function a.b.name(`, `name` in
+    // `function a.b:name(`. Anonymous functions have nothing there.
+    let j = i + 1;
+    const nameParts: string[] = [];
+    while (
+      j < meaningful.length &&
+      meaningful[j].value !== '(' &&
+      meaningful[j].value !== ')' &&
+      meaningful[j].value !== 'end'
+    ) {
+      if (meaningful[j].type === 'identifier') nameParts.push(meaningful[j].value.toLowerCase());
+      j++;
+    }
+    if (meaningful[j]?.value !== '(') continue; // not a function we can size
+
+    // Skip the parameter list: the body starts at the token after its `)`.
+    let p = 0;
+    let bodyStart = -1;
+    for (let k = j; k < meaningful.length; k++) {
+      if (meaningful[k].value === '(') p++;
+      else if (meaningful[k].value === ')') {
+        p--;
+        if (p === 0) {
+          bodyStart = k + 1;
+          break;
+        }
+      }
+    }
+    if (bodyStart < 0 || bodyStart >= meaningful.length) continue;
+
+    // Walk to the `end` that closes THIS function.
+    let depth = 1;
+    let endIdx = -1;
+    for (let k = i + 1; k < meaningful.length; k++) {
+      const v = meaningful[k].value;
+      if (isOpen(v)) depth++;
+      else if (isClose(v)) {
+        depth--;
+        if (depth === 0) {
+          endIdx = k;
+          break;
+        }
+      }
+    }
+    if (endIdx < 0) continue; // unbalanced file: the syntax check reports it, not us
+
+    bodies.push({
+      fnKeyword: i,
+      start: bodyStart,
+      end: endIdx,
+      name: nameParts.length ? nameParts[nameParts.length - 1] : null,
+    });
+  }
+
+  // Roots: a function LITERAL handed straight to wa.on.draw / wa.on.hud.
+  const RENDER_HOOKS = new Set(['draw', 'hud']);
+  const roots = new Set<number>();
+  for (let i = 0; i + 5 < meaningful.length; i++) {
+    if (
+      meaningful[i].value !== 'wa' ||
+      meaningful[i + 1]?.value !== '.' ||
+      meaningful[i + 2]?.value !== 'on' ||
+      meaningful[i + 3]?.value !== '.' ||
+      !RENDER_HOOKS.has(meaningful[i + 4]?.value ?? '')
+    ) {
+      continue;
+    }
+    let k = i + 5;
+    if (meaningful[k]?.value === '(') k++;
+    if (meaningful[k]?.value !== 'function') continue;
+    const body = bodies.find((b) => b.fnKeyword === k);
+    if (body) roots.add(bodies.indexOf(body));
+  }
+
+  // Closure: a body referenced by name from a rendering body renders too.
+  // The reference set is the body's OWN identifiers -- identifiers inside a nested
+  // function belong to that function's scope, exactly as the engine assigns them.
+  const directRefs = (idx: number): string[] => {
+    const me = bodies[idx];
+    const refs: string[] = [];
+    for (let k = me.start; k <= me.end; k++) {
+      const insideNested = bodies.some(
+        (b, j) =>
+          j > idx && b.fnKeyword > me.fnKeyword && b.start <= k && k <= b.end
+      );
+      if (insideNested) continue;
+      if (meaningful[k].type === 'identifier') refs.push(meaningful[k].value.toLowerCase());
+    }
+    return refs;
+  };
+
+  const queue = [...roots];
+  while (queue.length) {
+    const idx = queue.pop() as number;
+    for (const name of directRefs(idx)) {
+      bodies.forEach((b, j) => {
+        if (b.name === name && !roots.has(j)) {
+          roots.add(j);
+          queue.push(j);
+        }
+      });
+    }
+  }
+
+  return [...roots].map((idx) => {
+    const start = meaningful[bodies[idx].start];
+    const end = meaningful[bodies[idx].end];
+    return [start.line, start.column, end.line, end.column] as RenderRegion;
+  });
+}
+
+/** True when the token's position falls inside a recorded render body. */
+function inRenderRegion(t: Token, regions: RenderRegion[]): boolean {
+  return regions.some(([sl, sc, el, ec]) => {
+    const afterStart = t.line > sl || (t.line === sl && t.column >= sc);
+    const beforeEnd = t.line < el || (t.line === el && t.column <= ec);
+    return afterStart && beforeEnd;
+  });
+}
+
+/**
+ * One `for _, v in <wa.X.all()>` loop, and what `v` holds INSIDE it.
+ *
+ * `wa.missiles.all()` yields WorldHandle userdata, not the MissileEntity table --
+ * `spawn.rs` binds it through `bind_kind_list`, whose `all` calls `objects_table`,
+ * and `objects_table` fills the array with `WorldHandle::new(id)`, which HAS
+ * `impulse`. A receiver named `missile` says nothing about which of the two it is,
+ * which is why `px/weapons/electromagnet.lua:95` used to draw a false `missile-api`.
+ */
+interface LoopBinding {
+  /** Lowercased loop value name. */
+  varName: string;
+  className: HandleClassName;
+  /** Token index range of the loop BODY, inclusive. */
+  start: number;
+  end: number;
+}
+
+const isBlockOpen = (v: string) => v === 'function' || v === 'if' || v === 'do' || v === 'repeat';
+const isBlockClose = (v: string) => v === 'end' || v === 'until';
+
+/**
+ * Every `for _, v in <wa.X.all()>` loop in the file, with the span of its body.
+ *
+ * WHY THE SPAN IS PART OF THE ANSWER, and not an implementation detail: a flat
+ * `name -> class` map makes a claim about the whole file out of one loop.
+ * `mods/tools/audit/audit.lua` loops `for _, w in ipairs(wa.worms.all())` at lines
+ * 107 and 112 and separately passes `w` as a callback parameter holding the audit
+ * harness's own MOCK worm at line 265 (`w:input{...}`). A name-keyed map claims that
+ * mock, `w` stops resolving by name -- `w` is not a confident registry prefix, only
+ * `worm` is -- and 46 false `worm-api` warnings appear on a file that had none.
+ *
+ * Same one-hop honesty as the call-site trace: only a loop DIRECTLY over a `wa.X.all()`
+ * call counts, never a variable holding the array (`for _, x in ipairs(t)`), never a
+ * filtered or mapped copy. A helper CALLED from inside the loop with the loop value as
+ * an argument is not inside the loop either, so it falls back to the name table:
+ * silence rather than a wrong answer.
+ */
+function collectLoopBindings(meaningful: Token[]): LoopBinding[] {
+  const out: LoopBinding[] = [];
+
+  for (let i = 0; i < meaningful.length; i++) {
+    if (meaningful[i].value !== 'for') continue;
+
+    // `for k, v in ...`: the VALUE is the last name. `for _, v in ...` has two.
+    const names: string[] = [];
+    let j = i + 1;
+    while (j < meaningful.length && meaningful[j].value !== 'in') {
+      if (meaningful[j].type === 'identifier') names.push(meaningful[j].value.toLowerCase());
+      j++;
+    }
+    if (meaningful[j]?.value !== 'in') continue;
+    j++;
+
+    // The iterator expression is everything up to this loop's `do`.
+    const exprStart = j;
+    while (j < meaningful.length && meaningful[j].value !== 'do') j++;
+    if (meaningful[j]?.value !== 'do') continue;
+
+    const path = pathOfIterator(meaningful, exprStart, j);
+    const className = path ? ITERATOR_ELEMENT[path] : undefined;
+    const varName = names[names.length - 1];
+
+    // Walk to the `end` that closes THIS loop.
+    let depth = 1;
+    let end = -1;
+    for (let k = j + 1; k < meaningful.length; k++) {
+      const v = meaningful[k].value;
+      if (isBlockOpen(v)) depth++;
+      else if (isBlockClose(v)) {
+        depth--;
+        if (depth === 0) {
+          end = k;
+          break;
+        }
+      }
+    }
+    if (end >= 0 && className && varName && varName !== '_') {
+      out.push({ varName, className, start: j, end });
+    }
+  }
+  return out;
+}
+
+/**
+ * The dotted path named by a for-in iterator, unwrapping call layers.
+ *
+ * `ipairs(wa.missiles.all())` -> `wa.missiles.all`; `wa.worms.all()` -> `wa.worms.all`.
+ * Anything else returns null, which is how `for _, x in ipairs(t)` -- t merely holding
+ * the array -- is declined instead of guessed at.
+ */
+function pathOfIterator(toks: Token[], lo: number, hi: number): string | null {
+  // Peel one `ipairs(...)` / `pairs(...)` wrapper, if the expression is exactly one.
+  const first = toks[lo];
+  if (
+    first?.type === 'identifier' &&
+    LOOP_ITERATOR_WRAPPERS.includes(
+      first.value.toLowerCase() as (typeof LOOP_ITERATOR_WRAPPERS)[number]
+    ) &&
+    toks[lo + 1]?.value === '('
+  ) {
+    let depth = 0;
+    let close = -1;
+    for (let k = lo + 1; k < hi; k++) {
+      if (toks[k].value === '(') depth++;
+      else if (toks[k].value === ')') {
+        depth--;
+        if (depth === 0) {
+          close = k;
+          break;
+        }
+      }
+    }
+    // The wrapper must account for the WHOLE expression. `ipairs(t).foo` is not a
+    // loop over `wa.X.all()` and must not be read as one.
+    if (close !== hi - 1) return null;
+    return pathOfIterator(toks, lo + 2, hi - 1);
+  }
+  // What is left should be a dotted path with an optional empty argument list:
+  // `wa.missiles.all ( )`.
+  let end = hi;
+  if (end - lo >= 2 && toks[end - 1].value === ')' && toks[end - 2].value === '(') end -= 2;
+  return pathOfDottedPath(toks, lo, end);
+}
+
+/** `wa . missiles . all` -> `wa.missiles.all`. Anything with a call or index in it fails. */
+function pathOfDottedPath(toks: Token[], lo: number, hi: number): string | null {
+  if (lo >= hi || toks[lo].type !== 'identifier') return null;
+  const parts = [toks[lo].value.toLowerCase()];
+  let k = lo + 1;
+  while (k < hi) {
+    if (toks[k].value !== '.' || toks[k + 1]?.type !== 'identifier') return null;
+    parts.push(toks[k + 1].value.toLowerCase());
+    k += 2;
+  }
+  return parts.join('.');
+}
+
 export function parseAndValidate(
   code: string,
   userVerbs: CustomVerb[] = []
@@ -663,6 +1080,11 @@ export function parseAndValidate(
 } {
   const { tokens, diagnostics } = tokenize(code);
   const meaningfulTokens = tokens.filter((t) => t.type !== 'whitespace' && t.type !== 'comment');
+
+  // Render context: bodies of `wa.on.draw(function() ... end)`. Collected once,
+  // file-globally, exactly like RenderScan in src-tauri/src/checks.rs -- draw on
+  // line 1 mutes math inside a callback on line 3.
+  const renderRegions = collectRenderRegions(meaningfulTokens);
 
   // Structural Syntax Checks: Bracket Balance and Block Structure
   const bracketStack: { char: string; token: Token }[] = [];
@@ -796,6 +1218,12 @@ export function parseAndValidate(
   // the walk, so the receiver check below can ask it first and only fall back
   // to the name table when the code itself says nothing.
   const tracedTypes = traceLocalTypes(code);
+
+  // Resolution step 1b, and the one that was MISSING: a value bound by a
+  // `for _, v in <wa.X.all()>` loop holds whatever that iterator yields. Scoped to
+  // the loop body, so it answers for `missile:impulse()` on the line inside the
+  // loop and for nothing else. See `collectLoopBindings`.
+  const loopBindings = collectLoopBindings(meaningfulTokens);
 
   // One entry per `receiver:method()` that only passed because the receiver is
   // duck-typed. Reported together at the end, so a file with a dozen branches
@@ -961,13 +1389,24 @@ export function parseAndValidate(
       const right = meaningfulTokens[idx + 1];
       if (left && right && right.type === 'identifier') {
         const method = right.value;
+        // `function worm:hurt(...)` is a method DEFINITION, not an invocation:
+        // Rust's equivalent check runs on call expressions only, so definitions
+        // are silent there. Match that -- the symbol extractor above still
+        // records the member for autocomplete.
+        const isDefinition = meaningfulTokens[idx - 2]?.value === 'function';
         // Resolution order, most accurate first:
-        //   1. the traced call-site returnType (`local x = wa.worms.nearest(...)`)
+        //   1. the loop trace -- `for _, missile in ipairs(wa.missiles.all())` states
+        //      what the value IS, which beats anything the name suggests;
+        //   1b. the traced call-site returnType (`local x = wa.worms.nearest(...)`)
         //   2. the name table -- confident names only, via resolveForCheck
         // then, if the receiver is .kind-narrowed, the duck-typed union above.
         // Autocomplete may guess loosely, but a wrong guess here is a false
         // error on valid code, so step 2 only claims names it is sure about.
-        const tracedClass = tracedTypes.get(left.value);
+        // Last loop wins, so a nested loop over the same name is the one that answers.
+        const loopClass = loopBindings
+          .filter((b) => b.varName === left.value.toLowerCase() && idx >= b.start && idx <= b.end)
+          .pop()?.className;
+        const tracedClass = loopClass ?? tracedTypes.get(left.value);
         const expected = tracedClass
           ? rowForClass(tracedClass)
           : resolveForCheck(left.value);
@@ -1002,7 +1441,7 @@ export function parseAndValidate(
             for (const v of userVerbs) {
               if (v.name === method && !owners.includes(v.class)) owners.push(v.class);
             }
-            if (owners.length > 0) {
+            if (!isDefinition && owners.length > 0) {
               const key = `${left.value}:${method}`;
               const seen = unionPasses.find((u) => `${u.receiver}:${u.method}` === key);
               if (seen) {
@@ -1016,10 +1455,10 @@ export function parseAndValidate(
                   lines: [right.line],
                 });
               }
-            } else {
+            } else if (!isDefinition) {
               pushUnknownMethod(expected, cls, method, right, diagnostics);
             }
-          } else {
+          } else if (!isDefinition) {
             pushUnknownMethod(expected, cls, method, right, diagnostics);
           }
         }
@@ -1039,7 +1478,25 @@ export function parseAndValidate(
     ] as const;
     const afterDot = meaningfulTokens[idx - 1]?.value === '.';
     for (const b of bannedLockstep) {
-      if (!afterDot && t.value === 'math' && meaningfulTokens[idx + 1]?.value === '.' && meaningfulTokens[idx + 2]?.value === b.name) {
+      // Only a CALL can desync: `math.sin` read as a value (e.g. copied into a
+      // mock table) executes nothing. Rust's check runs on call expressions
+      // only (`dotted_path(call)`), so match it -- references stay silent.
+      if (
+        !afterDot &&
+        t.value === 'math' &&
+        meaningfulTokens[idx + 1]?.value === '.' &&
+        meaningfulTokens[idx + 2]?.value === b.name &&
+        meaningfulTokens[idx + 3]?.value === '('
+      ) {
+        // math.cos/sin/atan inside wa.on.draw is presentation-only: per-client
+        // drawing never desyncs a match, so it is silent there. Everywhere else
+        // (gameplay logic, helpers, ...) it stays an error. Mirrors the guard in
+        // checks.rs so both engines report the same findings on the same file.
+        // math.random/randomseed are deliberately NOT muted: the sandbox nils
+        // them outright (sandbox.rs), so the call errors at run time in ANY
+        // context, render or not.
+        const isTrig = b.name === 'cos' || b.name === 'sin' || b.name === 'atan';
+        if (isTrig && inRenderRegion(t, renderRegions)) continue;
         diagnostics.push({
           line: t.line,
           column: t.column,
@@ -1064,6 +1521,12 @@ export function parseAndValidate(
 
   // Names that compile but die at runtime. See scanUndefinedGlobals for why
   // that is not caught by the game compiler.
+  //
+  // These two passes fire at the SAME position with the same rule id, by design --
+  // `mergeDiagnostics` (services/diagnostics.ts) is what collapses them into the
+  // single console row the user sees, and luaCompiler.test.ts pins that it does.
+  // Collapsing here as well would leave that guard with no precondition to assert,
+  // and the dedupe would live in two places with two keys. Leave it where it is.
   diagnostics.push(...scanUndefinedGlobals(meaningfulTokens));
 
   // The scope-aware pass on top. Strictly narrower than the one above: it reports

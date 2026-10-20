@@ -101,8 +101,9 @@ export const CreateModModal: React.FC<CreateModModalProps> = ({
           </label>
 
           <p className={`text-[10.5px] ${isLight ? 'text-slate-500' : 'text-[#63758b]'}`}>
-            Creates a subfolder with a minimal mod.toml (version 0.1.0) and a
-            placeholder .lua file, then opens it.
+            Creates a subfolder with a bundle <span className="font-mono">mod.toml</span>, its entry{' '}
+            <span className="font-mono">mod.lua</span>, and a bundled profile in{' '}
+            <span className="font-mono">profiles/</span> that switches the add-on on — then opens it.
           </p>
 
           {error && (

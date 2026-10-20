@@ -2,7 +2,7 @@
 //
 // Source of truth:
 //   src/data/wormforgeDefinitions.ts  (BUILTIN_FUNCTIONS, BUILTIN_CLASSES)
-//   src/data/handleRegistry.ts        (RECEIVER_REGISTRY, ALL_HANDLE_CLASSES)
+//   src/data/handleRegistry.ts        (RECEIVER_REGISTRY, ALL_HANDLE_CLASSES, ITERATOR_ELEMENT)
 //   src/data/luaGlobals.ts            (LUA_GLOBALS)
 //   src/data/wormStates.ts           (WORM_STATES, SETTABLE_WORM_STATES)
 //   src/data/specKeys.ts              (WEAPON_SPEC_KEYS)
@@ -34,7 +34,6 @@ pub static WA_FUNCTIONS: &[&str] = &[
     "wa.world.electrical_trace",
     "wa.land.solid",
     "wa.land.trace",
-    "wa.land.dig",
     "wa.land.cut",
     "wa.land.stamp",
     "wa.worms.all",
@@ -52,6 +51,9 @@ pub static WA_FUNCTIONS: &[&str] = &[
     "wa.weapons.register",
     "wa.weapons.retarget",
     "wa.weapons.launch",
+    "wa.weapons.fire",
+    "wa.weapons.click",
+    "wa.weapons.notify_grant",
     "wa.sprites.key",
     "wa.sound.play",
     "wa.draw.quad",
@@ -87,12 +89,28 @@ pub static WA_FUNCTIONS: &[&str] = &[
     "wa.on.body_move",
     "wa.worms.spawn",
     "wa.arrows.all",
+    "wa.assets.load",
+    "wa.panel.layout",
+    "wa.panel.set_layout",
+    "wa.weapons.data",
+    "wa.weapons.fire_bullet",
+    "wa.weapons.panel_icon",
+    "wa.weapons.set_selectable",
+    "wa.world.set_turn_clock",
+    "wa.fog.set",
+    "wa.fog.get",
+    "wa.fog.defaults",
+    "wa.fog.enable",
+    "wa.fog.enabled",
+    "wa.fog.visible",
+    "wa.fog.light",
 ];
 
 /// (class name, method names) for the handle classes the checker resolves.
 pub static HANDLE_CLASSES: &[(&str, &[&str])] = &[
     ("LuaActor", &[
-        "dig",
+        "collision_ignore",
+        "cut",
         "explode",
         "despawn",
         "in_water",
@@ -109,11 +127,14 @@ pub static HANDLE_CLASSES: &[(&str, &[&str])] = &[
         "look",
         "spawn",
         "sound",
+        "warp",
+        "fits",
     ]),
     ("WormEntity", &[
         "set_state",
         "clear_keys",
         "carry",
+        "jump",
         "freeze",
         "drop",
         "take",
@@ -124,12 +145,23 @@ pub static HANDLE_CLASSES: &[(&str, &[&str])] = &[
         "ammo",
         "hurt",
         "heal",
+        "warp",
+        "air_fire",
+        "teleport_pose",
     ]),
     ("WorldHandle", &[
         "impulse",
         "arm",
         "hit",
         "revive",
+        "warp",
+        "fits",
+        "remove",
+    ]),
+    ("LightHandle", &[
+        "move",
+        "set",
+        "remove",
     ]),
     ("InventoryStore", &[
         "get",
@@ -143,7 +175,6 @@ pub static HANDLE_CLASSES: &[(&str, &[&str])] = &[
         "apply",
     ]),
     ("MissileEntity", &[
-        "impulse",
     ]),
 ];
 
@@ -182,9 +213,13 @@ pub static HANDLE_ALL_MEMBERS: &[(&str, &[&str])] = &[
         "turn",
         "hp",
         "alliance",
+        "windup",
+        "ammo_group",
+        "taken",
         "set_state",
         "clear_keys",
         "carry",
+        "jump",
         "freeze",
         "drop",
         "take",
@@ -195,6 +230,9 @@ pub static HANDLE_ALL_MEMBERS: &[(&str, &[&str])] = &[
         "ammo",
         "hurt",
         "heal",
+        "warp",
+        "air_fire",
+        "teleport_pose",
     ]),
     ("LuaActor", &[
         "id",
@@ -203,9 +241,9 @@ pub static HANDLE_ALL_MEMBERS: &[(&str, &[&str])] = &[
         "y",
         "vx",
         "vy",
-        "owner",
         "facing",
-        "dig",
+        "collision_ignore",
+        "cut",
         "explode",
         "despawn",
         "in_water",
@@ -222,10 +260,16 @@ pub static HANDLE_ALL_MEMBERS: &[(&str, &[&str])] = &[
         "look",
         "spawn",
         "sound",
+        "warp",
+        "fits",
+        "light",
     ]),
     ("WorldHandle", &[
         "id",
         "kind",
+        "uid",
+        "team",
+        "alliance",
         "worm_id",
         "fuse",
         "x",
@@ -236,10 +280,12 @@ pub static HANDLE_ALL_MEMBERS: &[(&str, &[&str])] = &[
         "arm",
         "hit",
         "revive",
+        "warp",
+        "fits",
+        "remove",
     ]),
     ("MissileEntity", &[
         "id",
-        "impulse",
         "class_type",
         "damp",
         "wind_scale",
@@ -270,6 +316,11 @@ pub static HANDLE_ALL_MEMBERS: &[(&str, &[&str])] = &[
         "transfer",
         "apply",
     ]),
+    ("LightHandle", &[
+        "move",
+        "set",
+        "remove",
+    ]),
 ];
 
 /// The receiver registry: (prefix, class, rule, note).
@@ -294,6 +345,22 @@ pub static RECEIVERS: &[(&str, &str, &str, &str)] = &[
     ("object", "WorldHandle", "world-object-api", ""),
     ("m", "MissileEntity", "missile-api", "In-flight missile tables provide properties: id, weapon, sprite, collision_mask, x, y, vx, vy, damp, wind_scale, gravity_scale"),
     ("missile", "MissileEntity", "missile-api", "In-flight missile tables provide properties: id, weapon, sprite, collision_mask, x, y, vx, vy, damp, wind_scale, gravity_scale"),
+];
+
+/// `(wa.X.all, handle class)` -- what a `for _, v in <wa.X.all()>` loop binds.
+///
+/// GENERATED from src/data/handleRegistry.ts (`ITERATOR_ELEMENT`). A loop over one
+/// of these is a FACT about the value; a receiver NAME is only a convention, so
+/// the trace is consulted first and the name table second.
+pub static LOOP_ELEMENT: &[(&str, &str)] = &[
+    ("wa.worms.all", "WormEntity"),
+    ("wa.actors.all", "LuaActor"),
+    ("wa.missiles.all", "WorldHandle"),
+    ("wa.mines.all", "WorldHandle"),
+    ("wa.crates.all", "WorldHandle"),
+    ("wa.oil.all", "WorldHandle"),
+    ("wa.graves.all", "WorldHandle"),
+    ("wa.arrows.all", "WorldHandle"),
 ];
 
 /// Globals a mod may legitimately read: the Lua 5.4 library plus the engine's own `wa`.
@@ -431,4 +498,21 @@ pub static SPEC_KEYS: &[&str] = &[
     "persist",
     "retreat_time",
     "hud",
+    "id",
+    "actor",
+    "airborne",
+    "click_finish",
+    "stock_fire_choice",
+    "panel_icons",
+    "hold",
+    "worm_sprites_toggle",
+    "worm_sprites_team_tint",
+    "fires",
+    "handling",
+    "missile",
+    "clusters",
+    "gun",
+    "strike",
+    "jet_pack",
+    "raw",
 ];

@@ -286,13 +286,48 @@ const isInside = (model: ScopeModel, scopeId: number, line: number): boolean => 
   return !!s && line >= s.startLine && line <= s.endLine;
 };
 
-/** The innermost scope containing `line`, falling back to the file scope. */
+/** How deep a scope sits in the tree. Used to pick the innermost of several. */
+function scopeDepth(model: ScopeModel, scope: Scope): number {
+  let depth = 0;
+  let p = scope.parent;
+  while (p !== null) {
+    depth++;
+    p = model.scopes[p].parent;
+  }
+  return depth;
+}
+
+/**
+ * The innermost scope containing `line`, falling back to the file scope.
+ *
+ * "Innermost" is by TREE DEPTH, not by line range. Those are the same thing when
+ * ranges nest properly, and they were implemented as if they always were -- which
+ * broke on two scopes that share a line range without nesting:
+ *
+ *     local worm = { carry = function(self) self.x = 1 end,
+ *                    drop  = function() end }
+ *
+ * Both bodies are on one line. The old "a nested scope always spans a subset of
+ * its parent's lines" test made the LAST such scope win, so `visibleAt` started
+ * from `drop`'s scope -- which binds nothing -- and `carry`'s parameters were
+ * invisible. Every `self` in `carry` was then reported as an undefined global, on
+ * `mods/pooz/test_motion.lua:18`, by the scoped pass, while the flat pass (which
+ * does not model scope) stayed silent. Rust reads the same file correctly.
+ *
+ * Depth also breaks the tie deterministically, in source order, instead of
+ * arbitrarily.
+ */
 export function scopeAt(model: ScopeModel, line: number): Scope {
   let best = model.scopes[0];
+  let bestDepth = -1;
   for (const s of model.scopes) {
     if (line < s.startLine || line > s.endLine) continue;
-    // Innermost wins: a nested scope always spans a subset of its parent's lines.
-    if (s.startLine >= best.startLine && s.endLine <= best.endLine) best = s;
+    if (s === model.scopes[0]) continue; // the file scope is the floor, not a candidate
+    const depth = scopeDepth(model, s);
+    if (depth > bestDepth) {
+      best = s;
+      bestDepth = depth;
+    }
   }
   return best;
 }
@@ -321,11 +356,29 @@ export function visibleAt(model: ScopeModel, line: number, dedupe = true): Visib
   const out: VisibleName[] = [];
   const seen = new Set<string>();
 
-  // Walk from the cursor's scope outward. A child's id is always greater than its
-  // parent's, but this follows the parent pointers, so it terminates at the file.
-  let s: Scope | undefined = scopeAt(model, line);
+  // Start from EVERY scope containing `line`, innermost first -- not from the single
+  // `scopeAt` picks. Two scopes can share a line range without nesting (see
+  // `scopeAt`), and at line granularity there is no way to tell which one a cursor is
+  // really inside. Naming only one of them makes the other's parameters invisible,
+  // which is how `self` came to be reported as an undefined global inside its own
+  // parameter list. Union is the conservative direction, and it matches what this
+  // check already documents: a name we cannot prove is out of scope is not reported.
+  const chain: Scope[] = [];
+  const queued = new Set<number>();
+  const candidates = model.scopes
+    .filter((s) => line >= s.startLine && line <= s.endLine)
+    .sort((a, b) => scopeDepth(model, b) - scopeDepth(model, a));
+  for (const c of candidates) {
+    let s: Scope | undefined = c;
+    while (s && !queued.has(s.id)) {
+      queued.add(s.id);
+      chain.push(s);
+      s = s.parent === null ? undefined : model.scopes[s.parent];
+    }
+  }
+
   let rank = 0;
-  while (s) {
+  for (const s of chain) {
     for (const b of s.bindings) {
       if (dedupe && seen.has(b.name)) continue;
 
@@ -344,7 +397,6 @@ export function visibleAt(model: ScopeModel, line: number, dedupe = true): Visib
       });
     }
     rank++;
-    s = s.parent === null ? undefined : model.scopes[s.parent];
   }
   return out;
 }

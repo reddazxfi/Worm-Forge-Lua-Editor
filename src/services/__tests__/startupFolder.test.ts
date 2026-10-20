@@ -151,3 +151,44 @@ describe('§35 ini round-trip for the startup mod', () => {
     expect(loadConfig().startupModFolder).toBe('bee');
   });
 });
+describe('autocomplete preference', () => {
+  it('defaults to on', () => {
+    expect(loadConfig().autocomplete).toBe(true);
+  });
+
+  it('keeps an explicit off', () => {
+    seedStored({ autocomplete: false });
+    expect(loadConfig().autocomplete).toBe(false);
+  });
+
+  it('turns a missing or corrupt value back on', () => {
+    // A config written before the option existed has no key at all.
+    const old = { ...DEFAULT_CONFIG } as Record<string, unknown>;
+    delete old.autocomplete;
+    store.set('wormforge_editor_config', JSON.stringify(old));
+    expect(loadConfig().autocomplete).toBe(true);
+
+    seedStored({ autocomplete: 'no' });
+    expect(loadConfig().autocomplete).toBe(true);
+  });
+
+  it('round-trips through saveConfig', () => {
+    saveConfig({ ...DEFAULT_CONFIG, autocomplete: false });
+    expect(loadConfig().autocomplete).toBe(false);
+  });
+
+  it('round-trips through the .ini export', () => {
+    const ini = exportConfigAsIni({ ...DEFAULT_CONFIG, autocomplete: false });
+    expect(ini).toContain('autocomplete = off');
+    expect(parseIniConfig(ini).autocomplete).toBe(false);
+
+    const on = exportConfigAsIni({ ...DEFAULT_CONFIG, autocomplete: true });
+    expect(on).toContain('autocomplete = on');
+    expect(parseIniConfig(on).autocomplete).toBe(true);
+  });
+
+  it('accepts hand-written true/false in the .ini', () => {
+    expect(parseIniConfig('[Editor]\nautocomplete = false\n').autocomplete).toBe(false);
+    expect(parseIniConfig('[Editor]\nautocomplete = true\n').autocomplete).toBe(true);
+  });
+});

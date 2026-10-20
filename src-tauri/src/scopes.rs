@@ -43,7 +43,7 @@
 use std::collections::HashSet;
 
 use full_moon::ast::{
-    Assignment, Ast, FunctionBody, FunctionDeclaration, GenericFor, LocalAssignment,
+    Assignment, Ast, Expression, FunctionBody, FunctionDeclaration, GenericFor, LocalAssignment,
     LocalFunction, NumericFor, Var,
 };
 use full_moon::node::Node;
@@ -56,6 +56,18 @@ use crate::AstDiagnostic;
 /// the user their trust in every other finding -- the same reasoning that keeps
 /// `unknown-method` a warning in `check_method_call`.
 const SEVERITY: &str = "warning";
+
+/// Severity for a read the author has already nil-guarded with `or`.
+///
+/// INFO, not silence and not a warning. The finding is kept because the read is
+/// genuinely of an undefined global and a pack author deserves to know -- it is
+/// almost always a host-injected name (the engine's own `cargo test` harnesses
+/// inject `HIGHLANDER_ROOT`, `HIGHLANDER_BASELINE` and `HIGHLANDER_CLAIMING` into
+/// `mods/px`, and nothing injects them at runtime), so it is worth saying out loud.
+/// Downgrading keeps it out of the Warn filter, where the unguarded case belongs:
+/// "my pack stops loading" and "this is a nil-guarded host global" are not the same
+/// alarm, and putting them at the same level teaches people to ignore the first.
+const SEVERITY_NIL_GUARDED: &str = "info";
 
 const RULE: &str = "undefined-global";
 
@@ -82,6 +94,8 @@ struct Finder {
     /// Innermost last. `scopes[0]` is the file scope, which is where globals live.
     stack: Vec<usize>,
     reads: Vec<Read>,
+    /// Positions of reads that are the left operand of an `or`. See `visit_expression`.
+    nil_guarded: HashSet<(usize, usize)>,
     /// Set by a `function M:m()` declaration; the implicit `self` belongs to the
     /// `FunctionBody` that follows. Lua binds `self` nowhere else.
     self_pending: bool,
@@ -351,6 +365,30 @@ impl Visitor for Finder {
         let (line, column) = pos(name);
         self.note_read(&n, line, column);
     }
+
+    /// Record every `X or Y` left operand as NIL-GUARDED.
+    ///
+    /// `local root = HIGHLANDER_ROOT or "mods/px/"` is the standard Lua way of
+    /// saying "this may be nil, and here is what to use when it is". The read is
+    /// real and it does evaluate to nil -- but the author has already handled that
+    /// case, so warning at the same level as an unguarded read tells them their pack
+    /// will stop loading when the very next token is the thing preventing it.
+    ///
+    /// Only the direct left operand of `or` counts. `X and Y or Z` guards with
+    /// `and`, not `or`, and `f() or g()` has no name to record; both are left to
+    /// warn, which is the conservative direction.
+    fn visit_expression(&mut self, expr: &Expression) {
+        // The operator is a FIELD of `Expression::BinaryOperator` in full_moon 3.0, not
+        // a node of its own -- so this match arm is the only place `or` is visible.
+        if let Expression::BinaryOperator {
+            binop: full_moon::ast::BinOp::Or(_),
+            lhs,
+            ..
+        } = expr
+        {
+            self.nil_guarded.insert(pos(lhs));
+        }
+    }
 }
 /// Runs the check over one parsed file.
 ///
@@ -373,18 +411,29 @@ pub fn run(ast: &Ast) -> Vec<AstDiagnostic> {
         if !seen.insert((read.line, read.column)) {
             continue;
         }
+        let nil_guarded = finder.nil_guarded.contains(&(read.line, read.column));
         out.push(AstDiagnostic::finding(
             read.line,
             read.column,
-            SEVERITY,
+            if nil_guarded { SEVERITY_NIL_GUARDED } else { SEVERITY },
             RULE,
-            format!(
-                "Undefined name \"{}\" in this scope: nothing visible here defines it. \
-                 Another function in this file may declare a \"{}\", but a local does not \
-                 cross into this function -- at runtime this reads nil, or stops every \
-                 mod loading.",
-                read.name, read.name
-            ),
+            if nil_guarded {
+                format!(
+                    "Undefined name \"{}\" reads nil here, but the `or` fallback handles it. \
+                     Nothing here defines it, and nothing injects it at runtime either -- \
+                     the engine's own `cargo test` harnesses set a few names like this for \
+                     `mods/px`, which is why the pack reads them defensively.",
+                    read.name
+                )
+            } else {
+                format!(
+                    "Undefined name \"{}\" in this scope: nothing visible here defines it. \
+                     Another function in this file may declare a \"{}\", but a local does not \
+                     cross into this function -- at runtime this reads nil, or stops every \
+                     mod loading.",
+                    read.name, read.name
+                )
+            },
         ));
     }
     out.sort_by_key(|d| (d.line, d.column));
@@ -394,6 +443,81 @@ pub fn run(ast: &Ast) -> Vec<AstDiagnostic> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `X or default` -- the standard Lua "this may be nil" idiom.
+    fn severities(src: &str) -> Vec<(String, String)> {
+        let ast = full_moon::parse(src).expect("fixture must parse");
+        run(&ast)
+            .into_iter()
+            .map(|d| (d.rule.as_str().to_string(), d.severity.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn a_nil_guarded_read_is_info_not_a_warning() {
+        // `mods/px/rules.lua:15` and its siblings: the engine's own `cargo test`
+        // harnesses inject HIGHLANDER_ROOT (crates/lua-host/src/lib.rs:3650) and
+        // nothing injects it at runtime, so the pack reads it defensively. Warning
+        // here says "your pack stops loading" one token before the `or` that prevents
+        // exactly that.
+        let out = severities("local root = HIGHLANDER_ROOT or \"mods/px/\"\n");
+        assert_eq!(out, vec![(RULE.to_string(), SEVERITY_NIL_GUARDED.to_string())]);
+    }
+
+    #[test]
+    fn an_unguarded_read_is_still_a_warning() {
+        // The change must not have cost the rule anything: the same name in an
+        // unguarded position is still the loud one.
+        let out = severities("print(HIGHLANDER_ROOT)\n");
+        assert_eq!(out, vec![(RULE.to_string(), SEVERITY.to_string())]);
+    }
+
+    #[test]
+    fn and_binds_tighter_than_or_so_the_or_still_covers_it() {
+        // `MISSING and 1 or 2` parses as `(MISSING and 1) or 2`, because `and` binds
+        // tighter than `or` in Lua. MISSING is nil, so that whole expression yields 2
+        // and never trips. It IS nil-guarded, and the position recorded is the start of
+        // the `and` -- which is where MISSING sits.
+        let out = severities("local v = MISSING and 1 or 2\n");
+        assert_eq!(out, vec![(RULE.to_string(), SEVERITY_NIL_GUARDED.to_string())]);
+    }
+
+    #[test]
+    fn and_with_no_or_is_not_a_guard() {
+        // The control for the test above: remove the `or` and the read is genuinely
+        // unguarded again.
+        let out = severities("local v = MISSING and 1\n");
+        assert_eq!(out, vec![(RULE.to_string(), SEVERITY.to_string())]);
+    }
+
+    #[test]
+    fn only_the_left_operand_of_or_is_guarded() {
+        let out = severities("local v = 1 or MISSING\n");
+        assert_eq!(out, vec![(RULE.to_string(), SEVERITY.to_string())]);
+    }
+
+    #[test]
+    fn a_field_access_is_not_a_read_at_all() {
+        assert!(severities("local v = t.missing or 1\n").is_empty());
+    }
+
+    #[test]
+    fn a_guarded_read_still_reports_the_name_and_stays_the_same_rule() {
+        let ast = full_moon::parse("local root = HIGHLANDER_ROOT or \"x\"\n").unwrap();
+        let d = &run(&ast)[0];
+        assert_eq!(d.rule.as_str(), RULE);
+        assert!(d.message.contains("HIGHLANDER_ROOT"), "got {:?}", d.message);
+        assert!(
+            d.message.contains("fallback handles it"),
+            "the guarded wording must say so, got {:?}",
+            d.message
+        );
+        assert!(
+            !d.message.contains("stops every mod loading"),
+            "that half was never true for a guarded read: {:?}",
+            d.message
+        );
+    }
 
     /// The first word of each message, which is the offending name.
     fn names(src: &str) -> Vec<String> {

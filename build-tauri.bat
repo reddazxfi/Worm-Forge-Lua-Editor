@@ -8,11 +8,20 @@ where cargo >nul 2>nul || (echo [ERROR] Rust not found. Run: winget install Rust
 
 echo [1/4] Cleaning old install...
 if exist node_modules rmdir /s /q node_modules
-if exist package-lock.json del /q package-lock.json
 if exist dist rmdir /s /q dist
 
 echo [2/4] Installing packages...
-call npm install --legacy-peer-deps
+REM Keep package-lock.json. Deleting it re-resolved every dependency on every
+REM build, which let the Tauri npm plugins drift past the minor versions pinned
+REM in src-tauri/Cargo.toml. `tauri build` refuses that combination ("mismatched
+REM Tauri packages"), and it only shows up on a machine doing a fresh install.
+REM npm ci is the lockfile-exact install; the fallback keeps a first-ever build
+REM working if the lockfile is genuinely missing.
+if exist package-lock.json (
+  call npm ci --legacy-peer-deps
+) else (
+  call npm install --legacy-peer-deps
+)
 if errorlevel 1 (echo [ERROR] npm install failed. Paste the error above. & pause & exit /b 1)
 
 echo [3/4] Building frontend...

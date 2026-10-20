@@ -31,7 +31,8 @@ export type HandleClassName =
   | 'LuaActor'
   | 'WorldHandle'
   | 'MissileEntity'
-  | 'InventoryStore';
+  | 'InventoryStore'
+  | 'LightHandle';
 
 /**
  * returnType strings in wormforgeDefinitions.ts use the ENGINE's vocabulary
@@ -48,6 +49,7 @@ export const HANDLE_ALIASES: Record<string, HandleClassName> = {
   MissileEntity: 'MissileEntity',
   MissileHandle: 'MissileEntity',
   InventoryStore: 'InventoryStore',
+  LightHandle: 'LightHandle',
 };
 
 /** Every class the union check may consult. */
@@ -57,6 +59,7 @@ export const ALL_HANDLE_CLASSES: HandleClassName[] = [
   'WorldHandle',
   'MissileEntity',
   'InventoryStore',
+  'LightHandle',
 ];
 
 export interface ReceiverRow {
@@ -125,6 +128,18 @@ export const RECEIVER_REGISTRY: ReceiverRow[] = [
     className: 'MissileEntity',
     rule: 'missile-api',
     note: 'In-flight missile tables provide properties: id, weapon, sprite, collision_mask, x, y, vx, vy, damp, wind_scale, gravity_scale',
+  },
+  {
+    // Free fog light (0.9.11): `local light = wa.fog.light{...}`.
+    //
+    // AUTOCOMPLETE ONLY. `light` is a natural local name for anything a pack
+    // lights up, and the handle has just three methods, so diagnosing by name
+    // would warn on every unrelated `light:something()`. The trace from
+    // `wa.fog.light` is the confident path; the empty `diagnose` says so.
+    prefixes: ['light'],
+    diagnose: [],
+    className: 'LightHandle',
+    rule: 'light-api',
   },
 ];
 
@@ -231,6 +246,56 @@ const CALLABLE_NAMES: Map<string, string> = (() => {
   for (const vb of BUILTIN_VARIABLES) map.set(vb.name, vb.type ?? '');
   return map;
 })();
+
+// `wa.X.all()` iterators yield engine objects, and the engine text names them:
+// `wa.missiles.all` and `wa.arrows.all` return WorldHandle arrays (the same
+// stock-missile / stock-arrow objects `object:impulse` pushes); `wa.worms.all`
+// yields WormEntity; `wa.actors.all` yields LuaActor. `wa.mines.all`,
+// `wa.crates.all`, `wa.oil.all` and `wa.graves.all` are WorldHandles too.
+//
+// WHY `wa.missiles.all()` IS NOT MissileEntity, measured at the engine:
+// `spawn.rs` binds it with `bind_kind_list`, whose `all` calls `objects_table`,
+// and `objects_table` fills the array with `WorldHandle::new(id)` -- userdata
+// with `warp`/`fits`/`arm`/`impulse`/`remove` (actor.rs `add_methods`). The
+// MissileEntity table is a DIFFERENT value: the plain table `wa.on.missile_frame`
+// hands your callback, which has properties and no methods at all. A pack that
+// writes `for _, missile in ipairs(wa.missiles.all()) do missile:impulse(dx, dy) end`
+// is calling a real WorldHandle method, and calling it `missile` must not make the
+// checker claim otherwise -- which is exactly what `px/weapons/electromagnet.lua:95`
+// used to prove.
+//
+// EXPORTED because scripts/genEngineData.ts emits it into engine_data.rs. Rust had
+// only the name table, so the same line raised `missile-api` in BOTH engines --
+// and no test caught it, because every test asserted checker behaviour rather than
+// the resolution input.
+export const ITERATOR_ELEMENT: Record<string, HandleClassName> = {
+  'wa.worms.all': 'WormEntity',
+  'wa.actors.all': 'LuaActor',
+  'wa.missiles.all': 'WorldHandle',
+  'wa.mines.all': 'WorldHandle',
+  'wa.crates.all': 'WorldHandle',
+  'wa.oil.all': 'WorldHandle',
+  'wa.graves.all': 'WorldHandle',
+  'wa.arrows.all': 'WorldHandle',
+};
+
+// Loop headers whose iterator is a call: `for _, x in ipairs(wa.missiles.all())`.
+// NO LONGER MATCHED HERE. There used to be a `traceLoopTypes` that regex-scanned the
+// source for these and returned a flat `Map<name, class>`. It was never called -- which
+// is why BOTH engines resolved the loop value by NAME and warned `missile:impulse() is
+// not a MissileEntity method` on `px/weapons/electromagnet.lua:95`.
+//
+// Even wiring it up as written would have been wrong, and measurably so. A flat map
+// makes a claim about the WHOLE FILE from one loop: `mods/tools/audit/audit.lua` loops
+// `for _, w in ipairs(wa.worms.all())` at lines 107 and 112, and separately passes `w`
+// as a callback parameter holding the audit harness's own MOCK worm at line 265. The map
+// claims that mock, `w` stops resolving by name (`w` is not a confident registry prefix
+// -- only `worm` is), and 46 false `worm-api` warnings appear.
+//
+// So the trace is built in parser.ts from the token stream, where each loop's own
+// position range is available, and it only answers for a call inside that range. The
+// DATA stays here; the resolution lives with the token walk.
+export const LOOP_ITERATOR_WRAPPERS = ['ipairs', 'pairs'] as const;
 
 /**
  * Resolution step 1: `local X = <call whose returnType names a handle>`.

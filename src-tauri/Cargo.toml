@@ -21,8 +21,13 @@ path = "src/bin/sweep.rs"
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
+# Pinned to the same minor the npm plugins resolve to, so `tauri build`'s
+# "mismatched Tauri packages" guard passes. Tauri requires the Rust plugin
+# crate and its @tauri-apps/plugin-* npm twin to share a major/minor; the loose
+# "2" specs let Cargo.lock drift (fs locked 2.6.0 while npm installed 2.7.0).
+# Keep these in step with package.json when either side is bumped.
+tauri-plugin-dialog = "2.8"
+tauri-plugin-fs = "2.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # The exact Lua build the game compiles mods against (WormForge-main-source

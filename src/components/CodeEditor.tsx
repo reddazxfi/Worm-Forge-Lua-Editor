@@ -21,6 +21,9 @@ import {
   type TokenClasses,
 } from '../services/editorHighlight';
 import { LUA_GLOBALS_SET } from '../data/luaGlobals';
+import { planInsertion } from '../services/completion';
+import { lineStateBeforeCaret } from '../services/lineState';
+import { tableKeySuggestions, tableValueSuggestions, tableContextAt } from '../services/tableContext';
 import { startsNewUndoEntry, isWordBoundary } from '../services/undoPolicy';
 
 export const STOCK_WA_WEAPON_SLOTS = [
@@ -147,6 +150,12 @@ interface AutocompleteItem {
   insertText: string;
   documentation?: string;
   /**
+   * How far back from the end of the inserted text the caret should land.
+   * Used by table-key completions so `missile = {  }` leaves the caret inside
+   * the braces instead of after them.
+   */
+  cursorBack?: number;
+  /**
    * Sort weight, lower sorts first. Scope-aware entries get their distance from
    * the cursor's scope (see visibleAt().rank), engine entries get ENGINE_RANK so
    * a local declared two lines up always outranks the entire engine API.
@@ -199,6 +208,11 @@ interface CodeEditorProps {
    * means autocomplete behaves exactly as before (engine tables only).
    */
   customVerbs?: CustomVerb[];
+  /**
+   * Show the suggestion popup while typing. Off is a real editor mode, not a
+   * hidden setting: Tab then indents and nothing opens under the caret.
+   */
+  autocompleteEnabled?: boolean;
 }
 
 // Imperative handle exposed to App.tsx. Lets the DocPane / API Tree / Keycode
@@ -273,6 +287,7 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     syntaxOverridesLight,
     jumpTarget,
     customVerbs = [],
+    autocompleteEnabled = true,
   },
   ref
 ) {
@@ -668,46 +683,78 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     // for scrollTop with the correct sign.
     if (autocompleteVisible) {
       const at = measureCaret();
-      if (at) setAutocompletePos({ top: at.top + lineHeightPx, left: at.left });
+      if (at) setAutocompletePos({ top: at.top + lineHeightPx + 0.5, left: at.left });
     }
     // Feed the virtualised window. rAF-throttled inside, because a scroll gesture
     // fires far more events than the window can usefully change.
     noteScrollTop();
   };
 
-  // Cursor position and Autocomplete detection
-  const updateCursorAndAutocomplete = () => {
-    if (!textareaRef.current) return;
-    // Read lastCodeRef, NOT the `code` prop. handleTextareaChange calls this in
-    // the same tick as onChange(), so React has not re-rendered yet and the prop
-    // is one keystroke behind the DOM that selectionStart is read from. Every
-    // trigger regex below is $-anchored, so a stale prop means the character just
-    // typed is missing -- and that character is usually the one that opens the
-    // popup: `:` in `worm:`, `.` in `wa.`. The popup then only appeared if you
-    // pressed some other key afterwards.
-    //
-    // lastCodeRef is already synchronised on every mutation path: change (1227),
-    // applyProgrammaticChange (388), undo (429), redo (456), and this effect
-    // re-syncs it to `code` once the render catches up (349). So outside the
-    // keystroke race it equals the prop and nothing changes.
+  // Cursor position. Shared by typing, clicking, dragging and programmatic
+  // selection, so the read happens in one place.
+  //
+  // Read lastCodeRef, NOT the `code` prop. handleTextareaChange calls this in
+  // the same tick as onChange(), so React has not re-rendered yet and the prop
+  // is one keystroke behind the DOM that selectionStart is read from. Every
+  // trigger regex below is $-anchored, so a stale prop means the character just
+  // typed is missing -- and that character is usually the one that opens the
+  // popup: `:` in `worm:`, `.` in `wa.`. The popup then only appeared if you
+  // pressed some other key afterwards.
+  //
+  // lastCodeRef is already synchronised on every mutation path: change (1227),
+  // applyProgrammaticChange (388), undo (429), redo (456), and this effect
+  // re-syncs it to `code` once the render catches up (349). So outside the
+  // keystroke race it equals the prop and nothing changes.
+  const readCaretContext = () => {
+    if (!textareaRef.current) return null;
     const live = lastCodeRef.current;
     const selStart = textareaRef.current.selectionStart;
     const textBefore = live.slice(0, selStart);
     const codeLines = textBefore.split('\n');
-    const currentLine = codeLines.length;
-    const currentCol = codeLines[codeLines.length - 1].length + 1;
+    const line = codeLines.length;
+    const col = codeLines[codeLines.length - 1].length + 1;
 
-    setCursorPos({ line: currentLine, column: currentCol, index: selStart });
-    if (onCursorChange) {
-      onCursorChange(currentLine, currentCol);
-    }
+    setCursorPos({ line, column: col, index: selStart });
+    if (onCursorChange) onCursorChange(line, col);
 
-    // Check for trigger prefix
-    const currentLineText = codeLines[codeLines.length - 1];
-    checkAutocompleteTrigger(currentLineText, currentLine, currentCol);
+    return { textBefore, line, col, lineText: codeLines[codeLines.length - 1] };
   };
 
-  const checkAutocompleteTrigger = (lineText: string, lineNum: number, colNum: number) => {
+  const updateCursorAndAutocomplete = () => {
+    const ctx = readCaretContext();
+    if (!ctx) return;
+    checkAutocompleteTrigger(ctx.lineText, ctx.line, ctx.col, ctx.textBefore);
+  };
+
+  // A click or drag is for placing the caret and selecting text, never for
+  // opening the list. `onSelect` fires for mouse and keyboard both, so opening
+  // from it put a suggestion row under the second click of a double-click: the
+  // click landed on the row and inserted it instead of selecting the word.
+  // Keyboard paths (onKeyUp) still open the popup.
+  const handlePointerSelect = () => {
+    readCaretContext();
+    if (autocompleteVisible) {
+      setAutocompleteVisible(false);
+      lastAutoSignatureRef.current = null;
+    }
+  };
+
+  const checkAutocompleteTrigger = (
+    lineText: string,
+    lineNum: number,
+    colNum: number,
+    sourceToCaret: string,
+  ) => {
+    // A disabled popup still lets the caret/scope state update above; it just
+    // never builds a list. Tab then falls through to the indent handler.
+    if (!autocompleteEnabled) {
+      if (autocompleteVisible) {
+        setAutocompleteVisible(false);
+        lastAutoSignatureRef.current = null;
+      }
+      return;
+    }
+
     // Exclusive TOML autocomplete for stock weapon slots
     if (isToml) {
       const wordMatch = lineText.match(/([a-zA-Z_][a-zA-Z0-9_]{1,})$/);
@@ -733,8 +780,20 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       return;
     }
 
+    // Prose is not code. `-- see wa.` and `print("wa.` used to offer the whole
+    // engine namespace; only the enum-value branch (1.5) belongs inside a
+    // string, and it runs before the suppression below.
+    const lineState = lineStateBeforeCaret(lineText);
+    if (lineState.inComment) {
+      setAutocompleteVisible(false);
+      lastAutoSignatureRef.current = null;
+      return;
+    }
+
     // 1. Unified Object Member Trigger for both '.' and ':' (e.g. worm:abc, worm.abc, a:abc, a.abc)
-    const memberMatch = lineText.match(/([a-zA-Z0-9_]+)([:.])([a-zA-Z0-9_]*)$/);
+    const memberMatch = lineState.inString
+      ? null
+      : lineText.match(/([a-zA-Z0-9_]+)([:.])([a-zA-Z0-9_]*)$/);
     if (memberMatch) {
       const obj = memberMatch[1];
       const sep = memberMatch[2]; // ':' or '.'
@@ -988,6 +1047,38 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       }
     }
 
+    // 1.4 Spec-table keys.
+    //
+    // `wa.weapons.launch({ missile = { fus| } })` is not a member expression and
+    // not a local: `fuse` belongs to a weapon record. tableContextAt resolves the
+    // brace stack to the call that owns it and hands back the keys at this level.
+    //
+    // Placed before the string-enum and identifier branches, and it RETURNS even
+    // when nothing matched: in key position a scope name with the same spelling
+    // (`fuse`, `count`, `power`) is the wrong answer.
+    const tableCtx = tableContextAt(sourceToCaret);
+    if (tableCtx && tableCtx.trigger) {
+      const suggestions = tableCtx.valueField
+        ? tableValueSuggestions(tableCtx)
+        : tableKeySuggestions(tableCtx);
+      const tableItems: AutocompleteItem[] = suggestions.map((s) => ({
+        label: s.name,
+        kind: s.nested ? 'class' : 'property',
+        rank: 0,
+        detail: s.detail,
+        insertText: s.insertText,
+        cursorBack: s.cursorBack,
+        documentation: s.documentation,
+      }));
+      if (tableItems.length > 0) {
+        showAutocomplete(tableItems, lineNum, colNum);
+        return;
+      }
+      setAutocompleteVisible(false);
+      lastAutoSignatureRef.current = null;
+      return;
+    }
+
     // 1.5 String-enum values: `obj.kind == "`, `obj.kind ~= "`, `worm.state == "`,
     // `worm:set_state("`. The member-name triggers below cannot help here -- they
     // fire on `obj.kind` and stop at the identifier, whereas the caret now sits
@@ -1078,6 +1169,15 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       }
     }
 
+    // Anything else inside a string is prose. The enum branch above returned if
+    // it matched; if execution reaches here, stay quiet rather than suggesting
+    // Lua names into a sentence.
+    if (lineState.inString) {
+      setAutocompleteVisible(false);
+      lastAutoSignatureRef.current = null;
+      return;
+    }
+
     // 3. Arrow operator warning / helper: e.g. "wa->" or "a->"
     const arrowMatch = lineText.match(/([a-zA-Z0-9_]+)->$/);
     if (arrowMatch) {
@@ -1116,9 +1216,11 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     //      the handle they name even in a brand-new empty file
     //
     // The old `{2,}` minimum (3+ chars) is dropped to 2: `wa` is two characters
-    // and is the single most-typed token in this engine.
+    // and is the single most-typed token in this engine. One character is still
+    // too little -- `a` matched every name containing an `a`, which is what made
+    // the popup feel like it was in the way.
     const wordMatch = lineText.match(/([a-zA-Z_][a-zA-Z0-9_]*)$/);
-    if (wordMatch) {
+    if (wordMatch && wordMatch[1].length >= 2) {
       const word = wordMatch[1].toLowerCase();
       const items: AutocompleteItem[] = [];
       const seen = new Set<string>();
@@ -1345,10 +1447,10 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       const wantH = Math.min(items.length * rowH + chromeH, autoSize.h);
       const wantW = autoSize.w;
 
-      let top = at.top + lineHeightPx;
+      let top = at.top + lineHeightPx + 0.5;
       // Flip above when the popup would hang off the bottom. Without this the list
       // is unreachable on the last few lines of the viewport.
-      if (top + wantH > hostH - 8) top = Math.max(8, at.top - wantH);
+      if (top + wantH > hostH - 8) top = Math.max(8, at.top - wantH - 0.5);
 
       let left = at.left;
       // Keep it on screen when the caret is near the right edge.
@@ -1418,59 +1520,18 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     const selStart = textareaRef.current.selectionStart;
     const textBefore = code.slice(0, selStart);
 
-    // Replace the word/prefix being typed, and ONLY that. Never the rest of the line.
-    //
-    // The old logic searched the whole current line for the last `.` or `:` and set
-    // `replaceStart` from it, so accepting a suggestion could rewrite everything
-    // from that separator onward. Combined with Enter accepting by default, a
-    // half-typed line could be replaced wholesale by an unrelated declaration.
-    //
-    // The rule now: replace at most the identifier immediately before the caret.
-    // If the popup is showing members (the user typed `obj.` or `obj:`), the member
-    // name is what gets replaced. Otherwise the partial word is. Either way the
-    // text AFTER the caret is untouched.
+    // Replace only what is still being typed. The rule lives in
+    // services/completion.ts, where it is tested: a fully qualified suggestion
+    // must not repeat a receiver the user already wrote (`wa.world` + Tab used
+    // to produce `wa.wa.world`).
     const lineBreakIdx = textBefore.lastIndexOf('\n');
     const currentLine = textBefore.slice(lineBreakIdx + 1);
     const caretInLine = selStart - (lineBreakIdx + 1);
+    const plan = planInsertion(currentLine, caretInLine, item.insertText, item.cursorBack ?? 0);
 
-    // The identifier characters immediately before the caret.
-    const wordBefore = currentLine.slice(0, caretInLine).match(/[A-Za-z0-9_]*$/);
-    const partialWord = wordBefore ? wordBefore[0] : '';
-
-    // What the popup was opened for. `member` means the user is completing after a
-    // `.` or `:`, so only the name after it may be replaced. Determined from the
-    // typed line, not from the item, so it is right even for an unrelated top hit.
-    const sepBefore = currentLine.slice(0, caretInLine - partialWord.length).match(/[.:]\s*$/);
-    const isMemberCompletion = sepBefore !== null;
-
-    let replaceStart = selStart - partialWord.length;
-
-    // `->` fix: the item starts with the separator the user should have typed, so
-    // swallow the whole `->` instead of leaving it behind.
-    const arrowIdx = currentLine.lastIndexOf('->', caretInLine - 1);
-    if (
-      arrowIdx !== -1 &&
-      caretInLine >= arrowIdx + 2 &&
-      currentLine.slice(caretInLine - partialWord.length, caretInLine).trim() === '' &&
-      (item.insertText.startsWith('.') || item.insertText.startsWith(':'))
-    ) {
-      replaceStart = lineBreakIdx + 1 + arrowIdx;
-    }
-    // `a:b` -> insert a method. The item already begins with `:`, so the typed `:`
-    // must be consumed or the result is `worm::hurt(1)`. Guarded on a colon
-    // sitting EXACTLY where the partial word starts: a looser check fired even
-    // when the caret was merely mid-line, which could double the separator.
-    else if (isMemberCompletion && item.insertText.startsWith(':')) {
-      const colonIdx = caretInLine - partialWord.length - 1;
-      if (currentLine[colonIdx] === ':') {
-        replaceStart = lineBreakIdx + 1 + colonIdx;
-      }
-    }
-    // Otherwise `replaceStart` is already correct: the partial word before the caret.
-    // Anything AFTER selStart is preserved by the slice below.
-
-    const newCode = code.slice(0, replaceStart) + item.insertText + code.slice(selStart);
-    const nextPos = replaceStart + item.insertText.length;
+    const replaceStart = lineBreakIdx + 1 + plan.start;
+    const newCode = code.slice(0, replaceStart) + plan.text + code.slice(selStart);
+    const nextPos = replaceStart + plan.text.length - plan.cursorBack;
     applyProgrammaticChange(newCode, nextPos);
     setAutocompleteVisible(false);
     lastAutoSignatureRef.current = null;
@@ -2230,9 +2291,14 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
             value={code}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            onKeyUp={updateCursorAndAutocomplete}
-            onClick={updateCursorAndAutocomplete}
-            onSelect={updateCursorAndAutocomplete}
+            onKeyUp={(e) => {
+              // Ctrl/Cmd chords (select-all, copy, save) are not typing gestures;
+              // running the trigger after them reopened the popup for no reason.
+              if (e.ctrlKey || e.metaKey || e.altKey) return;
+              updateCursorAndAutocomplete();
+            }}
+            onClick={handlePointerSelect}
+            onSelect={handlePointerSelect}
             onCopy={handleCopy}
             onScroll={handleScroll}
             spellCheck={false}
@@ -2295,7 +2361,13 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
                 {autocompleteItems.map((item, idx) => (
                   <div
                     key={idx}
-                    onClick={() => insertAutocomplete(item)}
+                    // mousedown, not click: preventDefault keeps the textarea's
+                    // caret and focus intact while the item inserts, and a single
+                    // press always inserts exactly once.
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      insertAutocomplete(item);
+                    }}
                     className={`px-2 py-1.5 flex items-center justify-between cursor-pointer transition-colors ${
                       selectedAutoIdx === idx
                         ? isLight

@@ -155,7 +155,7 @@ export const KeyboardReference: React.FC<KeyboardReferenceProps> = ({
                   <span className="text-[#a4b5c7]">
                     sets{' '}
                     <b className="text-emerald-300">
-                      k.digit = {pressed.digit ?? 'true'}
+                      k.{pressed.field} = {pressed.digit ?? 'true'}
                     </b>
                   </span>
                 </div>
@@ -195,7 +195,10 @@ export const KeyboardReference: React.FC<KeyboardReferenceProps> = ({
             </thead>
             <tbody className="divide-y divide-[#1e242d] text-[#cfd9e5]">
               {WORM_KEYS.map((k) => {
-                const on = !!held[k.field];
+                // An alias row (sprint, pre-0.9.1) shares its bit with the
+                // current name, so pressing Shift lights both rows. One bit,
+                // two spellings: showing only one would misrepresent the table.
+                const on = !!held[k.field] || (k.aliasOf ? !!held[k.aliasOf] : false);
                 return (
                   <tr
                     key={k.field}

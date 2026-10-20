@@ -9,16 +9,27 @@ export interface ModsListTile {
   version: string;
   iconUrl: string | null;
   mtime: number | null;
+  /** Components declared by mod.toml, for resolving a profile's features. */
+  components?: { id?: string; type?: string; entry?: string }[];
+  /** Stems of the `profiles/*.toml` this mod ships. */
+  bundledProfiles?: string[];
 }
 
 interface ModsListScreenProps {
   mods: ModsListTile[];
   isLoading?: boolean;
+  /**
+   * Path of the mod currently being read from disk. A big pack (mods/px has
+   * 3073 files) takes a visible moment to walk, and a tile that silently does
+   * nothing for a second reads as a broken double-click.
+   */
+  openingPath?: string | null;
   error?: string | null;
   isLight?: boolean;
   onOpenMod: (mod: ModsListTile) => void;
   onRefresh: () => void;
   onCreateNew: () => void;
+  onOpenProfiles: () => void;
   onOpenConfig: () => void;
 }
 
@@ -28,11 +39,13 @@ const ICON_PX = 64;
 export const ModsListScreen: React.FC<ModsListScreenProps> = ({
   mods,
   isLoading = false,
+  openingPath = null,
   error = null,
   isLight = false,
   onOpenMod,
   onRefresh,
   onCreateNew,
+  onOpenProfiles,
   onOpenConfig,
 }) => {
   const [sortBy, setSortBy] = useState<'name' | 'date'>('name');
@@ -67,7 +80,9 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
             Select a Mod
           </h1>
           <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-[#7e8fa3]'}`}>
-            {isLoading
+            {openingPath
+              ? `Reading ${mods.find((m) => m.path === openingPath)?.id ?? 'mod'}…`
+              : isLoading
               ? 'Scanning mods folder...'
               : `${mods.length} mod${mods.length === 1 ? '' : 's'} found`}
           </p>
@@ -125,6 +140,18 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
           </button>
 
           <button
+            onClick={onOpenProfiles}
+            title="Profiles saved in WormForge/Profiles"
+            className={`px-2.5 py-1.5 rounded border text-[11px] font-medium transition-colors ${
+              isLight
+                ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300'
+                : 'bg-[#202631] hover:bg-[#2b3341] text-[#cfdbe8] border-[#2e3745]'
+            }`}
+          >
+            Profiles
+          </button>
+
+          <button
             onClick={onOpenConfig}
             className={`px-2.5 py-1.5 rounded border text-[11px] font-medium transition-colors ${
               isLight
@@ -175,12 +202,17 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
             <button
               key={mod.path}
               onDoubleClick={() => onOpenMod(mod)}
+              disabled={!!openingPath}
               title={`Open ${mod.id}`}
               className={`flex flex-col items-center gap-2 p-3 rounded-lg border transition-colors text-center ${
-                isLight
+                openingPath === mod.path
+                  ? isLight
+                    ? 'bg-amber-50 border-amber-400'
+                    : 'bg-[#1d222b] border-amber-500/60'
+                  : isLight
                   ? 'bg-white border-slate-300 hover:bg-slate-50'
                   : 'bg-[#171b21] border-[#242b35] hover:bg-[#1d222b]'
-              }`}
+              } ${openingPath && openingPath !== mod.path ? 'opacity-50' : ''}`}
             >
               <div
                 className={`flex items-center justify-center rounded border overflow-hidden shrink-0 ${

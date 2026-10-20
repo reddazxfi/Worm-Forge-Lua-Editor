@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   Folder,
   FolderOpen,
@@ -10,12 +10,9 @@ import {
   ChevronDown,
   Plus,
   Search,
-  FileCode,
-  Sparkles,
   ArrowRight,
   BookOpen,
-  Sliders,
-  FileText,
+  Table2,
 } from 'lucide-react';
 import {
   ClassDef,
@@ -24,6 +21,9 @@ import {
   ModFolderInfo,
   VariableDef,
 } from '../types/wormforge';
+import { fieldPaths, type TableDoc } from '../data/tableDocs';
+import { WorkspaceTree } from './WorkspaceTree';
+import type { WorkspaceModel } from '../services/workspaceTree';
 
 interface UpperCornerTreeProps {
   variables: VariableDef[];
@@ -31,13 +31,17 @@ interface UpperCornerTreeProps {
   functions: FunctionDef[];
   classes: ClassDef[];
   existingMods: ModFolderInfo[];
+  /** The documented spec tables: launch, spawn, weapon records, fog lights. */
+  tableDocs?: TableDoc[];
+  /** The opened mod folder, already classified. Undefined until a folder is open. */
+  workspace?: WorkspaceModel | null;
+  /** Folder name on disk. The manifest's display `name` is usually different. */
   workspaceName?: string;
-  workspaceFiles?: string[];
   dirtyFiles?: string[];
   activeFile?: string;
   onOpenWorkspaceFile?: (file: string) => void;
   selectedItem: any;
-  onSelectItem: (type: 'var' | 'enum' | 'func' | 'class' | 'mod' | 'mod_item', item: any) => void;
+  onSelectItem: (type: 'var' | 'enum' | 'func' | 'class' | 'mod' | 'mod_item' | 'table', item: any) => void;
   onInsertCode: (snippet: string) => void;
   onOpenEngineModal: () => void;
   isLight?: boolean;
@@ -49,8 +53,9 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
   functions = [],
   classes = [],
   existingMods = [],
+  tableDocs = [],
+  workspace,
   workspaceName,
-  workspaceFiles,
   dirtyFiles = [] as string[],
   activeFile,
   onOpenWorkspaceFile,
@@ -68,6 +73,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
     workspace: false,
     variables: false,
     enumerations: false,
+    tables: false,
     functions: false,
     classes: false,
     mods: false,
@@ -76,15 +82,12 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
     'class_LuaActor': false,
     'class_WormEntity': false,
   });
-  // Subfolders default to collapsed (see the `?? false` reads below).
-  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
 
   // While searching, force sections open so matches are actually visible
   // instead of hiding behind collapsed parents.
   const isSearching = searchTerm.trim().length > 0;
   const isNodeOpen = (key: string) => isSearching || !!openNodes[key];
   const isSubNodeOpen = (key: string) => isSearching || !!openSubNodes[key];
-  const isFolderOpen = (key: string) => isSearching || !!openFolders[key];
 
   const toggleNode = (node: string) => {
     setOpenNodes((prev) => ({ ...prev, [node]: !prev[node] }));
@@ -92,43 +95,6 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
 
   const toggleSubNode = (node: string) => {
     setOpenSubNodes((prev) => ({ ...prev, [node]: !prev[node] }));
-  };
-
-  const toggleFolder = (folder: string) => {
-    setOpenFolders((prev) => ({
-      ...prev,
-      [folder]: prev[folder] === undefined ? false : !prev[folder],
-    }));
-  };
-
-  // Group workspace files by subfolder to prevent window bloat
-  const groupedWorkspace = useMemo((): { folders: Record<string, string[]>; rootFiles: string[] } => {
-    if (!workspaceFiles) return { folders: {}, rootFiles: [] };
-    const folders: Record<string, string[]> = {};
-    const rootFiles: string[] = [];
-
-    for (const f of workspaceFiles) {
-      const normalized = f.replace(/\\/g, '/');
-      const idx = normalized.indexOf('/');
-      if (idx !== -1) {
-        const folder = normalized.slice(0, idx);
-        if (!folders[folder]) folders[folder] = [];
-        folders[folder].push(f);
-      } else {
-        rootFiles.push(f);
-      }
-    }
-
-    return { folders, rootFiles };
-  }, [workspaceFiles]);
-
-  const renderFileIcon = (fileName: string) => {
-    const lower = fileName.toLowerCase();
-    if (lower.endsWith('.lua')) return <Code2 className="w-3 h-3 text-emerald-400 shrink-0" />;
-    if (lower.endsWith('.toml')) return <Sliders className="w-3 h-3 text-amber-400 shrink-0" />;
-    if (lower.endsWith('.md')) return <BookOpen className="w-3 h-3 text-sky-400 shrink-0" />;
-    if (lower.endsWith('.json') || lower.endsWith('.ini')) return <FileText className="w-3 h-3 text-indigo-400 shrink-0" />;
-    return <FileCode className="w-3 h-3 text-slate-400 shrink-0" />;
   };
 
   // Filter items if search is active
@@ -154,6 +120,18 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.members && c.members.some((m) => m.name.toLowerCase().includes(searchTerm.toLowerCase())))
   );
+  // A table doc matches on its title, its call, or ANY key inside it, so
+  // searching `explosion` finds the weapon spec as well as the launch table.
+  const filteredTables = tableDocs.filter((t) => {
+    const q = searchTerm.toLowerCase();
+    if (!q) return true;
+    return (
+      t.title.toLowerCase().includes(q) ||
+      t.id.toLowerCase().includes(q) ||
+      t.usedBy.some((u) => u.toLowerCase().includes(q)) ||
+      fieldPaths(t.fields).some((p) => p.toLowerCase().includes(q))
+    );
+  });
   const filteredMods = safeMods.filter(
     (m) =>
       m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -207,7 +185,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
       {/* Tree Content */}
       <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 font-mono text-[11.5px]">
         {/* Opened mod folder */}
-        {workspaceFiles && workspaceFiles.length > 0 && (
+        {workspace && workspace.fileCount > 0 && (
           <div className="mb-2">
             <div
               onClick={() => toggleNode('workspace')}
@@ -216,119 +194,34 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
                 isLight ? 'hover:bg-slate-200' : 'hover:bg-[#1f242c]'
               }`}
             >
-              <div className="flex items-center gap-1.5 truncate">
+              <div className="flex items-center gap-1.5 min-w-0">
                 {isNodeOpen('workspace') ? (
                   <ChevronDown className="w-3.5 h-3.5 text-[#67778b] shrink-0" />
                 ) : (
                   <ChevronRight className="w-3.5 h-3.5 text-[#67778b] shrink-0" />
                 )}
                 <FolderOpen className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span className="truncate">{workspaceName || 'Workspace'} ({workspaceFiles.length})</span>
+                <span className="truncate">{workspaceName || 'Workspace'} ({workspace.fileCount})</span>
               </div>
-              <span className="text-[10px] text-[#697c91] font-sans shrink-0">
-                {Object.keys(groupedWorkspace.folders).length} mod subfolder{Object.keys(groupedWorkspace.folders).length === 1 ? '' : 's'}
-              </span>
+              {workspace.id && (
+                <span
+                  className="text-[10px] text-[#697c91] font-sans shrink-0 truncate max-w-[45%]"
+                  title={`mod.toml id = "${workspace.id}"${workspace.name ? ` (name: ${workspace.name})` : ''}`}
+                >
+                  {workspace.id}
+                </span>
+              )}
             </div>
 
             {isNodeOpen('workspace') && (
-            <>
-            {/* Subfolders (each mod in its own collapsible folder) */}
-            <div className="space-y-0.5">
-              {Object.entries(groupedWorkspace.folders).map(([folderName, folderFiles]) => {
-                const isExpanded = isFolderOpen(folderName);
-                const filteredFolderFiles = folderFiles.filter((f) =>
-                  f.toLowerCase().includes(searchTerm.toLowerCase())
-                );
-                if (filteredFolderFiles.length === 0) return null;
-
-                return (
-                  <div key={`folder_${folderName}`} className="mb-1">
-                    <div
-                      onClick={() => toggleFolder(folderName)}
-                      className={`flex items-center justify-between py-1 px-1.5 rounded cursor-pointer transition-colors ${
-                        isLight
-                          ? 'hover:bg-slate-200 text-slate-800 bg-slate-100 font-semibold'
-                          : 'hover:bg-[#20252e] text-[#b9cadb] bg-[#181d24] font-medium'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 truncate">
-                        {isExpanded ? (
-                          <ChevronDown className="w-3 h-3 text-[#67778b] shrink-0" />
-                        ) : (
-                          <ChevronRight className="w-3 h-3 text-[#67778b] shrink-0" />
-                        )}
-                        <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                        <span className="truncate font-semibold">{folderName}</span>
-                      </div>
-                      <span className={`text-[10px] px-1 py-0.2 rounded font-sans border ${
-                        isLight ? 'bg-white border-slate-300 text-slate-600' : 'bg-[#12151a] border-[#29303c] text-[#718296]'
-                      }`}>
-                        {folderFiles.length}
-                      </span>
-                    </div>
-
-                    {isExpanded && (
-                      <div className={`pl-3.5 ml-2 border-l space-y-0.5 mt-0.5 ${
-                        isLight ? 'border-slate-300' : 'border-[#262c35]'
-                      }`}>
-                        {filteredFolderFiles.map((f) => {
-                          const shortName = f.split(/[\\/]/).pop() || f;
-                          return (
-                            <div
-                              key={`ws_${f}`}
-                              onClick={() => onOpenWorkspaceFile?.(f)}
-                              className={`flex items-center justify-between py-0.5 px-1.5 rounded hover:bg-[#232933] cursor-pointer transition-colors ${
-                                activeFile === f
-                                  ? isLight
-                                    ? 'bg-amber-100 text-amber-900 font-bold'
-                                    : 'bg-[#29323f] text-emerald-300 font-semibold'
-                                  : isLight
-                                  ? 'text-slate-700 hover:text-slate-900'
-                                  : 'text-[#9fb0c3] hover:text-[#d3e0f0]'
-                              }`}
-                              title={f}
-                            >
-                              <div className="flex items-center gap-1.5 truncate">
-                                {renderFileIcon(f)}
-                                <span className="truncate">{shortName}</span>
-                              </div>
-                              {dirtyFiles?.includes(f) && <span className="text-amber-400 ml-1 text-xs">●</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Root / Uncategorized files */}
-              {groupedWorkspace.rootFiles
-                .filter((f) => f.toLowerCase().includes(searchTerm.toLowerCase()))
-                .map((f) => (
-                  <div
-                    key={`ws_root_${f}`}
-                    onClick={() => onOpenWorkspaceFile?.(f)}
-                    className={`flex items-center justify-between py-0.5 px-1.5 rounded hover:bg-[#232933] cursor-pointer transition-colors ${
-                      activeFile === f
-                        ? isLight
-                          ? 'bg-amber-100 text-amber-900 font-bold'
-                          : 'bg-[#29323f] text-emerald-300 font-semibold'
-                        : isLight
-                        ? 'text-slate-700 hover:text-slate-900'
-                        : 'text-[#9fb0c3] hover:text-[#d3e0f0]'
-                    }`}
-                    title={f}
-                  >
-                    <div className="flex items-center gap-1.5 truncate">
-                      {renderFileIcon(f)}
-                      <span className="truncate">{f}</span>
-                    </div>
-                    {dirtyFiles?.includes(f) && <span className="text-amber-400 ml-1 text-xs">●</span>}
-                  </div>
-                ))}
-            </div>
-            </>
+              <WorkspaceTree
+                model={workspace}
+                activeFile={activeFile}
+                dirtyFiles={dirtyFiles}
+                searchTerm={searchTerm}
+                onOpenFile={(f) => onOpenWorkspaceFile?.(f)}
+                isLight={isLight}
+              />
             )}
           </div>
         )}
@@ -489,6 +382,56 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
                   <span className="truncate">{e.name}</span>
                   <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-[#556475]'}`}>
                     {e.values.length} vals
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Tables: the shapes a spec table takes, which the enums cannot answer. */}
+        <div>
+          <div
+            onClick={() => toggleNode('tables')}
+            className={`flex items-center gap-1.5 py-1 px-1.5 rounded cursor-pointer font-semibold transition-colors ${
+              isLight
+                ? 'hover:bg-slate-200 text-slate-700 hover:text-slate-900'
+                : 'hover:bg-[#222730] text-[#8fa0b5] hover:text-[#d3e0f0]'
+            }`}
+          >
+            {isNodeOpen('tables') ? (
+              <ChevronDown className="w-3.5 h-3.5 text-[#67778b]" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 text-[#67778b]" />
+            )}
+            <Table2 className="w-3.5 h-3.5 text-teal-500" />
+            <span>Tables ({filteredTables.length})</span>
+          </div>
+
+          {isNodeOpen('tables') && (
+            <div
+              className={`pl-4 ml-1.5 border-l space-y-0.5 mt-0.5 ${
+                isLight ? 'border-slate-200' : 'border-[#262c35]'
+              }`}
+            >
+              {filteredTables.map((t, idx) => (
+                <div
+                  key={`table_${t.id}_${idx}`}
+                  onClick={() => onSelectItem('table', t)}
+                  title={t.summary}
+                  className={`flex items-center justify-between py-0.5 px-1.5 rounded cursor-pointer transition-colors ${
+                    selectedItem?.tableDoc && selectedItem?.id === t.id
+                      ? isLight
+                        ? 'bg-teal-100 text-teal-800 font-semibold'
+                        : 'bg-[#29323f] text-teal-300 font-semibold'
+                      : isLight
+                      ? 'text-slate-700 hover:bg-slate-200'
+                      : 'text-[#a2b3c7] hover:bg-[#232933]'
+                  }`}
+                >
+                  <span className="truncate">{t.id}</span>
+                  <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-[#556475]'}`}>
+                    {t.fields.length} keys
                   </span>
                 </div>
               ))}

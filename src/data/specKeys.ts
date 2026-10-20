@@ -52,6 +52,37 @@ export const WEAPON_SPEC_KEYS: string[] = [
   'persist',
   'retreat_time',
   'hud',
+  // Lua API 4 (WormForge 0.9.1) claim fields. Verified against the engine:
+  // `table_to_claim` in crates/lua-host/src/api.rs reads id/actor/airborne/
+  // click_finish/stock_fire_choice/hold/panel_icons directly off the spec, and
+  // `record_table::replace_writes` reads the record groups `fires`, `handling`,
+  // `missile`, `clusters`, `mine`, `gun`, `strike`, `jet_pack` plus `raw`.
+  //   - `mine` was already here; the rest were missing and produced
+  //     spec-key-typo FALSE POSITIVES on valid API 4 code.
+  //   - `patch` stays listed although the engine now rejects it loudly at
+  //     install ("patch is gone (Lua API 4)"): it is a hard error with its own
+  //     guidance, not a silently ignored key, so the generic "engine ignores
+  //     unknown keys" message would be the wrong thing to show.
+  //   - `truecolor`, `gpu_worm_sprites` and `worm_sprites_animate` are read from
+  //     the NESTED `params` table (api.rs:1687-1697), never directly off the
+  //     spec, and spec-key-typo only checks direct keys -- so they stay out.
+  'id',
+  'actor',
+  'airborne',
+  'click_finish',
+  'stock_fire_choice',
+  'panel_icons',
+  'hold',
+  'worm_sprites_toggle',
+  'worm_sprites_team_tint',
+  'fires',
+  'handling',
+  'missile',
+  'clusters',
+  'gun',
+  'strike',
+  'jet_pack',
+  'raw',
 ];
 
 /** Keyed for O(1) lookup; the array above stays for display/ordering. */

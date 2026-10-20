@@ -9,7 +9,7 @@ import { parseAndValidate } from '../parser';
 describe('builtin enumerations', () => {
   it('keeps wa.msg plus the two class-qualified string enums', () => {
     const names = BUILTIN_ENUMERATIONS.map((e) => e.name);
-    expect(names).toEqual(['wa.msg', 'WorldHandle.kind', 'WormEntity.state_label']);
+    expect(names).toEqual(['wa.msg', 'wa.depth', 'WorldHandle.kind', 'WormEntity.state_label']);
   });
 
   it('lists all 9 kind_name() values including the null handle', () => {

@@ -13,7 +13,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', engine: 'WormForge 0.8.22', time: new Date().toISOString() });
+  res.json({ status: 'ok', engine: 'WormForge 0.9.11', time: new Date().toISOString() });
 });
 
 // NOTE: the /api/fs/* endpoints that used to live here (scan-folder, save-file)

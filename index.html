@@ -11,10 +11,263 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Fonts are a nicety, never a dependency.
+
+         This used to be a normal render-blocking stylesheet. A stylesheet in the
+         head blocks first paint until it loads, so a cold DNS/TLS handshake to
+         fonts.googleapis.com on the FIRST launch (or offline, or behind a
+         firewall) left the entire window white with no error -- the app looked
+         dead until the request timed out, and the next launch worked from cache.
+         index.css already lists system fallbacks, so load it off the paint path:
+         as print, then flip it to all once it arrives. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
+    <style>
+      /* The boot fallback must not depend on the bundled stylesheet: the white
+         screen it reports can be caused by that stylesheet (or the whole bundle)
+         failing to load. Everything here is self-contained. */
+      #wf-boot-fallback {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 8vh 24px 24px;
+        overflow: auto;
+        background: #121417;
+        color: #dbe4ef;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      #wf-boot-fallback[hidden] {
+        display: none;
+      }
+      #wf-boot-fallback .wf-card {
+        width: min(720px, 100%);
+        padding: 22px 24px;
+        border: 1px solid #2b333e;
+        border-radius: 10px;
+        background: #171b21;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      }
+      #wf-boot-fallback .wf-kicker {
+        margin-bottom: 8px;
+        color: #fb7185;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      #wf-boot-fallback h1 {
+        margin: 0 0 8px;
+        font-size: 19px;
+        font-weight: 700;
+      }
+      #wf-boot-fallback p {
+        margin: 0 0 14px;
+        color: #93a6bd;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      #wf-boot-fallback .wf-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      #wf-boot-fallback button {
+        padding: 7px 12px;
+        border: 1px solid #2b333e;
+        border-radius: 6px;
+        background: #212730;
+        color: #dbe4ef;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #wf-boot-fallback button.wf-primary {
+        border-color: #7a5218;
+        background: #3a2a12;
+        color: #fbbf24;
+      }
+      #wf-boot-fallback pre {
+        margin: 0 0 14px;
+        padding: 10px 12px;
+        max-height: 280px;
+        overflow: auto;
+        border: 1px solid #2b333e;
+        border-radius: 6px;
+        background: #10141a;
+        color: #93a6bd;
+        font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+        font-size: 11px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      #wf-boot-fallback .wf-hint {
+        margin: 0;
+        color: #66788c;
+        font-size: 11px;
+      }
+    </style>
   </head>
-  <body class="bg-[#121417] text-[#e0e6ed] antialiased selection:bg-amber-500/30 selection:text-amber-200">
+  <body
+    class="bg-[#121417] text-[#e0e6ed] antialiased selection:bg-amber-500/30 selection:text-amber-200"
+    style="background-color: #121417"
+  >
     <div id="root"></div>
+
+    <!-- Boot fallback. Deliberately OUTSIDE #root (React clears its container
+         when a render throws) and styled inline. -->
+    <div id="wf-boot-fallback" hidden>
+      <div class="wf-card">
+        <div class="wf-kicker">WormForge could not finish starting</div>
+        <h1>The editor window is not rendering</h1>
+        <p id="wf-boot-reason">
+          The interface did not load. Reloading usually clears it. Your mod files on disk are
+          untouched.
+        </p>
+        <pre id="wf-boot-crash" hidden></pre>
+        <div class="wf-actions">
+          <button type="button" id="wf-boot-reload">Reload</button>
+          <button type="button" id="wf-boot-reset" class="wf-primary">
+            Reset session &amp; reload
+          </button>
+        </div>
+        <p class="wf-hint">
+          Reset clears only the restored buffers, the remembered folder and the open tabs. It does
+          not delete mod files and does not touch settings or custom verbs.
+        </p>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Boot watchdog. Plain script on purpose: it must run even when the module
+      // bundle fails to parse or never mounts. Two failures it catches:
+      //   1. React never mounted (bundle/CSS failure, a module-level throw), or
+      //   2. React mounted and then unmounted itself after an uncaught render
+      //      error outside the boundary -- the original "white screen".
+      // A render error caught by ErrorBoundary keeps #root populated, so the
+      // boundary's own card is what you see, not this one.
+      (function () {
+        'use strict';
+        var CRASH_KEY = 'wormforge_last_crash';
+        // Keep in sync with SESSION_STORAGE_KEYS in src/services/session.ts.
+        var SESSION_KEYS = [
+          'wormforge_last_files',
+          'wormforge_active_file',
+          'wormforge_open_files',
+          'wormforge_mod_folder',
+          'wormforge_saved_files',
+        ];
+        var started = Date.now();
+        var everMounted = false;
+        var visible = false;
+        var panel = document.getElementById('wf-boot-fallback');
+        var reason = document.getElementById('wf-boot-reason');
+        var details = document.getElementById('wf-boot-crash');
+
+        function readCrash() {
+          try {
+            var raw = localStorage.getItem(CRASH_KEY);
+            return raw ? JSON.parse(raw) : null;
+          } catch (e) {
+            return null;
+          }
+        }
+
+        function show(text) {
+          if (!panel || visible) return;
+          visible = true;
+          if (reason) reason.textContent = text;
+          var crash = readCrash();
+          if (details && crash && crash.message) {
+            details.hidden = false;
+            details.textContent = [
+              crash.at ? 'Recorded: ' + crash.at : '',
+              crash.kind ? 'Kind: ' + crash.kind : '',
+              crash.message,
+              crash.detail || '',
+            ]
+              .filter(Boolean)
+              .join('\n');
+          }
+          panel.hidden = false;
+        }
+
+        function hide() {
+          if (panel && visible) {
+            visible = false;
+            panel.hidden = true;
+          }
+        }
+
+        function mounted() {
+          var root = document.getElementById('root');
+          return !!(root && root.childElementCount > 0);
+        }
+
+        setInterval(function () {
+          if (mounted()) {
+            everMounted = true;
+            hide();
+            return;
+          }
+          // Give the bundle a fair chance before accusing it. After a successful
+          // mount, an empty root means it just went away -- show the panel at
+          // once, because waiting would leave the user staring at nothing.
+          if (!everMounted && Date.now() - started < 15000) return;
+          show(
+            everMounted
+              ? 'The editor stopped rendering. Reload to start it again; your files on disk are safe.'
+              : 'The editor interface did not load. Reload to try again.'
+          );
+        }, 1000);
+
+        // A failed script, before or after mount. Resource errors do not bubble,
+        // so listen in the capture phase. Links are deliberately ignored: the
+        // Google Fonts stylesheet fails harmlessly offline and must not accuse
+        // the app of being broken.
+        window.addEventListener(
+          'error',
+          function (event) {
+            var target = event.target;
+            if (target && target.tagName === 'SCRIPT') {
+              show(
+                'A program file failed to load (' +
+                  (target.getAttribute('src') || 'script') +
+                  '). Reload to try again.'
+              );
+            }
+          },
+          true
+        );
+
+        var reload = document.getElementById('wf-boot-reload');
+        var reset = document.getElementById('wf-boot-reset');
+        if (reload) reload.addEventListener('click', function () { location.reload(); });
+        if (reset) {
+          reset.addEventListener('click', function () {
+            try {
+              SESSION_KEYS.forEach(function (key) { localStorage.removeItem(key); });
+            } catch (e) {}
+            location.reload();
+          });
+        }
+      })();
+    </script>
   </body>
 </html>

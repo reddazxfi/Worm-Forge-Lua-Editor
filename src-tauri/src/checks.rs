@@ -19,7 +19,7 @@
 //!   - `Node::start_position()` returns `Option<Position>`, not `Position`.
 //!   - A dotted path is `Prefix` + a run of `Suffix::Index(Index::Dot)`, NOT a
 //!     pre-split name. `Prefix::Name` holds only the first segment.
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use full_moon::ast::{Expression, FunctionCall, Index, Prefix, Suffix, Var, VarExpression};
 use full_moon::node::Node;
@@ -45,7 +45,18 @@ const SEVERITY_WARNING: &str = "warning";
 /// compares only the SET of rule ids per file and never looks at severity.
 const SEVERITY_INFO: &str = "info";
 
-const ENGINE_VERSION: &str = "0.8.22";
+const ENGINE_VERSION: &str = "0.9.11";
+
+/// `wa.*` namespaces the engine installs only under a cargo feature, and so cannot
+/// appear in `engine_data.rs`'s function list.
+///
+/// Kept as an explicit list rather than inferred, because "this verb is missing" is
+/// not evidence of anything -- the table is generated from what the front end
+/// documents. These two entries are read off the `#[cfg]` blocks in
+/// `crates/lua-host/src/api.rs`; a test asserts `wa.audit` is still gated there, so
+/// if the engine promotes it to a default-build API this becomes a stale entry
+/// rather than a silent lie.
+const DIAGNOSTICS_ONLY_NAMESPACE: &[&str] = &["audit"];
 
 /// The checker. Findings are collected, not emitted inline, because the `wa.*` check
 /// cannot decide anything until it knows which call sites were guarded -- and that is
@@ -66,6 +77,16 @@ pub struct Checker {
     /// assumed handle silences the unknown-method warning the same way, and it
     /// joins the union owner list for `.kind`-narrowed receivers.
     custom_verbs: Vec<(String, String)>,
+    /// Position ranges of render contexts (`wa.on.draw` callback bodies), as
+    /// ((start_line, start_col), (end_line, end_col)). math `cos`/`sin`/`atan`
+    /// inside them is presentation-only -- per-client drawing never desyncs a
+    /// match -- so it stays silent there. Everywhere else it is an error.
+    render_regions: Vec<(usize, usize, usize, usize)>,
+    /// What `for _, v in <wa.X.all()>` binds, from the file-global `LoopTrace`. It
+    /// beats the receiver NAME table, because the loop states what the value is and
+    /// the name only suggests it. Defaulted rather than a `new` parameter so every
+    /// existing call site keeps compiling and keeps meaning "no loops traced".
+    loop_trace: LoopTrace,
 }
 
 /// How `handle-union` replaced `UNCHECKED_CLASSES`.
@@ -99,10 +120,11 @@ pub struct Checker {
 impl Checker {
     /// `duck` is the file-global `.kind`-narrowed receiver set from `KindScan`.
     /// `custom` is the custom_verbs.cfg overlay, as (class, member) pairs.
-    pub fn new(duck: HashSet<String>, custom: Vec<(String, String)>) -> Self {
+    pub fn new(duck: HashSet<String>, custom: Vec<(String, String)>, render_regions: Vec<(usize, usize, usize, usize)>) -> Self {
         Self {
             duck_receivers: duck,
             custom_verbs: custom,
+            render_regions,
             ..Self::default()
         }
     }
@@ -164,11 +186,31 @@ fn check_method_call(&mut self, call: &FunctionCall) {
         return;
     };
     let receiver = receiver_raw.to_lowercase();
-    let Some((_, class_name, rule, _)) = engine_data::RECEIVERS
-        .iter()
-        .find(|(prefix, _, _, _)| *prefix == receiver)
-    else {
-        return;
+    // Resolution order, most accurate first. Mirrors parser.ts:
+    //   1. the loop trace -- `for _, missile in ipairs(wa.missiles.all())` says what
+    //      the value IS, which beats anything the name suggests;
+    //   2. the receiver registry -- confident names only.
+    // A wrong guess on the checker is a false error on valid code, so step 2 only
+    // claims names it is sure about.
+    let (class_name, rule) = match self.loop_trace.get(&receiver, pos(call)) {
+        Some(class_name) => {
+            let Some((_, _, rule, _)) = engine_data::RECEIVERS
+                .iter()
+                .find(|(_, class, _, _)| *class == class_name)
+            else {
+                return;
+            };
+            (class_name, *rule)
+        }
+        None => {
+            let Some((_, class_name, rule, _)) = engine_data::RECEIVERS
+                .iter()
+                .find(|(prefix, _, _, _)| *prefix == receiver)
+            else {
+                return;
+            };
+            (*class_name, *rule)
+        }
     };
     // Bound to a local because `trim()` borrows from the temporary `String` that
     // `text()` returns, and that temporary dies at the end of the statement.
@@ -178,7 +220,7 @@ fn check_method_call(&mut self, call: &FunctionCall) {
     // kind filter, and the difference is measurable: `m:id()` must stay silent.
     let Some((_, members)) = engine_data::HANDLE_ALL_MEMBERS
         .iter()
-        .find(|(name, _)| name == class_name)
+        .find(|(name, _)| *name == class_name)
     else {
         return;
     };
@@ -232,7 +274,7 @@ fn check_method_call(&mut self, call: &FunctionCall) {
     // method call would send the user from one runtime error to another.
     let methods = engine_data::HANDLE_CLASSES
         .iter()
-        .find(|(name, _)| name == class_name)
+        .find(|(name, _)| *name == class_name)
         .map(|(_, ms)| *ms)
         .unwrap_or(&[]);
     // Short `message` = the suggestion. Long `detail` = the reasoning and the
@@ -259,7 +301,7 @@ fn check_method_call(&mut self, call: &FunctionCall) {
     //     proof, and a false error on valid code is worse than a missed one."
     //   - handleRegistry.ts: "A wrong guess on the checker is a false ERROR on valid
     //     code, which is the disease this work exists to cure."
-    //   - the definitions are pinned to WormForge 0.8.22 and demonstrably lag the
+    //   - the definitions are pinned to a snapshot that demonstrably lags the
     //     engine: turn_retreat / turn_end / turn_cleanup are real hooks in
     //     api.rs:236-239 and were missing here, producing six false positives.
     //
@@ -528,12 +570,67 @@ fn check_method_call(&mut self, call: &FunctionCall) {
                 continue;
             }
             let verb = &segs[0];
-            let (message, detail) = match suggest(verb, &namespaces) {
-                Some(near) => (format!("{full} is not an engine API. Did you mean wa.{near}?"), None),
-                None => (
-                    format!("{full} is not an engine API."),
-                    Some(format!("`wa.{verb}` does not exist in WormForge {ENGINE_VERSION}.")),
+            // `wa.audit` is the ONE public namespace the engine installs behind a
+            // cargo feature, so it can be named rather than guessed at.
+            //
+            // `crates/lua-host/src/api.rs:32`:
+            //
+            //     #[cfg(feature = "diagnostics")]
+            //     if wa.get::<Value>("audit")...is_nil() { wa.set("audit", audit) }
+            //
+            // Nothing else in `api.rs` adds a public `wa.*` under a feature (the other
+            // diagnostics block installs the internal `_debug_input` and
+            // `_debug_worm_state` tables, both underscore-prefixed), so this list is
+            // the whole of it and will not quietly grow.
+            //
+            // Calling this "not an engine API" is wrong twice over: the API is real,
+            // and a user of `mods/tools` gets told they mistyped something they
+            // spelled correctly. There is a SECOND gate on top -- `actor.rs:2854`,
+            // "wa.audit requires debug_input = true", which the pack's own mod.toml
+            // must declare -- and neither is visible from the Lua source alone.
+            //
+            // Still a warning, and still correct for a stock build: the call really
+            // does raise "attempt to call a nil value" there. Only the explanation
+            // changes.
+            let (message, detail) = match DIAGNOSTICS_ONLY_NAMESPACE.iter().find(|ns| **ns == verb.as_str()) {
+                Some(ns) => (
+                    format!("{full} exists only in a build with the `diagnostics` feature."),
+                    Some(format!(
+                        "`wa.{ns}` is installed by crates/lua-host/src/api.rs under \
+                         #[cfg(feature = \"diagnostics\")], so a stock WormForge has no such \
+                         namespace and this call raises \"attempt to call a nil value\". \
+                         It also needs `debug_input = true` in the calling pack's mod.toml \
+                         (actor.rs:2854). `mods/tools` declares it; a pack you ship must too."
+                    )),
                 ),
+                // A typo in the FUNCTION part must suggest a function. The
+                // namespace table answers "wa.fog" for `wa.fog.visble`, and a
+                // table cannot be called -- a wrong suggestion is worse than
+                // none. A namespace suggestion is only for a mistyped NAMESPACE.
+                None => match suggest_function(&segs[..taken]) {
+                    Some(near) => (
+                        format!("{full} is not an engine API. Did you mean {near}?"),
+                        None,
+                    ),
+                    None if segs.len() == 1 || !namespaces.iter().any(|n| *n == verb) => {
+                        match suggest(verb, &namespaces) {
+                            Some(near) => (
+                                format!("{full} is not an engine API. Did you mean wa.{near}?"),
+                                None,
+                            ),
+                            None => (
+                                format!("{full} is not an engine API."),
+                                Some(format!(
+                                    "`wa.{verb}` does not exist in WormForge {ENGINE_VERSION}."
+                                )),
+                            ),
+                        }
+                    }
+                    None => (
+                        format!("{full} is not an engine API."),
+                        Some(format!("`wa.{verb}` does not exist in WormForge {ENGINE_VERSION}.")),
+                    ),
+                },
             };
             let diag = match detail {
                 Some(d) => AstDiagnostic::finding_with_detail(
@@ -727,16 +824,23 @@ impl Visitor for Checker {
             && segs[0] == "math"
             && (segs[1] == "cos" || segs[1] == "sin" || segs[1] == "atan")
         {
-            self.add(
-                call,
-                SEVERITY_ERROR,
-                "lockstep-rng",
-                format!(
-                    "math.{0}() is not lockstep-safe: the C library result can differ \
-                     between machines and desync the match. Use wa.math.{0}(...) instead.",
-                    segs[1]
-                ),
-            );
+            // math.cos/sin/atan inside wa.on.draw is presentation-only: per-client
+            // drawing never desyncs a match, so it is safe there. Everywhere else
+            // (gameplay logic, helpers, ...) it is a real desync risk and stays an error.
+            let (line, column) = pos(call);
+            if !in_render_region(line, column, &self.render_regions) {
+                self.add(
+                    call,
+                    SEVERITY_ERROR,
+                    "lockstep-rng",
+                    format!(
+                        "math.{0}() is not lockstep-safe: the C library result can differ \
+                         between machines and desync the match. Use wa.math.{0}(...) instead.",
+                        segs[1]
+                    ),
+                );
+            }
+            // silent in render context: pure presentation, no desync risk
         } else if segs.len() == 1 && segs[0] == "pairs" {
             self.add(
                 call,
@@ -1042,6 +1146,158 @@ impl Visitor for KindScan {
     }
 }
 
+/// File-global scan of `for _, v in <wa.X.all()>` loops: what handle class `v` holds
+/// INSIDE that loop.
+///
+/// A PRE-pass for the same reason `KindScan` is one, and it fills the gap that let a
+/// false `missile-api` through in BOTH engines. `px/weapons/electromagnet.lua:93`
+/// loops the missiles array and calls a real method on each element:
+///
+/// ```ignore
+/// for _, missile in ipairs(wa.missiles.all()) do
+///   missile:impulse(dx, dy)
+/// end
+/// ```
+///
+/// `wa.missiles.all()` yields WorldHandle userdata -- `spawn.rs` binds it through
+/// `bind_kind_list`, whose `all` calls `objects_table`, and `objects_table` fills the
+/// array with `WorldHandle::new(id)`, which HAS `impulse` (`actor.rs` `add_methods`).
+/// The MissileEntity table is a different value entirely: the plain table
+/// `wa.on.missile_frame` hands a callback, properties only, no methods.
+///
+/// Both engines used to resolve the loop value by NAME, `missile` -> MissileEntity,
+/// and warn on a real method call. The name is a convention; the loop is a fact, so
+/// this trace is consulted FIRST and the registry second.
+///
+/// WHY THE TRACE IS SCOPED TO THE LOOP BODY, and this is not a detail
+/// A file-global `name -> class` map leaks, and it leaked immediately.
+/// `mods/tools/audit/audit.lua` has `for _, w in ipairs(wa.worms.all())` at lines
+/// 107 and 112, and separately passes `w` as a CALLBACK PARAMETER to the audit
+/// harness's own mock worm at line 265 (`w:input{...}`). A name-keyed map claims
+/// that parameter as the loop's worm, `w` stops resolving by name (`w` is not a
+/// confident registry prefix -- only `worm` is), and 46 false `worm-api` warnings
+/// appear on a file that had none. The name-keyed map turns one loop into a claim
+/// about the whole file, which is the same disease the registry's `diagnose` split
+/// exists to prevent. Keying on the loop's own position range keeps the claim where
+/// it is true.
+///
+/// Deliberately single-hop, matching parser.ts's `traceLoopTypes`: only a loop
+/// DIRECTLY over a `wa.X.all()` call counts. Never a variable holding the array, never
+/// a filtered or mapped copy -- that is where a plausible-looking guess starts
+/// producing wrong warnings, which is worse than silence. A helper CALLED from inside
+/// the loop with the loop value passed as an argument is not inside the loop either,
+/// so it falls back to the name table: silence, not a wrong answer.
+#[derive(Default)]
+struct LoopTrace {
+    /// One entry per traced loop, in source order.
+    loops: Vec<LoopBinding>,
+}
+
+struct LoopBinding {
+    /// Lowercased loop value name.
+    var_name: String,
+    /// Handle class the iterator yields.
+    class_name: &'static str,
+    /// The loop body, as (start_line, start_col, end_line, end_col).
+    span: (usize, usize, usize, usize),
+}
+
+impl LoopTrace {
+    /// The handle class a receiver name holds AT THIS POSITION, if a traced loop binds
+    /// it there. Last match wins, so a nested loop over the same name is the one that
+    /// answers -- the same "last one seen" rule parser.ts uses.
+    fn get(&self, receiver: &str, at: (usize, usize)) -> Option<&'static str> {
+        self.loops
+            .iter()
+            .rev()
+            .find(|b| {
+                b.var_name == receiver
+                    && at >= (b.span.0, b.span.1)
+                    && at <= (b.span.2, b.span.3)
+            })
+            .map(|b| b.class_name)
+    }
+}
+
+impl Visitor for LoopTrace {
+    fn visit_generic_for(&mut self, for_stmt: &full_moon::ast::GenericFor) {
+        // `for k, v in ...`: the VALUE is the last name. `for _, v in ...` has two, so
+        // this also covers the `_` form, and `_` itself is then skipped.
+        let Some(value) = for_stmt.names().iter().last() else {
+            return;
+        };
+        let var_name = value.token().to_string().to_lowercase();
+        if var_name == "_" {
+            return;
+        }
+        // The iterator expression, whether wrapped: `ipairs(wa.missiles.all())`,
+        // `pairs(...)`, or the bare `wa.worms.all()`.
+        let Some(expr) = for_stmt.expressions().iter().next() else {
+            return;
+        };
+        let Some(path) = iterator_path(expr) else {
+            return;
+        };
+        let Some((_, class_name)) = engine_data::LOOP_ELEMENT
+            .iter()
+            .find(|(iter, _)| *iter == path)
+        else {
+            return;
+        };
+        let Some(span) = body_range_like(for_stmt.block()) else {
+            return;
+        };
+        self.loops.push(LoopBinding {
+            var_name,
+            class_name,
+            span,
+        });
+    }
+}
+
+/// The dotted path of a for-in iterator, unwrapping one call layer.
+///
+/// `wa.missiles.all()` -> `wa.missiles.all`; `ipairs(wa.missiles.all())` -> the same.
+/// Anything that is not a call naming such a path returns None, which is how
+/// `for _, x in ipairs(t)` (t holding the array) is declined rather than guessed.
+///
+/// Only `ipairs`/`pairs` are unwrapped, mirroring parser.ts. A wrapper must account
+/// for the WHOLE expression, so `ipairs(wa.missiles.all()).extra` is not read as a
+/// loop over the array.
+fn iterator_path(expr: &Expression) -> Option<String> {
+    let Expression::FunctionCall(outer) = expr else {
+        return None;
+    };
+    // The bare form first: the iterator call IS the thing we know. Note that
+    // `dotted_path` returns `["ipairs"]` for `ipairs(...)` -- it stops at the call
+    // suffix -- so a miss here is a wrapper to unwrap, not a decline.
+    if let Some(path) = dotted_path(outer) {
+        let joined = path.join(".");
+        if engine_data::LOOP_ELEMENT.iter().any(|(iter, _)| *iter == joined) {
+            return Some(joined);
+        }
+    }
+    let callee = match outer.prefix() {
+        Prefix::Name(name) => name_of(name).to_lowercase(),
+        _ => return None,
+    };
+    if !matches!(callee.as_str(), "ipairs" | "pairs") {
+        return None;
+    }
+    let args = outer.suffixes().find_map(|s| match s {
+        Suffix::Call(full_moon::ast::Call::AnonymousCall(args)) => Some(args),
+        _ => None,
+    })?;
+    let full_moon::ast::FunctionArgs::Parentheses { arguments, .. } = args.as_ref() else {
+        return None;
+    };
+    let first = arguments.iter().next()?;
+    let Expression::FunctionCall(inner) = first else {
+        return None;
+    };
+    Some(dotted_path(inner)?.join("."))
+}
+
 /// The receiver of a `.kind` comparison, matching parser.ts's token pattern
 /// `identifier . kind ==|~= ` exactly:
 ///
@@ -1079,6 +1335,384 @@ fn kind_test_receiver(expr: &Expression) -> Option<String> {
     Some(segs[segs.len() - 2].clone())
 }
 
+/// `wa.on.draw(function() ... end)` -- the function body is render context: drawing
+/// is per-client presentation, so math `cos`/`sin`/`atan` there cannot desync a
+/// match and must stay silent.
+///
+/// TWO THINGS THIS USED TO GET WRONG, both found by running it over the engine's
+/// OWN packs (`wfcheck WormForge-main-source/mods`), which the engine's own rule
+/// (`tools/check_sim_math.py`) passes clean:
+///
+///  1. It only knew `wa.on.draw`. `wa.on.hud` is the same kind of callback -- the
+///     engine says so in its own words: "wa.random: not inside wa.on.draw or
+///     wa.on.hud. They run at render time" (spawn.rs:642), and
+///     docs/lua-pixel-units.md: "Draw/HUD callbacks may use CRT maths because their
+///     results stay local."
+///
+///  2. It only knew the function LITERAL. A draw callback nearly always delegates:
+///
+/// ```ignore
+/// local function sheet(path, x, y, angle)
+///   local c, sn = math.cos(angle), math.sin(angle)
+///   wa.draw.quad({ ... })
+/// end
+/// wa.on.draw(function() sheet("a", 1, 2, 3) end)
+/// ```
+///
+/// `sheet` is presentation-only and calls CRT trig. The old code reported
+/// `math.cos()` there as an ERROR on `px/lib/turret.lua:576` -- valid engine
+/// code, flagged as a desync risk.
+///
+/// The rule this now implements is the engine's, not a guess at it. From
+/// `tools/check_sim_math.py`: a scope is rendering if it is a function passed
+/// directly to `wa.on.draw(`/`wa.on.hud(`, or is REFERENCED BY NAME from something
+/// already rendering; closure, transitively. Everything else is simulation.
+///
+/// KNOWN LIMITATION, and it is the engine's limitation too, not a shortcut here:
+/// "referenced by a render root" wins. A helper called from a draw callback AND
+/// from `wa.on.hit` is treated as rendering, because the engine's reachability
+/// does the same (`reachable(render_roots)` is computed before simulation). We
+/// match the rule we are implementing rather than being stricter in one direction
+/// only, which would make the two disagree on the same file.
+#[derive(Default)]
+struct RenderScan {
+    /// Every function body in the file, in visit (pre-)order, so a child's index
+    /// is always GREATER than its parent's.
+    bodies: Vec<FunctionBodyInfo>,
+    /// Declared function name (last dotted segment, lowercased) -> body indices
+    /// declaring it. A name can be declared more than once; the engine keeps them
+    /// all, and so does this. Filled by `resolve`, not by the visit hooks.
+    owners: HashMap<String, Vec<usize>>,
+    /// `(name, declaration range)` seen during the walk, resolved to body indices
+    /// afterwards by `resolve`.
+    pending: Vec<(String, (usize, usize, usize, usize))>,
+    /// Body ranges handed straight to wa.on.draw/wa.on.hud, resolved to body
+    /// indices afterwards by `resolve`.
+    root_ranges: Vec<(usize, usize, usize, usize)>,
+    /// Body indices that ARE render roots, filled by `resolve`.
+    roots: Vec<usize>,
+    /// `subtree_end[i]` -- the last index of the run of bodies nested inside body `i`.
+    /// Filled by `resolve_subtrees`.
+    subtree_end: Vec<usize>,
+}
+
+struct FunctionBodyInfo {
+    range: (usize, usize, usize, usize),
+    /// Lowercased identifier tokens with their positions, so a parent's reference
+    /// set can exclude the ones that belong to a NESTED body (the engine assigns
+    /// each identifier to the innermost scope, and so must we -- otherwise a name
+    /// used only by a nested function would drag that function into render reach).
+    ids: Vec<(usize, usize, String)>,
+}
+
+impl RenderScan {
+    /// Pairs every named declaration with the body it owns, and every render call
+    /// with the body it was handed.
+    ///
+    /// NEITHER can be done in the visit hook, because the walker is pre-order:
+    /// `visit_local_function` and `visit_function_call` both fire BEFORE the body
+    /// inside them has been pushed. Resolving there meant `self.bodies.len() - 1`
+    /// pointed at the enclosing function -- or underflowed on the first function in
+    /// the file -- and matching on the range found nothing, so `roots` came back
+    /// EMPTY and every `wa.on.draw` body lost its mute. That is the worst possible
+    /// direction for this bug: it does not crash, it silently makes the checker
+    /// harsher, and 20 errors on the engine's own packs looks like a rule that got
+    /// stricter rather than an analysis that got emptier.
+    fn resolve(&mut self) {
+        for (name, decl) in std::mem::take(&mut self.pending) {
+            let Some(idx) = self.body_inside(decl) else {
+                continue;
+            };
+            self.owners.entry(name).or_default().push(idx);
+        }
+        for range in std::mem::take(&mut self.root_ranges) {
+            // Binary search for the same reason `body_inside` does: a pack can
+            // register dozens of draw callbacks, and a linear scan per registration
+            // is another N² on a large file.
+            let at = (range.0, range.1);
+            let idx = self
+                .bodies
+                .partition_point(|b| (b.range.0, b.range.1) < at);
+            if self.bodies.get(idx).map(|b| b.range) == Some(range) {
+                self.roots.push(idx);
+            }
+        }
+        self.resolve_subtrees();
+    }
+
+    /// Records, for each body, the index where its NESTED bodies stop.
+    ///
+    /// This turns "which bodies are nested in me" from a scan into one number.
+    /// Bodies are pushed in pre-order, so a body's descendants are a CONTIGUOUS
+    /// index range starting right after it. The first version recomputed that scan
+    /// inside `direct_refs`, which is called once per body the render closure
+    /// reaches -- quadratic in the number of functions in the file.
+    ///
+    /// A stack does it in one pass, because a body's descendants end exactly where
+    /// the next body that it does NOT contain begins.
+    fn resolve_subtrees(&mut self) {
+        let n = self.bodies.len();
+        self.subtree_end = vec![n.saturating_sub(1); n];
+        let mut stack: Vec<usize> = Vec::new();
+        for i in 0..n {
+            while let Some(&top) = stack.last() {
+                if range_contains(self.bodies[top].range, self.bodies[i].range) {
+                    break;
+                }
+                self.subtree_end[top] = i - 1;
+                stack.pop();
+            }
+            stack.push(i);
+        }
+        // Whatever is still on the stack runs to the last body.
+    }
+
+    /// The shallowest body contained in `decl` -- the body a declaration owns.
+    ///
+    /// BINARY SEARCH. `bodies` is pushed in pre-order, so it is already sorted by
+    /// start position, and the body a declaration owns is the FIRST body starting
+    /// at or after the declaration's own start. Scanning for it instead was
+    /// quadratic: once per declaration, over every body in the file.
+    ///
+    /// The containment assertion afterwards is the real check -- binary search alone
+    /// would happily return the next sibling if a declaration had no body.
+    fn body_inside(&self, decl: (usize, usize, usize, usize)) -> Option<usize> {
+        let at = (decl.0, decl.1);
+        let idx = self
+            .bodies
+            .partition_point(|b| (b.range.0, b.range.1) < at);
+        let body = self.bodies.get(idx)?;
+        range_contains(decl, body.range).then_some(idx)
+    }
+
+    /// The identifiers this body references DIRECTLY: its own tokens, minus any that
+    /// sit inside a NESTED body. Nested bodies belong to their own scope, exactly as
+    /// the engine assigns them -- otherwise a name used only by a nested function
+    /// would drag that function into render reach from its parent.
+    ///
+    /// The nested set is the contiguous index range `idx+1 ..= subtree_end[idx]`, so
+    /// this is O(subtree) rather than O(all remaining bodies). For the common shape
+    /// -- sibling top-level functions, which is what a pack file mostly is -- the
+    /// range is empty and this costs nothing.
+    fn direct_refs(&self, idx: usize) -> Vec<String> {
+        let nested_end = self.subtree_end.get(idx).copied().unwrap_or(idx);
+        if nested_end <= idx {
+            return self.bodies[idx]
+                .ids
+                .iter()
+                .map(|(_, _, n)| n.clone())
+                .collect();
+        }
+        let nested: Vec<&(usize, usize, usize, usize)> = self.bodies[idx + 1..=nested_end]
+            .iter()
+            .map(|b| &b.range)
+            .collect();
+        self.bodies[idx]
+            .ids
+            .iter()
+            .filter(|(l, c, _)| {
+                !nested
+                    .iter()
+                    .any(|r| (*l, *c) >= (r.0, r.1) && (*l, *c) <= (r.2, r.3))
+            })
+            .map(|(_, _, n)| n.clone())
+            .collect()
+    }
+
+    /// Records a named declaration to be paired with its body by `resolve`.
+    fn declare<N: Node>(&mut self, name: String, decl: &N) {
+        let Some(range) = body_range_like(decl) else {
+            return;
+        };
+        self.pending.push((name, range));
+    }
+
+    /// Render regions, as (start_line, start_col, end_line, end_col), MERGED and sorted.
+///
+/// The merge is exact rather than a shortcut: the question `in_render_region` asks
+/// is "is this point inside ANY region", so the answer depends only on the UNION of
+/// the ranges, and merging overlapping intervals produces that same union and
+/// nothing else. Nesting -- a `wa.on.draw` body inside another, a helper inside a
+/// callback -- collapses into one interval, which is exactly what a linear scan
+/// would have concluded.
+///
+/// It also makes the test O(log n) instead of O(n), and fixes determinism: `found`
+/// is a `HashSet`, so returning its contents directly would yield a different ORDER
+/// on every process. That would not change any finding, but the CLI has a test
+/// asserting two runs over the same tree produce identical bytes, and nothing should
+/// make that incidental.
+fn regions(&self) -> Vec<(usize, usize, usize, usize)> {
+        let mut found: HashSet<usize> = self.roots.iter().copied().collect();
+        let mut queue: Vec<usize> = self.roots.clone();
+        while let Some(idx) = queue.pop() {
+            for name in self.direct_refs(idx) {
+                let Some(children) = self.owners.get(&name) else {
+                    continue;
+                };
+                for &child in children {
+                    if found.insert(child) {
+                        queue.push(child);
+                    }
+                }
+            }
+        }
+        let mut out: Vec<(usize, usize, usize, usize)> =
+            found.into_iter().map(|i| self.bodies[i].range).collect();
+        out.sort_unstable();
+        merge_ranges(&mut out);
+        out
+    }
+}
+
+impl Visitor for RenderScan {
+    fn visit_function_body(&mut self, body: &full_moon::ast::FunctionBody) {
+        let Some(range) = body_range(body) else {
+            return;
+        };
+        // `body.tokens()` is the body's OWN token stream. A nested function's tokens
+        // are physically inside it, which is exactly why `direct_refs` subtracts
+        // them again.
+        //
+        // `.rev()` IS LOAD-BEARING, and it is a full_moon 3.0 performance bug.
+        // `Tokens::next()` does `self.items.remove(0)` -- removing the FIRST element
+        // of a Vec -- so walking a body's tokens front-to-back is quadratic in the
+        // token count. `Tokens::next_back()` does `self.items.pop()`, which is O(1).
+        // Iterating the same tokens in reverse is therefore linear.
+        //
+        // Measured on a file whose draw callback holds 16,000 calls (160,000-odd
+        // tokens in one body): `visit_function_body` took 2,377 ms forward and
+        // 8 ms reversed. Nothing here needs the tokens in source order -- they are
+        // collected into a set keyed by position.
+        let ids = body
+            .tokens()
+            .rev()
+            .filter_map(|t| match t.token().token_type() {
+                full_moon::tokenizer::TokenType::Identifier { identifier } => {
+                    let pos = t.token().start_position();
+                    Some((pos.line(), pos.character(), identifier.to_string().to_lowercase()))
+                }
+                _ => None,
+            })
+            .collect();
+        self.bodies.push(FunctionBodyInfo { range, ids });
+    }
+
+    fn visit_local_function(&mut self, decl: &full_moon::ast::LocalFunction) {
+        // `token()` rather than `to_string()` on the TokenReference: a token carries
+        // trivia on BOTH sides, so `to_string()` on an indented name yields
+        // `"    sheet"` and never matches a reference. `text()` in this file documents
+        // the same trap.
+        let name = decl.name().token().to_string().to_lowercase();
+        self.declare(name, decl);
+    }
+
+    fn visit_function_declaration(&mut self, decl: &full_moon::ast::FunctionDeclaration) {
+        let name = last_segment(&decl.name().to_string()).to_lowercase();
+        self.declare(name, decl);
+    }
+
+    fn visit_function_call(&mut self, call: &FunctionCall) {
+        let Some(segs) = dotted_path(call) else {
+            return;
+        };
+        if segs.len() != 3 || segs[0] != "wa" || segs[1] != "on" {
+            return;
+        }
+        if segs[2] != "draw" && segs[2] != "hud" {
+            return;
+        }
+        if let Some(range) = render_body_range(call) {
+            self.root_ranges.push(range);
+        }
+    }
+}
+
+/// True when `inner` lies inside `outer`, both `(line, col)`-based and inclusive.
+fn range_contains(outer: (usize, usize, usize, usize), inner: (usize, usize, usize, usize)) -> bool {
+    (inner.0, inner.1) >= (outer.0, outer.1) && (inner.2, inner.3) <= (outer.2, outer.3)
+}
+
+/// `a.b.c` -> `c`, `a:b` -> `b`. Function names are recorded by their LAST segment so
+/// `M.sheet` and a bare `sheet` are the same owner, which is what the engine's
+/// `name.split('.').split(':')[-1]` does.
+fn last_segment(name: &str) -> &str {
+    name.rsplit(['.', ':']).next().unwrap_or(name)
+}
+
+/// The body range of a function, as (start_line, start_col, end_line, end_col).
+fn body_range(body: &full_moon::ast::FunctionBody) -> Option<(usize, usize, usize, usize)> {
+    body_range_like(body)
+}
+
+/// The same range for any node. `Node::range()` exists, but spelling it out here
+/// keeps the one definition of "a range" in this file.
+fn body_range_like<N: Node>(node: &N) -> Option<(usize, usize, usize, usize)> {
+    let start = node.start_position()?;
+    let end = node.end_position()?;
+    Some((start.line(), start.character(), end.line(), end.character()))
+}
+
+/// The body range of the function passed to `wa.on.draw(...)` / `wa.on.hud(...)`, as
+/// (start_line, start_col, end_line, end_col). Declined when the argument is not a
+/// function literal (a named callback or a variable): we cannot see its body, so it
+/// is conservatively NOT treated as render context. The engine's own checker declines
+/// it the same way -- only a function IMMEDIATELY preceded by `wa.on.draw(` is a root.
+fn render_body_range(call: &FunctionCall) -> Option<(usize, usize, usize, usize)> {
+    let fun: &full_moon::ast::AnonymousFunction = call.suffixes().find_map(|s| match s {
+        Suffix::Call(full_moon::ast::Call::AnonymousCall(args)) => match args.as_ref() {
+            full_moon::ast::FunctionArgs::Parentheses { arguments, .. } => arguments
+                .iter()
+                .find_map(|e| match e {
+                    Expression::Function(f) => Some(&**f),
+                    _ => None,
+                }),
+            _ => None,
+        },
+        _ => None,
+    })?;
+    body_range(fun.body())
+}
+
+/// Collapses overlapping and touching ranges in place, leaving them sorted.
+///
+/// Input must already be sorted by start. Ends are INCLUSIVE, so `[a..c]` and
+/// `[c..e]` share the point `c` and merge -- which is correct, because a token sits
+/// at a point, never between two.
+fn merge_ranges(ranges: &mut Vec<(usize, usize, usize, usize)>) {
+    let mut write = 0usize;
+    for read in 1..ranges.len() {
+        let (sl, sc, el, ec) = ranges[read];
+        let (psl, psc, pel, pec) = ranges[write];
+        if (sl, sc) <= (pel, pec) {
+            // Overlaps or touches the range we are building: extend it if it goes on.
+            if (el, ec) > (pel, pec) {
+                ranges[write] = (psl, psc, el, ec);
+            }
+        } else {
+            write += 1;
+            ranges[write] = (sl, sc, el, ec);
+        }
+    }
+    ranges.truncate(write + 1);
+}
+
+/// True when `(line, column)` falls inside one of the recorded render regions.
+///
+/// The regions arrive MERGED and sorted (see `RenderScan::regions`), so this is a
+/// binary search rather than a scan: find the last region starting at or before the
+/// point, and ask whether it reaches it. Merging is what makes that sound -- with
+/// overlapping regions the rightmost one starting early enough might not cover the
+/// point while an earlier one did.
+fn in_render_region(
+    line: usize,
+    column: usize,
+    regions: &[(usize, usize, usize, usize)],
+) -> bool {
+    let at = (line, column);
+    let idx = regions.partition_point(|r| (r.0, r.1) <= at);
+    idx > 0 && at <= (regions[idx - 1].2, regions[idx - 1].3)
+}
+
 /// Runs every check over one parsed file.
 ///
 /// Called only on a file that PARSED, deliberately. If full_moon reported syntax
@@ -1112,7 +1746,17 @@ pub fn run_with_custom(
     // counts.
     let mut scan = KindScan::default();
     scan.visit_ast(ast);
-    let mut checker = Checker::new(scan.duck, custom);
+    // Render context is also file-global: `wa.on.draw` on line 1 mutes math inside a
+    // callback on line 3, so collect render regions before the main walk too.
+    let mut render = RenderScan::default();
+    render.visit_ast(ast);
+    render.resolve();
+    // Loop trace is also file-global, and for the same reason: `wa.missiles.all()` on
+    // line 90 resolves `missile` on line 95.
+    let mut loop_trace = LoopTrace::default();
+    loop_trace.visit_ast(ast);
+    let mut checker = Checker::new(scan.duck, custom, render.regions());
+    checker.loop_trace = loop_trace;
     checker.visit_ast(ast);
     checker.finish()
 }
@@ -1679,6 +2323,44 @@ pub fn suggest<'a>(word: &str, candidates: &[&'a str]) -> Option<&'a str> {
     best.map(|(_, c)| c)
 }
 
+/// Closest `wa.*` FUNCTION path for a mistyped call, compared on the leaf name.
+///
+/// `wa.fog.visble` must suggest `wa.fog.visible`, not `wa.fog`. The namespace is
+/// a table and cannot be called, so suggesting it sends the reader somewhere that
+/// will not run -- a wrong suggestion is worse than none.
+///
+/// The leaf comparison mirrors `suggestWaFunction` in src/data/specKeys.ts, which
+/// is what the front end already shows: paths of different lengths are not
+/// compared whole, so the namespace never has to match the word being corrected.
+fn suggest_function(segs: &[String]) -> Option<String> {
+    let (namespace, leaf) = match segs {
+        [ns, leaf, ..] => (Some(ns.as_str()), leaf.as_str()),
+        [leaf] => (None, leaf.as_str()),
+        [] => return None,
+    };
+    // Short names get a looser radius than `suggest` uses: transpositions such as
+    // "repalce" -> "replace" are two edits and the most common typo of all.
+    let max = if leaf.len() <= 6 { 2 } else { 3 };
+    let mut best: Option<(usize, String)> = None;
+    for path in engine_data::WA_FUNCTIONS {
+        let Some(rest) = path.strip_prefix("wa.") else {
+            continue;
+        };
+        let candidate = match (namespace, rest.split_once('.')) {
+            (Some(ns), Some((found_ns, found_leaf))) if found_ns == ns => found_leaf,
+            (None, None) => rest,
+            // A namespace typo means the caller wrote a different table name; the
+            // leaf cannot be trusted to line up with the real namespace's leaves.
+            _ => continue,
+        };
+        let d = levenshtein(leaf, candidate, max);
+        if d <= max && best.as_ref().map_or(true, |(bd, _)| d < *bd) {
+            best = Some((d, path.to_string()));
+        }
+    }
+    best.map(|(_, path)| path)
+}
+
 /// The top-level `wa.*` namespaces, for "did you mean" on a misspelled verb.
 /// Derived from the generated function list so it cannot drift out of date.
 fn namespaces() -> Vec<&'static str> {
@@ -1748,6 +2430,313 @@ mod tests {
     #[test]
     fn math_random_is_an_error() {
         assert_eq!(rules("local x = math.random()"), vec!["lockstep-rng"]);
+    }
+
+    // math.cos/sin/atan inside `wa.on.draw` is presentation-only: per-client drawing
+    // never desyncs a match, so it stays silent there.
+    #[test]
+    fn math_sin_in_render_is_silent() {
+        let src = "wa.on.draw(function()\n  local x = math.sin(1)\nend)";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    #[test]
+    fn math_atan_in_render_is_silent() {
+        let src = "wa.on.draw(function()\n  local a = math.atan(1, 2)\nend)";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// Outside render context the same calls remain errors.
+    #[test]
+    fn math_cos_outside_render_is_an_error() {
+        assert_eq!(rules("local x = math.cos(1)"), vec!["lockstep-rng"]);
+    }
+
+    /// A named callback's body is invisible to the checker, so it is NOT treated as
+    /// render context and math there still errors (conservative: no false negatives).
+    #[test]
+    fn math_sin_in_named_callback_is_still_an_error() {
+        let src = "local function handler()\n  local x = math.sin(1)\nend\nwa.on.draw(handler)";
+        assert_eq!(rules(src), vec!["lockstep-rng"]);
+    }
+
+    // ---- render context: the rules the ENGINE states, not ones we invented ----
+    //
+    // Every test below is anchored to a line in the engine's own source or its own
+    // checker. The engine's `tools/check_sim_math.py` reports `passed` over the
+    // whole `mods/` tree, so any finding we raise there is ours, not the pack's.
+
+    /// `wa.on.hud` is the same kind of callback as `wa.on.draw`.
+    ///
+    /// spawn.rs:642, in the engine's own words: "wa.random: not inside wa.on.draw or
+    /// wa.on.hud. They run at render time." docs/lua-pixel-units.md:49: "Draw/HUD
+    /// callbacks may use CRT maths because their results stay local." This used to
+    /// be an error on valid engine code (`gif_donkey/lua.lua:140`).
+    #[test]
+    fn math_cos_in_a_hud_callback_is_silent() {
+        let src = "wa.on.hud(function()\n  local x = math.cos(1)\nend)";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// A LOCAL HELPER called only from a draw callback is render context.
+    ///
+    /// This is the false positive that started all of it: `px/lib/turret.lua:573`
+    /// declares `local function sheet(path, x, y, frame, angle, ...)` which rotates
+    /// quad corners with `math.cos`/`math.sin` at line 576, and is called from the
+    /// draw callback. The engine's checker passes the file; we called it a desync.
+    #[test]
+    fn a_local_helper_of_a_draw_callback_is_render_context() {
+        let src = "local function sheet(angle)\n  return math.cos(angle), math.sin(angle)\nend\nwa.on.draw(function()\n  sheet(1)\nend)";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// The closure is transitive: helper -> helper -> trig.
+    #[test]
+    fn render_context_closes_transitively() {
+        let src = "local function inner(a)\n  return math.atan(a, 1)\nend\nlocal function outer(a)\n  return inner(a)\nend\nwa.on.draw(function()\n  outer(1)\nend)";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// ...and it crosses an `if`/`for` boundary inside the callback.
+    #[test]
+    fn render_context_closes_through_a_loop() {
+        let src = "local function helper(a)\n  return math.cos(a)\nend\nwa.on.draw(function()\n  for i = 1, 3 do\n    if i > 1 then helper(i) end\n  end\nend)";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// THE NEGATIVE HALF, and it matters more than the positives.
+    ///
+    /// Following helpers must not swallow helpers that live OUTSIDE render reach. If
+    /// `helper` is only ever called from `wa.on.contact`, its trig is simulation and must
+    /// still be an error -- otherwise the closure is a hole, not a rule.
+    #[test]
+    fn a_helper_only_called_from_simulation_is_still_an_error() {
+        let src = "local function helper(a)\n  return math.cos(a)\nend\nwa.on.contact(function()\n  helper(1)\nend)";
+        assert_eq!(rules(src), vec!["lockstep-rng"]);
+    }
+
+    /// A helper called from BOTH is rendering. This is the engine's behaviour too
+    /// (`reachable(render_roots)` is computed before simulation), and we match it
+    /// rather than being stricter in one direction only -- see RenderScan's note.
+    #[test]
+    fn a_helper_called_from_draw_and_simulation_is_render_context() {
+        let src = "local function helper(a)\n  return math.cos(a)\nend\nwa.on.contact(function()\n  helper(1)\nend)\nwa.on.draw(function()\n  helper(1)\nend)";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// A name used ONLY by a nested function inside the draw body does not drag that
+    /// nested function in by accident -- and the nested one is still render anyway
+    /// because the body encloses it. This pins the subtraction in `direct_refs`:
+    /// without it the reference set would be the union of every nested scope.
+    #[test]
+    fn a_nested_function_inside_a_draw_body_is_render_context() {
+        let src = "wa.on.draw(function()\n  local function helper(a)\n    return math.sin(a)\n  end\n  helper(1)\nend)";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// `math.random` is never muted, even in the deepest render helper. The mute is
+    /// specifically about trig whose result reaches drawing; a draw callback can still
+    /// advance gameplay state, and the engine nils `math.random` in EVERY scope.
+    #[test]
+    fn math_random_in_a_render_helper_is_still_an_error() {
+        let src = "local function helper()\n  return math.random(1, 6)\nend\nwa.on.draw(function()\n  helper()\nend)";
+        assert_eq!(rules(src), vec!["lockstep-rng"]);
+    }
+
+    /// The render closure at scale.
+    ///
+    /// This is a CORRECTNESS test, not a timing one -- timing assertions flake on a
+    /// loaded machine, and a guard that fails for the wrong reason gets deleted. What
+    /// it pins is that thousands of helpers reached from one draw callback are ALL
+    /// treated as render context, which is the shape that made the token walk
+    /// quadratic (see the `.rev()` note in `RenderScan::visit_function_body`).
+    ///
+    /// Written with table methods rather than locals because Lua caps a function at
+    /// 200 locals -- the first version of this test was itself rejected by the Lua
+    /// compiler before a single check ran.
+    #[test]
+    fn the_render_closure_holds_for_thousands_of_helpers() {
+        const N: usize = 3_000;
+        let mut src = String::from("local M = {}\n");
+        for i in 0..N {
+            src.push_str(&format!("function M.h{i}(x) return math.cos(x) + {i} end\n"));
+        }
+        src.push_str("wa.on.draw(function() ");
+        for i in 0..N {
+            src.push_str(&format!("M.h{i}(1) "));
+        }
+        src.push_str("end)\n");
+        assert!(
+            rules(&src).is_empty(),
+            "{} helpers reached from one draw callback should all be render context",
+            N
+        );
+    }
+
+    // ---- receiver resolution: `for _, v in <wa.X.all()>` beats the name --------
+    //
+    // `wa.missiles.all()` yields WorldHandle userdata, NOT the MissileEntity table:
+    // `spawn.rs` binds it via `bind_kind_list` -> `objects_table` ->
+    // `WorldHandle::new(id)`, and WorldHandle HAS `impulse` (`actor.rs`
+    // `add_methods`). MissileEntity is the plain table `wa.on.missile_frame` hands a
+    // callback -- properties, no methods. A receiver NAMED `missile` says nothing
+    // about which one it is, which is why `px/weapons/electromagnet.lua:93` used to
+    // draw a false `missile-api` in both engines.
+
+    #[test]
+    fn a_missiles_all_loop_value_is_a_world_handle() {
+        let src = "for _, missile in ipairs(wa.missiles.all()) do missile:impulse(1, 2) end";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// The bare iterator, not wrapped in ipairs/pairs.
+    #[test]
+    fn a_bare_iterator_loop_value_is_a_world_handle() {
+        let src = "for _, m in wa.missiles.all() do m:remove() end";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// The trace must not paper over a real typo, and it must not change the rule
+    /// id: a misspelled WorldHandle method is `world-object-api`, not `missile-api`.
+    #[test]
+    fn a_misspelled_method_in_the_loop_keeps_its_rule_id() {
+        let src = "for _, missile in ipairs(wa.missiles.all()) do missile:impulses(1, 2) end";
+        assert_eq!(rules(src), vec!["world-object-api"]);
+    }
+
+    /// The other value entirely. The trace must not reach a `missile_frame` table.
+    #[test]
+    fn a_missile_frame_table_is_still_a_missile_entity() {
+        let src = "wa.on.missile_frame(function(missile)\n  missile:impulses(1, 2)\nend)";
+        assert_eq!(rules(src), vec!["missile-api"]);
+    }
+
+    /// THE LEAK THIS WAS MEASURED AGAINST, and the reason the trace is scoped.
+    ///
+    /// `mods/tools/audit/audit.lua` loops `for _, w in ipairs(wa.worms.all())` at
+    /// lines 107/112 AND passes `w` as a callback parameter holding the harness's own
+    /// mock worm at line 265 (`w:input{...}`). A file-global `name -> class` map
+    /// claims that mock, `w` stops resolving by name -- `w` is not a confident
+    /// registry prefix, only `worm` is -- and 46 false `worm-api` warnings appear.
+    #[test]
+    fn the_loop_binding_does_not_leak_past_the_loop_body() {
+        let src = "for _, w in ipairs(wa.worms.all()) do\n  w:hurt(10)\nend\nlocal function setup(w)\n  w:input({ aim = 45 })\nend";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// Innermost wins, so this is a worm and `hurt` is a worm method.
+    #[test]
+    fn a_nested_loop_over_the_same_name_answers_for_the_inner_one() {
+        let src = "for _, v in ipairs(wa.missiles.all()) do\n  for _, v in ipairs(wa.worms.all()) do\n    v:hurt(10)\n  end\nend";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// An iterator that is merely a variable is DECLINED, not guessed: we cannot see
+    /// where `t` came from, so `m` falls back to the name table and warns. Silence
+    /// would have been the wrong answer here -- a bare name really can be a missile.
+    #[test]
+    fn an_iterator_that_is_only_a_variable_is_declined() {
+        let src = "local t = wa.missiles.all()\nfor _, m in ipairs(t) do m:impulse(1, 2) end";
+        assert_eq!(rules(src), vec!["missile-api"]);
+    }
+
+    // ---- API 4 surface: exact snippets from SemanticChecksLua/semantic_all_rules.lua --
+    //
+    // Failsafe: these mirror the regression fixtures added to
+    // SemanticChecksLua/semantic_all_rules.lua. If that file is edited, these tests keep
+    // the should-give / shouldnt-give findings pinned.
+
+    /// API 4 panel functions are real -- no wa-namespace-typo.
+    #[test]
+    fn api4_panel_functions_are_silent() {
+        let src = "local function api4_panel_functions()\n  local layout = wa.panel.layout()\n  wa.panel.set_layout({ [\"px.ninja_star\"] = { row = \"F1\", column = 1 } })\nend";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// API 4 wa.weapons.data is real -- no wa-namespace-typo.
+    #[test]
+    fn api4_weapons_data_is_silent() {
+        assert!(rules("local data = wa.weapons.data(\"stock.bazooka\")").is_empty());
+    }
+
+    /// API 4 wa.world.set_turn_clock is real -- no wa-namespace-typo.
+    #[test]
+    fn api4_world_set_turn_clock_is_silent() {
+        assert!(rules("wa.world.set_turn_clock(1000)").is_empty());
+    }
+
+    /// API 4 wa.assets.load is real -- no wa-namespace-typo.
+    #[test]
+    fn api4_assets_load_is_silent() {
+        assert!(rules(r#"wa.assets.load({ sprites = { "sprites/star.png" }, gpu_prefix = "sprites/" })"#).is_empty());
+    }
+
+    /// math.sin inside wa.on.draw is presentation-only -- silent.
+    #[test]
+    fn api4_math_sin_in_draw_is_silent() {
+        let src = "wa.on.draw(function()\n  local x = math.sin(1)\nend)";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// math.atan inside wa.on.draw is presentation-only -- silent.
+    #[test]
+    fn api4_math_atan_in_draw_is_silent() {
+        let src = "wa.on.draw(function()\n  local a = math.atan(1, 2)\nend)";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
+    }
+
+    /// math.cos outside render context is a desync error.
+    #[test]
+    fn api4_math_cos_outside_draw_is_error() {
+        assert_eq!(rules("local x = math.cos(1)"), vec!["lockstep-rng"]);
+    }
+
+    /// wa.audit only exists in diagnostics builds, so it still typos on release.
+    #[test]
+    fn api4_audit_typos_on_release() {
+        assert_eq!(rules("wa.audit.begin(7)"), vec!["wa-namespace-typo"]);
+    }
+
+    /// Whole-fixture failsafe: semantic_all_rules.lua must not flag real API 4 functions,
+    /// must keep render-context scoping for math, and must keep wa.audit as a typo.
+    #[test]
+    fn semantic_all_rules_api4_surface_is_known() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../SemanticChecksLua/semantic_all_rules.lua"
+        );
+        let src = std::fs::read_to_string(path).expect("read semantic_all_rules.lua");
+        let ast = full_moon::parse(&src).expect("semantic_all_rules.lua must parse");
+        let diags = run(&ast);
+
+        // Real API 4 functions must not be reported as wa-namespace-typo.
+        let typos: Vec<&str> = diags
+            .iter()
+            .filter(|d| d.rule == "wa-namespace-typo")
+            .map(|d| d.message.as_str())
+            .collect();
+        for good in ["wa.panel.layout", "wa.panel.set_layout", "wa.weapons.data",
+                     "wa.world.set_turn_clock", "wa.assets.load"] {
+            assert!(
+                !typos.iter().any(|m| m.contains(good)),
+                "API 4 function {good} must not typo; typos were: {typos:?}",
+            );
+        }
+
+        // wa.audit only exists in diagnostics builds, so it stays a typo on release.
+        assert!(
+            typos.iter().any(|m| m.contains("wa.audit")),
+            "wa.audit must still typo on the release surface; typos were: {typos:?}",
+        );
+
+        // lockstep-rng fires for math.random (line 151) and math.cos outside render
+        // (line 439), but NOT for math.sin/atan inside wa.on.draw.
+        let rng: Vec<&AstDiagnostic> = diags.iter().filter(|d| d.rule == "lockstep-rng").collect();
+        assert_eq!(
+            rng.len(),
+            2,
+            "expected exactly 2 lockstep-rng errors (math.random + math.cos outside draw), got {rng:?}",
+        );
     }
 
     #[test]
@@ -2355,6 +3344,24 @@ mod tests {
         let m = messages("wa.weapoons.replace({})", "wa-namespace-typo");
         assert_eq!(m.len(), 1);
         assert!(m[0].contains("wa.weapons"), "got {}", m[0]);
+    }
+
+    #[test]
+    fn a_misspelled_function_suggests_the_function_not_its_namespace() {
+        // 0.9.11's fog of war brought `wa.fog.*`. Before `suggest_function`, the
+        // namespace table answered "Did you mean wa.fog?" -- a table nobody can
+        // call, which is worse than saying nothing.
+        let m = messages("wa.fog.visble(1, 2)", "wa-namespace-typo");
+        assert_eq!(m.len(), 1);
+        assert!(m[0].contains("wa.fog.visible"), "got {}", m[0]);
+    }
+
+    #[test]
+    fn a_transposed_function_name_is_close_enough_to_suggest() {
+        // "repalce" is two edits from "replace"; a one-edit radius would miss the
+        // most common typo of all.
+        let m = messages("wa.weapons.repalce({})", "wa-namespace-typo");
+        assert!(m[0].contains("wa.weapons.replace"), "got {}", m[0]);
     }
 
     #[test]
@@ -3068,7 +4075,14 @@ mod tests {
             .collect();
         assert_eq!(
             order,
-            ["WormEntity", "LuaActor", "WorldHandle", "MissileEntity", "InventoryStore"]
+            [
+                "WormEntity",
+                "LuaActor",
+                "WorldHandle",
+                "MissileEntity",
+                "InventoryStore",
+                "LightHandle",
+            ]
         );
     }
 
@@ -3314,7 +4328,7 @@ end
     fn spec_key_data_survived_the_move_into_the_generator() {
         assert_eq!(
             SPEC_KEYS.len(),
-            32,
+            49,
             "spec key count changed -- check src/data/specKeys.ts was not truncated"
         );
         for required in ["weapon", "copy_from", "patch", "on_fire", "sprite"] {

@@ -148,15 +148,10 @@ end
 -- 10. lockstep-rng: math.random is a desync bug, not just a style nit.
 ------------------------------------------------------------------------------
 local function lockstepRng()
-  ab = math.random(1, 100)
-  ac = math.cos(100)
-  ad = math.sin(100)
-  return math.atan(1, 100)
-  -- EXPECT: 3 findings, rule=lockstep-rng, severity likely WARNING or stronger
+  return math.random(1, 100)
+  -- EXPECT: 1 finding, rule=lockstep-rng, severity likely WARNING or stronger
   -- (this is the project's core value-prop check). Message should mention
   -- wa.random as the replacement.
-  -- Cos, sin and atan are also banned to prevent desyncs.
-  -- Should sugest wa.math.cos, and the other variants
 end
 
 ------------------------------------------------------------------------------
@@ -402,4 +397,62 @@ end
 local function useNamedCallback()
   wa.on.worm_message(handlerNamed)
 end
+
+-------------------------------------------------------------------------------
+-- API 4 additions: new wa.* functions that MUST stay silent (no typo warning)
+-- Regression probes for WormForge 0.9.1 / Lua API 4.
+-------------------------------------------------------------------------------
+local function api4_panel_functions()
+  local layout = wa.panel.layout()
+  wa.panel.set_layout({ ["px.ninja_star"] = { row = "F1", column = 1 } })
+  -- EXPECT: 0 findings. wa.panel.layout and wa.panel.set_layout are real API 4 functions.
+end
+
+local function api4_weapons_data()
+  local data = wa.weapons.data("stock.bazooka")
+  -- EXPECT: 0 findings. wa.weapons.data is real API 4.
+end
+
+local function api4_world_set_turn_clock()
+  wa.world.set_turn_clock(1000)
+  -- EXPECT: 0 findings. wa.world.set_turn_clock is real API 4.
+end
+
+local function api4_assets_load()
+  wa.assets.load({ sprites = { "sprites/star.png" }, gpu_prefix = "sprites/" })
+  -- EXPECT: 0 findings. wa.assets.load is real API 4.
+end
+
+-------------------------------------------------------------------------------
+-- lockstep-rng render-context scoping: math inside wa.on.draw is presentation
+-------------------------------------------------------------------------------
+local function math_sin_in_draw_is_silent()
+  wa.on.draw(function()
+    local x = math.sin(1)
+    wa.draw.quad({ points = {{0, 0}, {1, 0}, {1, 1}, {0, 1}}, sprite = "a",
+      color = 0xFFFFFFFF })
+  end)
+  -- EXPECT: 0 findings. math.sin inside wa.on.draw is presentation-only.
+end
+
+local function math_cos_outside_draw_is_error()
+  local x = math.cos(1)
+  -- EXPECT: 1 finding, rule=lockstep-rng, on math.cos.
+end
+
+local function math_atan_in_draw_is_silent()
+  wa.on.draw(function()
+    local a = math.atan(1, 2)
+  end)
+  -- EXPECT: 0 findings.
+end
+
+-------------------------------------------------------------------------------
+-- wa.audit only exists in diagnostics builds; on the release surface it is a typo
+-------------------------------------------------------------------------------
+local function audit_is_a_typo_on_release()
+  wa.audit.begin(7)
+  -- EXPECT: 1 finding, rule=wa-namespace-typo, on wa.audit.
+end
+
 end

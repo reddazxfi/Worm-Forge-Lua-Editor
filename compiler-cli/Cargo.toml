@@ -1,0 +1,43 @@
+[package]
+name = "wormforge-check"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone WormForge Lua checker: real Lua 5.4 compile plus the desync and scope checks, with no editor and no game required."
+license = "MIT"
+publish = false
+
+# Declared explicitly so cargo never walks up looking for a workspace root. This
+# package is fully self-contained: the checker sources are vendored copies in
+# src/ (see PROGRESS.md "Vendoring policy"), so building it touches nothing
+# outside this folder.
+[workspace]
+
+[lib]
+name = "wfcheck"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wfcheck"
+path = "src/bin/wfcheck.rs"
+
+[dependencies]
+# The exact Lua build the game compiles mods against. `lua54` = version parity
+# with the engine, `vendored` = no Lua installation needed, which matters because
+# this binary is meant to be handed to other people. Only the front end is used:
+# `Chunk::into_function()` compiles without executing, so nothing a mod does can
+# run on the machine checking it.
+mlua = { version = "0.10", features = ["lua54", "vendored"] }
+# `lua54` here for the same reason, so the parser agrees with the compiler about
+# what is valid Lua. `default-features = false` because the `serde` feature is
+# unused -- the payload is built field by field, never by serialising an AST.
+full_moon = { version = "3", default-features = false, features = ["lua54"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+# Mirrors src-tauri/Cargo.toml. `strip` matters more than usual here: the binary
+# is meant to be shared, and `opt-level = "s"` keeps it small enough to email.
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

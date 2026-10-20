@@ -15,6 +15,7 @@ import {
   Search,
   Database,
   Palette,
+  Trash2,
 } from 'lucide-react';
 import { EditorConfig, DEFAULT_CONFIG, exportConfigAsIni, parseIniConfig } from '../services/config';
 import {
@@ -28,7 +29,7 @@ import {
   type SyntaxOverrides,
   type SyntaxToken,
 } from '../services/editorThemes';
-import { cleanFolderPath, loadFolderFromPath, pickFolder, listModEntries, baseName } from '../services/modFolder';
+import { cleanFolderPath, loadFolderFromPath, pickFolder, listModEntries, baseName, isDesktop, saveFileAs } from '../services/modFolder';
 import {
   VERB_FILE_NAME,
   customVerbsFilePath,
@@ -44,13 +45,16 @@ interface ConfigModalProps {
   onUpdateConfig: (newConfig: EditorConfig) => void;
   existingMods: ModFolderInfo[];
   /**
-   * The custom_verbs.cfg rows currently in memory, and the sink for an
-   * import. The modal never writes the file itself -- App owns the list and
-   * its debounced persist, so an import goes through exactly the same
-   * save path as "+ Register Verb" (localStorage mirror + AppData cfg).
+   * The custom_verbs.cfg rows currently in memory, and the sinks for
+   * import/remove/clear. The modal never writes the file itself -- App owns
+   * the list and its debounced persist, so an import/removal goes through
+   * exactly the same save path as "+ Register Verb" (localStorage mirror +
+   * AppData cfg).
    */
   customVerbs: CustomVerb[];
-  onImportVerbs: (verbs: CustomVerb[]) => void;
+  onImportVerbs: (verbs: CustomVerb[], mode: 'merge' | 'replace') => void;
+  onRemoveVerb: (verb: CustomVerb) => void;
+  onClearVerbs: () => void;
 }
 
 export const ConfigModal: React.FC<ConfigModalProps> = ({
@@ -61,6 +65,8 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
   existingMods,
   customVerbs,
   onImportVerbs,
+  onRemoveVerb,
+  onClearVerbs,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const verbFileInputRef = useRef<HTMLInputElement>(null);
@@ -89,8 +95,12 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
   // `testStatus` existed only so the two "Test" buttons would not overwrite each
   // other's messages; with one button there is nothing to collide with.
   const [modsTestStatus, setModsTestStatus] = useState<{ type: 'success' | 'error' | 'loading' | null; msg: string }>({ type: null, msg: '' });
-  // Feedback for the custom_verbs.cfg import button (see handler below).
+  // Feedback for the custom_verbs.cfg import/export/remove buttons (see handlers below).
   const [verbImportStatus, setVerbImportStatus] = useState<string | null>(null);
+  // Merge keeps existing rows on collision (first-wins); Replace swaps the
+  // whole list for the file -- the escape hatch when a method was renamed
+  // and the old name would otherwise linger as a stale row.
+  const [verbImportMode, setVerbImportMode] = useState<'merge' | 'replace'>('merge');
 
   if (!isOpen) return null;
 
@@ -197,25 +207,41 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
     await testModsFolder(raw);
   };
 
-  const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+  // ---- downloads ------------------------------------------------------------
+  //
+  // Anchor downloads (blob URL + a.click()) silently do nothing inside the
+  // Tauri WebView, which is why "Export .cfg" appeared dead. On desktop we go
+  // through the native Save dialog (saveFileAs); in the browser we keep the
+  // anchor path, but appended to the DOM with a delayed revoke -- revoking
+  // synchronously can cancel the download before the browser picks it up.
+  const downloadTextFile = async (suggestedName: string, content: string, mime: string): Promise<string | null> => {
+    if (isDesktop()) {
+      try {
+        return await saveFileAs(suggestedName, content);
+      } catch (err: any) {
+        setVerbImportStatus(`Export failed: ${err?.message || String(err)}`);
+        return null;
+      }
+    }
+    const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'wormforge.config.json';
+    a.download = suggestedName;
+    // Must be in the DOM for the click to count in some WebViews/browsers.
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return suggestedName;
   };
 
-  const handleExportIni = () => {
-    const iniContent = exportConfigAsIni(config);
-    const blob = new Blob([iniContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'wormforge.config.ini';
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExportJson = async () => {
+    await downloadTextFile('wormforge.config.json', JSON.stringify(config, null, 2), 'application/json');
+  };
+
+  const handleExportIni = async () => {
+    await downloadTextFile('wormforge.config.ini', exportConfigAsIni(config), 'text/plain');
   };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -251,22 +277,38 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
   // Export downloads the CURRENT list (the same serializer the cfg file uses,
   // so a hand-diffable file and an exported file are byte-identical). Import
   // parses through parseVerbsFile -- bad rows drop individually, a bad file
-  // imports nothing -- and hands the result to App, which merges and lets the
-  // debounced persist write it. Nothing here touches disk directly.
+  // imports nothing -- and hands the result to App, which merges or replaces
+  // (per the mode toggle) and lets the debounced persist write it. Nothing
+  // here touches disk directly, except the native Save dialog on export.
 
-  const handleExportVerbs = () => {
-    const blob = new Blob([serializeVerbsFile(customVerbs)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = VERB_FILE_NAME;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExportVerbs = async () => {
+    const saved = await downloadTextFile(VERB_FILE_NAME, serializeVerbsFile(customVerbs), 'application/json');
+    if (saved === null) return; // error status already set (desktop), or user cancelled
+    setVerbImportStatus(
+      isDesktop()
+        ? saved
+          ? `Exported ${customVerbs.length} verb(s) to "${saved}".`
+          : `Export cancelled -- no file written.`
+        : `Exported ${customVerbs.length} verb(s) as "${VERB_FILE_NAME}".`
+    );
+  };
+
+  const handleRemoveVerb = (verb: CustomVerb) => {
+    onRemoveVerb(verb);
+    setVerbImportStatus(`Removed ${verb.class}${verb.syntax}${verb.name}.`);
+  };
+
+  const handleClearVerbs = () => {
+    if (customVerbs.length === 0) return;
+    if (!window.confirm(`Remove all ${customVerbs.length} custom verb(s)? This writes through to ${VERB_FILE_NAME}.`)) return;
+    onClearVerbs();
+    setVerbImportStatus('Cleared all custom verbs.');
   };
 
   const handleImportVerbsFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const mode = verbImportMode;
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -278,8 +320,12 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
         if (parsed.length === 0 && text.trim().length > 0) {
           setVerbImportStatus(`No valid verb rows in "${file.name}". Expected a JSON array of verb objects.`);
         } else {
-          onImportVerbs(parsed);
-          setVerbImportStatus(`Imported ${parsed.length} verb(s) from "${file.name}".`);
+          onImportVerbs(parsed, mode);
+          setVerbImportStatus(
+            mode === 'replace'
+              ? `Replaced verb list with ${parsed.length} verb(s) from "${file.name}".`
+              : `Imported ${parsed.length} verb(s) from "${file.name}" (merged, existing rows kept).`
+          );
         }
       } catch {
         setVerbImportStatus(`Could not read "${file.name}".`);
@@ -615,6 +661,41 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
             </div>
           </div>
 
+          {/* Autocomplete. A real preference: some editors want the list, some
+              want typing left alone. Off also means Tab indents instead of
+              accepting whatever happened to be highlighted. */}
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-0.5">
+              <div className={`text-[11px] font-semibold ${isLight ? 'text-slate-700' : 'text-[#c7d6e6]'}`}>
+                Autocomplete suggestions
+              </div>
+              <p className={`text-[10.5px] leading-relaxed ${isLight ? 'text-slate-500' : 'text-[#7d8fa3]'}`}>
+                Offers engine names, members and table keys while typing. Off keeps the popup
+                closed and leaves Tab to indent.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={config.autocomplete}
+              onClick={() => onUpdateConfig({ ...config, autocomplete: !config.autocomplete })}
+              title={config.autocomplete ? 'Turn suggestions off' : 'Turn suggestions on'}
+              className={`relative w-9 h-5 rounded-full border transition-colors shrink-0 ${
+                config.autocomplete
+                  ? 'bg-amber-500 border-amber-600'
+                  : isLight
+                  ? 'bg-slate-200 border-slate-300'
+                  : 'bg-[#262d38] border-[#39424f]'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-all ${
+                  config.autocomplete ? 'left-[18px]' : 'left-0.5'
+                }`}
+              />
+            </button>
+          </div>
+
           {/* 3. Startup Auto-Load Configuration */}
           <div className="space-y-3">
             <label className="font-semibold uppercase tracking-wider text-[11px] text-amber-500 flex items-center gap-1.5">
@@ -802,7 +883,7 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                   <button
                     type="button"
                     onClick={handleExportVerbs}
-                    title="Download the registered verb list as custom_verbs.cfg"
+                    title={isDesktop() ? 'Save the registered verb list via a Save dialog' : 'Download the registered verb list as custom_verbs.cfg'}
                     className={`px-2 py-1 rounded border flex items-center gap-1 text-[10.5px] font-medium transition-colors ${
                       isLight
                         ? 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'
@@ -841,12 +922,34 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                 ) : (
                   <> in this app's local storage (no disk path on this platform)</>
                 )}
-                . They feed the checker, the API tree and autocomplete. Export hands you the file to edit or share; Import merges a file into the list above.
+                . They feed the checker, the API tree and autocomplete. Export hands you the file to edit or share; Import merges a file into the list, or replaces it when "Replace" is picked.
               </p>
+              {/* Import mode: Merge keeps this session's rows, Replace is the
+                  escape hatch for a renamed method whose old name lingers. */}
+              <div className="flex items-center gap-1.5 text-[10.5px]">
+                <span className={isLight ? 'text-slate-500' : 'text-[#6c7d91]'}>Import mode:</span>
+                {(['merge', 'replace'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setVerbImportMode(mode)}
+                    title={mode === 'merge' ? 'Keep existing verbs; file rows fill the gaps' : 'Discard the current list and take exactly what the file holds'}
+                    className={`px-2 py-0.5 rounded border font-medium capitalize transition-colors ${
+                      verbImportMode === mode
+                        ? 'bg-amber-500/20 border-amber-500 text-amber-500'
+                        : isLight
+                        ? 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                        : 'bg-[#20252e] border-[#2e3745] text-[#8ea0b5] hover:bg-[#2b3341]'
+                    }`}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
               {verbImportStatus && (
                 <div
                   className={`p-1.5 rounded border text-[10.5px] ${
-                    verbImportStatus.startsWith('Imported')
+                    verbImportStatus.startsWith('Imported') || verbImportStatus.startsWith('Replaced') || verbImportStatus.startsWith('Exported') || verbImportStatus.startsWith('Removed') || verbImportStatus.startsWith('Cleared')
                       ? isLight
                         ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                         : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
@@ -857,6 +960,57 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                 >
                   {verbImportStatus}
                 </div>
+              )}
+              {/* The reviewable list: every row removable, so test entries (and
+                  stale names after a rename) can be pruned without hand-editing
+                  the cfg file. Removals go through App, so the debounced persist
+                  writes them to disk + mirror like any other edit. */}
+              {customVerbs.length > 0 ? (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] uppercase tracking-wider font-semibold ${isLight ? 'text-slate-500' : 'text-[#6c7d91]'}`}>
+                      Registered verbs
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleClearVerbs}
+                      title="Remove every custom verb"
+                      className="text-[10px] text-rose-400 hover:underline flex items-center gap-1"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                      <span>Clear all</span>
+                    </button>
+                  </div>
+                  <ul className={`rounded border max-h-36 overflow-y-auto divide-y text-[10.5px] ${
+                    isLight ? 'border-slate-200 divide-slate-100 bg-white' : 'border-[#28313e] divide-[#232b36] bg-[#10141a]'
+                  }`}>
+                    {customVerbs.map((v) => (
+                      <li key={`${v.class.toLowerCase()}:${v.name.toLowerCase()}`} className="px-2 py-1 flex items-center justify-between gap-2">
+                        <span className="font-mono truncate" title={v.description || `${v.class}${v.syntax}${v.name}`}>
+                          <span className="text-amber-500">{v.class}</span>
+                          <span className={isLight ? 'text-slate-400' : 'text-[#5c6b80]'}>{v.syntax}</span>
+                          <span>{v.name}</span>
+                          <span className={isLight ? 'text-slate-400' : 'text-[#5c6b80]'}> · {v.kind}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveVerb(v)}
+                          title={`Remove ${v.class}${v.syntax}${v.name}`}
+                          aria-label={`Remove ${v.class}${v.syntax}${v.name}`}
+                          className={`p-1 rounded transition-colors shrink-0 ${
+                            isLight ? 'hover:bg-rose-50 text-slate-400 hover:text-rose-600' : 'hover:bg-rose-500/10 text-[#6c7d91] hover:text-rose-400'
+                          }`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className={`text-[10.5px] italic ${isLight ? 'text-slate-400' : 'text-[#5c6b80]'}`}>
+                  No custom verbs registered yet. Use + Register Verb in the header, or import a file above.
+                </p>
               )}
             </div>
           </div>

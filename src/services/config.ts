@@ -12,6 +12,9 @@ export interface EditorConfig {
   syntaxOverridesLight: SyntaxOverrides;
   fontSize: number; // px, e.g. 11, 12, 13, 14, 16, 18
   lineHeight: number; // relative, e.g. 1.3, 1.5, 1.8
+  // Offer the suggestion popup while typing. Off is a supported editor mode,
+  // not a hidden flag: no popup opens, and Tab indents as usual.
+  autocomplete: boolean;
   autoLoadModId: string; // mod id to load on startup (e.g. "gameplay.highlander_full", "gameplay.kill_the_king", "")
   // §35: ONE folder for everything on disk. This is the directory that CONTAINS
   // your mods (one subfolder per mod, each with its own mod.toml).
@@ -45,6 +48,7 @@ export const DEFAULT_CONFIG: EditorConfig = {
   syntaxOverridesLight: {},
   fontSize: 13,
   lineHeight: 1.5,
+  autocomplete: true,
   autoLoadFolder: '',
   startupModFolder: '',
   autoLoadModId: '',
@@ -71,6 +75,10 @@ export function loadConfig(): EditorConfig {
     merged.syntaxOverridesDark = sanitizeOverrides(parsed?.syntaxOverridesDark);
     merged.syntaxOverridesLight = sanitizeOverrides(parsed?.syntaxOverridesLight);
     if (typeof merged.syntaxPreset !== 'string') merged.syntaxPreset = DEFAULT_CONFIG.syntaxPreset;
+    // A config saved before this option existed has no key at all (`undefined`
+    // from the spread), and one edited by hand could hold a non-boolean. Only an
+    // explicit `false` turns the popup off; everything else stays on.
+    if (typeof merged.autocomplete !== 'boolean') merged.autocomplete = true;
     return migrateStartupFolder(merged);
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -203,6 +211,7 @@ ${serializeOverrideIni('syntax_override_dark', cfg.syntaxOverridesDark)}
 ${serializeOverrideIni('syntax_override_light', cfg.syntaxOverridesLight)}
 font_size = ${cfg.fontSize}
 line_height = ${cfg.lineHeight}
+autocomplete = ${cfg.autocomplete ? 'on' : 'off'}
 
 [Startup]
 auto_load_mod = ${cfg.autoLoadModId || 'none'}
@@ -267,6 +276,11 @@ export function parseIniConfig(iniText: string): Partial<EditorConfig> {
     } else if (cleanKey === 'line_height') {
       const f = parseFloat(val);
       if (!isNaN(f) && f >= 1.0 && f <= 3.0) result.lineHeight = f;
+    } else if (cleanKey === 'autocomplete') {
+      // `on`/`off` is what the exporter writes; true/false are accepted because
+      // people hand-edit this file. Anything else is ignored rather than guessed.
+      if (val === 'on' || val === 'true') result.autocomplete = true;
+      else if (val === 'off' || val === 'false') result.autocomplete = false;
     } else if (cleanKey === 'auto_load_mod') {
       result.autoLoadModId = val === 'none' ? '' : val;
     } else if (cleanKey === 'auto_load_folder') {
