@@ -322,6 +322,15 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
   // (you typed another character) still starts at the top.
   const lastAutoSignatureRef = useRef<string | null>(null);
 
+  // Did the current selection change start with a pointer gesture? React's
+  // `onSelect` is a synthetic "the selection changed" event, so it fires after
+  // keyboard input too -- including the keyup that follows every keystroke.
+  // Treating all of those as clicks made the popup open in onChange and close
+  // one frame later, i.e. "autocomplete flashes and disappears". Only a gesture
+  // that actually began on the pointer may dismiss it; keydown clears the flag
+  // so a later mouse click cannot leak into the next keystroke.
+  const pointerSelectRef = useRef(false);
+
   const isToml = activeFile.toLowerCase().endsWith('.toml');
   const [selectedWeapon, setSelectedWeapon] = useState<string>('armageddon');
   const [insertedNotice, setInsertedNotice] = useState<string | null>(null);
@@ -727,12 +736,18 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
   };
 
   // A click or drag is for placing the caret and selecting text, never for
-  // opening the list. `onSelect` fires for mouse and keyboard both, so opening
-  // from it put a suggestion row under the second click of a double-click: the
-  // click landed on the row and inserted it instead of selecting the word.
-  // Keyboard paths (onKeyUp) still open the popup.
+  // opening the list. Opening from selection put a suggestion row under the
+  // second click of a double-click: the click landed on the row and inserted it
+  // instead of selecting the word. Keyboard paths (onKeyUp) still open the popup.
+  //
+  // `onSelect` cannot distinguish the two on its own: React synthesises it for
+  // keyboard selection changes too, and the keyup after every typed character
+  // was closing the popup that onChange had just opened. The pointer-down flag
+  // makes the dismissal pointer-only; keyboard events leave the popup alone.
   const handlePointerSelect = () => {
     readCaretContext();
+    if (!pointerSelectRef.current) return;
+    pointerSelectRef.current = false;
     if (autocompleteVisible) {
       setAutocompleteVisible(false);
       lastAutoSignatureRef.current = null;
@@ -1692,6 +1707,9 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
   }, [jumpTarget, code, lineHeightPx]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // A keyboard gesture is not a pointer selection, even if the previous
+    // click left the flag set.
+    pointerSelectRef.current = false;
     if (autocompleteVisible) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -2296,6 +2314,9 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
               // running the trigger after them reopened the popup for no reason.
               if (e.ctrlKey || e.metaKey || e.altKey) return;
               updateCursorAndAutocomplete();
+            }}
+            onPointerDown={() => {
+              pointerSelectRef.current = true;
             }}
             onClick={handlePointerSelect}
             onSelect={handlePointerSelect}
