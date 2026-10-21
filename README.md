@@ -7,7 +7,7 @@ WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully cr
 
 ---
 
-📁[WormForge Repo](https://github.com/EdLud/WormForge)
+📁[WormForge Repo](https://github.com/ropahektic/WormForge)
 
 ---
 
@@ -195,7 +195,7 @@ of sync with its generated Rust copy. 🧪
 
 MIT. See [LICENSE](LICENSE). ⚖️
 
-Not affiliated with Team17 or Worms Armageddon. This is a third-party tool for the [WormForge](https://github.com/EdLud/WormForge) modding engine, which is MIT-licensed and maintained separately.
+Not affiliated with Team17 or Worms Armageddon. This is a third-party tool for the [WormForge](https://github.com/ropahektic/WormForge) modding engine, which is MIT-licensed and maintained separately.
 
 <div align="center">
 
