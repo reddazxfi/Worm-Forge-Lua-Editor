@@ -15,9 +15,9 @@ of every feature the engine has.
 | `kill_the_king` | A complete game mode as a component pack. |
 
 `npm run gen:corpus` reads these folders and writes `src/data/existingMods.ts`.
-Only `mod.toml` and `.lua` files are embedded; sprites and sounds stay with the
-full mods. The examples are reading material and editor templates, not a
-replacement for the engine's own `mods/` folder.
+It reads `mod.toml` for metadata and embeds the `.lua` files; sprites and sounds
+stay with the full mods. The examples are reading material and editor templates,
+not a replacement for the engine's own `mods/` folder.
 
 The swimsuit example is an excerpt from Project X's component bundle. Its
 original asset paths (`sounds/swim_suit/...`, `sprites/swim_suit/...`) are kept

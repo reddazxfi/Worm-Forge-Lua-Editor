@@ -1,6 +1,6 @@
 # Sentry Gun
 
-Copy this folder into `Mods/` beside WA 3.8.1 and use a matching WormForge DLL.
+Copy this folder into the engine's `Mods/` folder (WormForge 0.9.11, Lua API 4.0).
 Disable other donkey overlays: the first loaded pack wins.
 
 Select the donkey slot, then press Space to place the sentry. Stock mine input,
