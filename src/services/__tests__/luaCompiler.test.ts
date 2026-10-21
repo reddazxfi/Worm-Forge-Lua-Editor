@@ -145,16 +145,23 @@ describe('the example corpus', () => {
     m.files.map((f) => ({ mod: m.id, path: f.path, content: f.content }))
   );
 
-  it('contains the packs it claims to', () => {
-    expect(files.length).toBeGreaterThan(50);
-    // The two packs that teach something the rest cannot: `px.ports` is the only
-    // MODULE pack (its rules.lua is only require() calls) and the only one with
-    // scheme/ + components/ + lib/; `example.components` is the smallest COMPONENT
-    // bundle. Both are the only reference for pack-scoped require and for
-    // component packs.
+  it('contains the curated packs it claims to', () => {
+    // The bundled set is deliberately seven small, focused packs. This is the
+    // corpus contract: one example per idea, not the engine's whole example
+    // tree. Adding or removing an example is a deliberate edit here and in
+    // scripts/__gen_corpus.ts, not something that happens by regenerating.
+    expect(EXISTING_MODS).toHaveLength(7);
+    expect(files).toHaveLength(8);
     const ids = EXISTING_MODS.map((m) => m.id);
-    expect(ids).toContain('px.ports');
-    expect(ids).toContain('example.components');
+    expect(ids).toEqual([
+      'example.agility',
+      'example.sentry_gun',
+      'example.bee',
+      'example.highlander_pure_lua',
+      'example.swim_suit',
+      'example.pooz',
+      'example.kill_the_king',
+    ]);
   });
 
   it('every pack id is the one its own mod.toml declares', () => {
@@ -200,23 +207,11 @@ describe('the example corpus', () => {
 
   // EXPECTED INFO FINDINGS ON THE CORPUS.
   //
-  // These are real findings about real code -- the names genuinely are undefined --
-  // and they are pinned at `info` rather than `warning`, which is a stronger
-  // statement than a warning-pin ever was: it asserts the severity AND the
-  // position, so a regression that promoted them back to `warning` would fail here
-  // rather than pass quietly.
-  //
-  // Why `info` is the right severity: all three read as
-  // `HIGHLANDER_ROOT or "mods/px/"`. `HIGHLANDER_ROOT` is set only by the engine's
-  // own `cargo test` harnesses (crates/lua-host/src/lib.rs:3650, :3658, :3793 --
-  // all three inside `#[test]`) and nothing injects it at runtime, so warning that a
-  // pack "stops every mod loading" was false: the `or` is precisely what prevents
-  // that. The finding stays visible; it just stops shouting.
-  const KNOWN_INFO: Record<string, string[]> = {
-    'px.ports/rules.lua:15:14': ['undefined-global'],
-    'px.ports/test_pools.lua:4:14': ['undefined-global'],
-    'px.ports/test_portals.lua:3:14': ['undefined-global'],
-  };
+  // The curated examples have no pinned `undefined-global` infos: each pack is
+  // checked clean at info or better before it is added. The map is kept so the
+  // rule below still has something explicit to assert; if an example starts
+  // carrying an expected info, pin it here rather than loosening the test.
+  const KNOWN_INFO: Record<string, string[]> = {};
 
   it('every expected-info finding is still raised, at info', () => {
     const present = new Map<string, string[]>();
@@ -245,39 +240,19 @@ describe('the example corpus', () => {
   });
 
   // The whole point of generating the corpus: the checker must be SILENT on the
-  // engine's own packs. Anything it raises there is the checker's, not the pack's
-  // -- `python WormForge-main-source/tools/check_sim_math.py WormForge-main-source/mods`
-  // reports `passed`, which is the engine holding us to its own rule.
+  // bundled examples. Anything it raises there is the checker's, not the pack's.
   //
-  // The exceptions below are each justified by the engine's own source. They are
-  // pinned EXACTLY (`mod/path:line:column` -> the rule ids allowed there) so that:
-  //   - a NEW finding on a new pack still fails this test, and
-  //   - an entry that stops matching anything also fails it, which is the signal
-  //     to tighten the rule rather than leave the pin to rot.
-  // Never delete a rule to make this list shorter.
+  // The curated packs were selected because they check clean at API 4.0; sentry
+  // and bee were ported from `math.sin`/`math.cos`/`math.atan` to `wa.math.*`,
+  // and bee's spawned-actor initialisation was corrected. The map stays empty
+  // until an example genuinely needs an engine-specific pin.
   //
   // The value is a LIST because `undefined-global` legitimately arrives TWICE at one
   // position: parser.ts runs a flat pass and a scope-aware pass that share the rule
   // id on purpose, and `mergeDiagnostics` is what collapses them into the single
   // console row the user sees. This test reads raw `parseAndValidate` output, so it
   // sees both -- and that is the honest thing for it to assert about.
-  const KNOWN_UPSTREAM: Record<string, string[]> = {
-    // `wa.audit.begin` / `wa.audit.finish` exist ONLY under the `diagnostics`
-    // cargo feature (api.rs:32: `#[cfg(feature = "diagnostics")]`). `mods/tools`
-    // is the engine's diagnostics harness and needs that build. In the default
-    // build the calls really do fail, which is what `wa-namespace-typo` says --
-    // and api4.test.ts separately pins that wa.audit must keep being flagged.
-    'example.tools/audit/audit.lua:157:5': ['wa-namespace-typo'],
-    'example.tools/audit/audit.lua:253:5': ['wa-namespace-typo'],
-
-    // A `test_*.lua` host mock. The engine's own checker skips these outright
-    // (check_sim_math.py:88 -- "host-only mocks, not shipped callbacks"), and
-    // `test_collect_viewer.lua` drives a real object through CRT trig from a
-    // harness. We do NOT skip `test_*` in the product checker: a shipped user
-    // pack with a test helper still desyncs. This is pinned instead.
-    'core.utilities/test_collect_viewer.lua:59:18': ['lockstep-rng'],
-    'core.utilities/test_collect_viewer.lua:59:52': ['lockstep-rng'],
-  };
+  const KNOWN_UPSTREAM: Record<string, string[]> = {};
 
   it.each(files.map((f) => [f.mod, f.path, f.content] as const))(
     '%s / %s produces no error or warning',

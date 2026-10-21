@@ -1,5 +1,5 @@
 /**
- * Regenerates `src/data/existingMods.ts` from the engine's own example packs.
+ * Regenerates `src/data/existingMods.ts` from the curated `examples/` packs.
  *
  * WHY A GENERATOR AND NOT A HAND-MAINTAINED FILE
  * The corpus was 3209 lines of Lua pasted inline into TypeScript, and it had
@@ -8,8 +8,11 @@
  * pack-scoped `require` landed (`modules.rs`, wired into `lib.rs:90`). Pasted
  * source is stale the moment the engine moves, and nothing here notices.
  *
- * So the corpus is derived, and `npm run gen:corpus` re-derives it. The engine
- * checkout is the single source of truth; `existingMods.ts` is a cache of it.
+ * So the corpus is derived, and `npm run gen:corpus` re-derives it. The packs
+ * in `examples/` are the single source of truth; `existingMods.ts` is a cache
+ * of them. Keeping the curated packs in this repository means the bundled set
+ * does not silently grow every time the engine adds an example, and a fresh
+ * clone can regenerate it without a separate engine checkout.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -18,30 +21,28 @@ import { fileURLToPath } from 'url';
 // `__dirname` does not exist in an ES module, and package.json sets
 // "type": "module". import.meta.url is the ESM equivalent.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// The engine's packs live directly under `mods/` in WormForge 0.9.1. This pointed
-// at `mods/examples/` and `highlander_code/`, both of which are GONE -- the examples
-// were promoted to first-class mods and the user's working files moved into `mods/px`.
-// Nothing failed when they vanished: `readLuaFiles` returns [] for a missing
-// directory, so the generator quietly emitted a corpus of whatever else it could
-// still find, and the stale entries already written into existingMods.ts were never
-// re-derived. A generator that cannot fail is how a corpus rots.
-const MODS = path.join(ROOT, 'WormForge-main-source', 'mods');
+// The curated packs are committed in `examples/`. This used to point at the
+// engine checkout's `mods/`; when that tree moved, `readLuaFiles` returned []
+// for the missing directories and the generator quietly emitted whatever else it
+// could still find. A generator that cannot fail is how a corpus rots. Keeping
+// the selected packs here bounds the list and makes the source independent of
+// the engine's examples, which change far more often than the editor ships.
+const MODS = path.join(ROOT, 'examples');
 const OUT = path.join(ROOT, 'src', 'data', 'existingMods.ts');
 
 /**
- * Fails loudly when the engine checkout is missing or empty.
+ * Fails loudly when the examples folder is missing or empty.
  *
  * `readLuaFiles` returning `[]` for a path that does not exist is the correct
  * behaviour for a library function and exactly the wrong behaviour for the entry
  * point of a corpus generator: it turns "the engine moved" into "the corpus is
  * smaller", with nothing to notice.
  */
-function assertEngineCheckout(): void {
+function assertExamples(): void {
   if (!fs.existsSync(MODS)) {
     throw new Error(
-      `${MODS} does not exist. The corpus is derived from the engine checkout, so ` +
-        `there is nothing to derive. Check the vendored engine is present before ` +
-        `running npm run gen:corpus.`
+      `${MODS} does not exist. The bundled examples live in examples/, so there ` +
+        `is nothing to derive. Restore the folder before running npm run gen:corpus.`
     );
   }
   const packs = fs
@@ -154,48 +155,33 @@ export function modsFromPack(
     category: opts.category,
     description:
       opts.description ??
-      `Engine pack: ${dirName}. Embedded verbatim from WormForge-main-source/mods/${dirName}/.`,
+      `Bundled example: ${dirName}. Embedded verbatim from examples/${dirName}/.`,
     replacesSlot: slots[0],
     tags: opts.tags ?? ['example', opts.category],
     files,
   }];
 }
 // ---------------------------------------------------------------------------
-// The pack list -- every directory under WormForge-main-source/mods/.
+// The pack list -- the curated folders under examples/.
 //
-// Kept EXPLICIT rather than discovered, so that adding a pack upstream is a
-// decision someone makes here instead of something that happens silently. The
-// previous list named eleven directories that no longer exist (`mods/examples/*`,
-// `highlander_code/*`); `readLuaFiles` returned [] for each and the generator
-// carried on, which is how fourteen corpus tests came to be asserting against
-// sources from a tree that had been deleted.
-//
-//   px              the component bundle: scheme/, components/, lib/, weapons/.
-//                    Project X's weapons plus Highlander's rules. The only corpus
-//                    entry that exercises pack-scoped require, and the only
-//                    MODULE-style pack (its rules.lua is require calls).
-//   component_demo  a component bundle too, and the smallest one.
-//   tools           the diagnostics harness. It calls `wa.audit.*`, which exists
-//                    ONLY under the `diagnostics` cargo feature -- see the
-//                    KNOWN_UPSTREAM list in luaCompiler.test.ts.
-//   labs, utilities  feature/utility packs, several files each.
+// Kept EXPLICIT rather than discovered, so adding an example is a decision
+// someone makes here instead of something that happens silently. The set is
+// intentionally small: one pack per idea, because users who want breadth open
+// the engine's real mods folder. The old 25-example engine tree grew without
+// anyone deciding it should, and the PX packs in it change constantly.
 // ---------------------------------------------------------------------------
 const PACKS: { dir: string; category: string; name?: string; description?: string; tags?: string[] }[] = [
-  { dir: 'component_demo', category: 'utility', name: 'Component Demo', description: 'A component bundle (format_version 2): nothing runs until a profile selects its components. Scheme and feature components plus the weapons the scheme places. This is the shape bundles.rs drives.', tags: ['example', 'utility', 'components'] },
-  { dir: 'px', category: 'rules', name: 'Project X Ports (Highlander)', description: 'Project X\'s weapons ported as a component bundle, plus Highlander\'s rules. rules.lua is only require() calls; the logic lives in lib/, scheme/, components/ and weapons/. Pack-scoped require works upstream but is still in beta, so do not treat the layout as settled.', tags: ['example', 'rules', 'require', 'modules', 'components'] },
-  { dir: 'tools', category: 'utility', name: 'Engine Tools', description: 'The engine\'s own diagnostics harness: audit, perf, and a state logger. Uses `wa.audit.*`, which the engine only installs in a build with the `diagnostics` cargo feature.', tags: ['example', 'utility', 'diagnostics'] },
-  { dir: 'labs', category: 'weapons', name: 'Labs', description: 'One weapon per file, each isolating a single mechanic -- cut, panel icon, record, shuffle. Small and readable; a good set of starting points.' },
-  { dir: 'utilities', category: 'utility', name: 'Core Utilities', description: 'Feature components you can drop into a pack: agility, a collect viewer, live HP, turn-side examples.' },
-  { dir: 'wormcraft', category: 'weapons', name: 'WormCraft' },
-  { dir: 'turret', category: 'weapons', name: 'Turret' },
-  { dir: 'pooz', category: 'weapons', name: 'Pooz' },
-  { dir: 'KillTheKing', category: 'gameplay', name: 'Kill The King' },
-  { dir: 'gif_donkey', category: 'weapons', name: 'GIF Donkey' },
-  { dir: 'gravler_strike', category: 'weapons', name: 'Gravler Strike' },
+  { dir: 'agility', category: 'utility', name: 'Agility', description: 'Worm manipulation: nudge worm.vx / worm.vy from the synchronized keys while airborne. Small enough to read in one sitting.', tags: ['example', 'worm', 'movement'] },
+  { dir: 'sentry', category: 'weapons', name: 'Sentry Gun', description: 'An object example: a placed sentry with its own state, target selection, aiming, firing and collision.', tags: ['example', 'weapon', 'object'] },
+  { dir: 'bee', category: 'weapons', name: 'Spawn Bees', description: 'A flying object: the replaced Skunk spawns a bee that steers, roams, picks targets and animates in flight.', tags: ['example', 'weapon', 'actor'] },
+  { dir: 'highlander', category: 'rules', name: 'Highlander Rules', description: 'A pure-Lua scheme: deal one weapon from each pool, track each worm\'s inventory, and take a killed worm\'s kit.', tags: ['example', 'rules', 'scheme'] },
+  { dir: 'swimsuit', category: 'utility', name: 'Swim Suit', description: 'Worm manipulation: take a worm into water, swim under four-key control, dive, float and drown. Extracted from Project X.', tags: ['example', 'worm', 'water'] },
+  { dir: 'pooz', category: 'weapons', name: 'POOZ', description: 'A weapon-as-actor: selecting POOZ turns the worm into a controllable runner and drops it back out on a weapon switch.' },
+  { dir: 'kill_the_king', category: 'gameplay', name: 'Kill The King', description: 'A complete game mode as a component pack: destroy the defenders\' king before the round timer expires.' },
 ];
 
 export function buildCorpus(): CorpusMod[] {
-  assertEngineCheckout();
+  assertExamples();
   const mods: CorpusMod[] = [];
   for (const p of PACKS) mods.push(...modsFromPack(p.dir, p));
   return mods;
@@ -235,20 +221,18 @@ export const HEADER = `import { ModFolderInfo } from '../types/wormforge';
 // GENERATED FILE -- do not edit by hand.
 //
 // Regenerate with:  npm run gen:corpus
-// Source of truth:   WormForge-main-source/mods/
+// Source of truth:   examples/
 // Built by:          scripts/__gen_corpus.ts
 //
 // The previous hand-maintained version had already drifted: it told users that
 // require() was nil in the sandbox, which stopped being true once pack-scoped
 // require landed (crates/lua-host/src/modules.rs, wired into lib.rs:90). Every
-// file below is read straight out of the engine checkout instead, so it cannot
-// go stale without the change showing up in git.
+// file below is read straight out of the curated examples/ folder instead, so it
+// cannot go stale without the change showing up in git.
 //
-// It DID go stale anyway, twice, and the generator is what let it: it pointed at
-// WormForge-main-source/mods/examples/ and WormForge-main-source/highlander_code/,
-// both deleted when the examples were promoted to first-class packs under mods/.
-// \`readLuaFiles\` returns [] for a directory that is not there, so the generator
-// reported success while the corpus kept serving the old tree. \`buildCorpus\`
-// now throws instead.
+// The set is curated: one pack per idea, not the engine's full example tree.
+// Users who want breadth open the engine's real mods folder. \`buildCorpus\`
+// throws if examples/ is missing or empty instead of silently writing a smaller
+// corpus.
 export const EXISTING_MODS: ModFolderInfo[] = [
 `;

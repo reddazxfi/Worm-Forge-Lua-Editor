@@ -22,7 +22,7 @@ WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully cr
 - 📂 **Open / Save Mod Folders** — Open a pack folder (`mod.toml` + Lua), edit its files in tabs, and save straight back to disk with Ctrl+S. 🗂️
 - 🧠 **Scope-Aware Suggestions** — Autocomplete is ranked by *where you actually are*. A local declared two lines up always outranks the entire engine API, and a name from an unrelated function never shows up at all. 🎯
 - 🧹 **Structure-Aware Format** — Re-indents Lua by blocks and brackets, not by regex guesswork. Strings and comments can't fool it, and it tells you when a chunk doesn't balance instead of silently mangling it. ✨
-- 🧩 **Example Mods & Templates** — **29 real packs** bundled in, including Sentry Gun, Keeper Bee, Kill The King, Wormcraft, Live HP, and Highlander variants. 🔫
+- 🧩 **Example Mods & Templates** — **7 focused packs** bundled in: Agility, Sentry Gun, Spawn Bees, Highlander Rules, Swim Suit, POOZ, and Kill The King. One clear idea per pack, not a copy of the engine's whole example tree. 🔫
 - 🖥️ **Native Desktop App** — Powered by Tauri for a **lightweight**, **lightning-quick** Windows executable. No bloated Chromium bundle required! 🪶
 
 ---
@@ -136,9 +136,10 @@ src-tauri\target\release\wormforge-code-editor.exe
 ```
 ├── src/
 │   ├── components/   # 🎨 UI components
-│   ├── data/         # 📚 Engine definitions, templates, the 29 example mods
+│   ├── data/         # 📚 Engine definitions, templates, the generated example corpus
 │   ├── services/     # ⚙️ lexer, parser/checker, formatter, luaCompiler, mod folder, config
 │   └── types/        # 🧾 TypeScript types
+├── examples/         # 🧩 7 curated example packs (source for src/data/existingMods.ts)
 ├── src-tauri/
 │   ├── src/          # 🦀 Rust: full_moon semantic checker + the compile_lua command
 │   └── capabilities/ # 🔐 Plugin permissions (fs, dialog)

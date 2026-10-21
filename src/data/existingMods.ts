@@ -3,2005 +3,242 @@ import { ModFolderInfo } from '../types/wormforge';
 // GENERATED FILE -- do not edit by hand.
 //
 // Regenerate with:  npm run gen:corpus
-// Source of truth:   WormForge-main-source/mods/
+// Source of truth:   examples/
 // Built by:          scripts/__gen_corpus.ts
 //
 // The previous hand-maintained version had already drifted: it told users that
 // require() was nil in the sandbox, which stopped being true once pack-scoped
 // require landed (crates/lua-host/src/modules.rs, wired into lib.rs:90). Every
-// file below is read straight out of the engine checkout instead, so it cannot
-// go stale without the change showing up in git.
+// file below is read straight out of the curated examples/ folder instead, so it
+// cannot go stale without the change showing up in git.
 //
-// It DID go stale anyway, twice, and the generator is what let it: it pointed at
-// WormForge-main-source/mods/examples/ and WormForge-main-source/highlander_code/,
-// both deleted when the examples were promoted to first-class packs under mods/.
-// `readLuaFiles` returns [] for a directory that is not there, so the generator
-// reported success while the corpus kept serving the old tree. `buildCorpus`
-// now throws instead.
+// The set is curated: one pack per idea, not the engine's full example tree.
+// Users who want breadth open the engine's real mods folder. `buildCorpus`
+// throws if examples/ is missing or empty instead of silently writing a smaller
+// corpus.
 export const EXISTING_MODS: ModFolderInfo[] = [
   {
-    id: 'example.components',
-    name: 'Component Demo',
-    version: '0.1.0',
-    author: 'wkLua',
+    id: 'example.agility',
+    name: 'Agility',
+    version: '1.1',
+    author: 'Zed / 0rang3 (port by red)',
     category: 'utility',
-    description: 'A component bundle (format_version 2): nothing runs until a profile selects its components. Scheme and feature components plus the weapons the scheme places. This is the shape bundles.rs drives.',
-    tags: ['example', 'utility', 'components'],
+    description: 'Worm manipulation: nudge worm.vx / worm.vy from the synchronized keys while airborne. Small enough to read in one sitting.',
+    tags: ['example', 'worm', 'movement'],
     files: [
       {
-        path: 'features/turn_note.lua',
-        name: 'features/turn_note.lua',
+        path: 'init.lua',
+        name: 'init.lua',
         language: 'lua',
-        content: `-- A feature component: its install function, given its options.
-return function(ctx)
-  if not ctx.option("show") then
-    return
+        content: `-- Agility (air control), ported from Zed's RPG Wars mod, edited by 0rang3.
+--
+-- 1:1 port now that vx/vy are directly writable during jump and other
+-- airborne states. No workaround needed -- this just nudges worm.vx/vy
+-- per frame, the same as the original SpX/SpY increments.
+--
+-- Notes:
+--   * PX's \`GetCurrentWorm() == this\` is \`worm.turn\`.
+--   * PX's ModulatedGravity == 1 is worm.gravity == 1 (a plain factor).
+--   * State check uses worm.state_id against the hex values from the state
+--     logger, not the string names, since that's the precise source here.
+--   * Keys follow the synchronized turn-player input in networked matches.
+
+local STEP      = 0.1   -- per-tick nudge, matches C's 0.1
+local STEP_LOWG = 0.03   -- up-nudge when gravity < 1.0
+local LIMIT     = 3                  -- matches C's SpX/SpY <= 3 cap
+
+-- Allowed states, by worm.state_id, mirroring the C allowlist:
+-- WS_JUMP, WS_SLIDING, WS_FLYING2, WS_POWERFLY, WS_DRILLING, WS_FLYING.
+-- Only JUMP and DRILLING are a confident 1:1 match to the logger's names;
+-- the rest are my best guess at which hex id corresponds to which C state.
+-- Confirm with the state logger and correct any that are wrong.
+local ALLOWED = {
+  [0x6E] = true,  -- WS_DRILLING
+  [0x73] = true,  -- WS_AFTERROPE
+  [0x79] = true,  -- WS_JUMP
+  --[0x7A] = true,  -- Landing Jump
+  [0x7E] = true,  -- WS_JUMP
+  [0x7F] = true,  -- WS_SLIDING
+  [0x80] = true,  -- WS_FLYING
+  [0x81] = true,  -- WS_POWERFLY
+}
+
+-- Runs once per worm per frame: the msgs filter makes the engine skip Lua
+-- for every other message a worm gets (thousands a frame in a busy match).
+wa.on.worm_message(function(worm)
+  if not worm.turn then return end
+
+  local state = worm.state_id
+  if not state or not ALLOWED[state] then return end
+
+  local k = worm.keys
+
+  if k.up then
+    local step = (worm.gravity or 1) == 1 and STEP or STEP_LOWG
+    if worm.vy >= -LIMIT then worm.vy = worm.vy - step end
   end
-  wa.on.hud(function()
-    wa.hud.line("component demo: Big Bazooka on F1", 14, 40)
-  end)
-end
-`
-      },
-      {
-        path: 'weapons/big_bazooka.lua',
-        name: 'weapons/big_bazooka.lua',
-        language: 'lua',
-        content: `-- A weapon component: its data, and what it does once placed. \`wa\` is only
--- available inside install; this file itself just returns the table.
-return {
-  defaults = {
-    ammo = { round_start = -1 },
-    delay = 0,
-  },
-  install = function(ctx)
-    -- ctx.data is these defaults with the profile's settings laid over them.
-    wa.log(("Big Bazooka at %s %d: round_start %d, delay %d"):format(
-      ctx.position.row, ctx.position.column, ctx.data.ammo.round_start, ctx.data.delay))
-    -- WA's Bazooka, with a bigger explosion: power is damage and radius together.
-    wa.weapons.replace({ copy_from = "stock.bazooka", name = "Big Bazooka", missile = { explosion = { power = 80 } } })
-  end,
-}
-`
-      },
-      {
-        path: 'weapons/big_mortar.lua',
-        name: 'weapons/big_mortar.lua',
-        language: 'lua',
-        content: `-- A second weapon, outside the scheme's preset: the Profile tab adds it, and
--- it can swap places with Big Bazooka. It fires as a mortar wherever it sits.
-return {
-  defaults = {
-    ammo = { round_start = 3 },
-  },
-  install = function(ctx)
-    wa.log(("Big Mortar at %s %d"):format(ctx.position.row, ctx.position.column))
-    -- No slot: it claims the one it was placed on, built on WA's own Mortar.
-    wa.weapons.replace({ copy_from = "stock.mortar", name = "Big Mortar", missile = { explosion = { power = 70 } } })
-  end,
-}
+  if k.down and worm.vy <= LIMIT then
+    worm.vy = worm.vy + STEP
+  end
+  if k.left and worm.vx >= -LIMIT then
+    worm.vx = worm.vx - STEP
+  end
+  if k.right and worm.vx <= LIMIT then
+    worm.vx = worm.vx + STEP
+  end
+end, { msgs = { wa.msg.FRAME_FINISH } })
 `
       }
     ],
   },
   {
-    id: 'px.ports',
-    name: 'Project X Ports (Highlander)',
-    version: '0.11.0',
-    author: 'Project X authors',
-    category: 'rules',
-    description: 'Project X\'s weapons ported as a component bundle, plus Highlander\'s rules. rules.lua is only require() calls; the logic lives in lib/, scheme/, components/ and weapons/. Pack-scoped require works upstream but is still in beta, so do not treat the layout as settled.',
-    tags: ['example', 'rules', 'require', 'modules', 'components'],
+    id: 'example.sentry_gun',
+    name: 'Sentry Gun',
+    version: '0.1.0',
+    author: 'wkLua',
+    category: 'weapons',
+    replacesSlot: 'donkey',
+    description: 'An object example: a placed sentry with its own state, target selection, aiming, firing and collision.',
+    tags: ['example', 'weapon', 'object'],
     files: [
       {
-        path: 'components/highlander.lua',
-        name: 'components/highlander.lua',
+        path: 'weapons.lua',
+        name: 'weapons.lua',
         language: 'lua',
-        content: `-- Highlander's rules, the hl.rules add-on: each worm is dealt one weapon
--- from each pool, may use each once a turn, and takes everything a worm it
--- kills carried (scheme/pools, scheme/state, scheme/rules), wherever the
--- profile put the weapons. It installs before the weapons (before_weapons),
--- so its hooks run first.
---
--- The pools are the placed weapons' settings for this add-on ("Highlander
--- pool", "Dealt on cavern maps"): a PX weapon suggests its PX pool in
--- mod.toml, and a profile may set any weapon's, a stock one's too.
---
--- What PX gives outside the deal -- the Hot Air Balloons refilled to 3 and
--- the Wind Changer to 1 each turn, one Weapon Crate a round -- is weapon data
--- in the Highlander profile, which the loader shows and a player may change.
-local shared = require("lib/shared")
+        content: `-- Sentry gun in the donkey slot, with stock mine placement on Space.
+-- Baked sheets keep the base, firing barrel and housing in one draw, with
+-- 120 angles per pose. a:frame() selects idle/firing without changing feet.
+-- Angles: 0 down, 90 right, 180 up, 270 left.
 
--- ctx.placed is in slot order, the same on every peer: the pools keep it.
-local function pools_from(placed)
-  local out = {
-    offensive = {}, second = {}, movement = {},
-    cave_offensive = {}, cave_second = {}, cave_movement = {},
-  }
-  for _, w in ipairs(placed) do
-    local pool = w.options.pool
-    if out[pool] then
-      table.insert(out[pool], w.id)
-      if w.options.cavern then
-        table.insert(out["cave_" .. pool], w.id)
-      end
-    end
-  end
-  return out
+local PX = 0x10000
+
+local SENSOR_PX     = 360   -- detection radius
+local AMMO          = 20    -- rounds per turn
+local DAMAGE        = 2     -- per round
+local SHOT_FRAMES   = 6     -- frames between rounds
+local ACTIVATE      = 60    -- frames after acquiring before the first shot
+local BEEP_FRAMES   = 60    -- minimum gap between alert beeps
+local ROT_IDLE      = 0.5   -- degrees per frame while sweeping
+local ROT_ACTIVE    = 1.5   -- PX tracking speed, degrees per frame
+local SWEEP         = 10    -- PX idle sweep amplitude, degrees
+local AIM_TOLERANCE = 1.5   -- PX fires only after rotation reaches the target
+local HIT_PX        = 10    -- how near a ray passes a worm to count as a hit
+local SELF_BLAST_PX = 24    -- never detonate a round closer than this
+local REQUIRE_MOTION = true -- PX only acquires walking/jumping/moving worms
+
+-- Rounds leave the muzzle, not the tripod. The anchor sits at the feet (the
+-- sprite's bottom opaque row), so a near-horizontal ray traced from there hits
+-- the ground the turret is standing on and every shot is cancelled as a
+-- self-blast. These match the bake's pivot and bore offsets.
+local SINK_PX     = 8      -- pixels the planted turret settles into the ground
+local MUZZLE_UP   = 25     -- pixels from the anchor up to the turret pivot
+local MUZZLE_OUT  = 11     -- pixels from the pivot along the bore
+
+-- Barrel deviation, in tenths of a degree so the draw stays integer.
+-- PX rolled this at random and kept every 5th round pin-point. This pack used
+-- to walk a fixed eight-entry table instead, because math.random is nil in the
+-- sandbox and there was nothing to replace it. wa.random() draws from WA's own
+-- shared RNG -- both peers advance it in step and a replay reproduces it -- so
+-- the original intent is available again, and a 20-round magazine no longer
+-- cycles the same eight values two and a half times.
+local SPREAD_TENTHS = 20 -- +-2.0 degrees
+
+-- PX ejects its shell casing (sprite 115, WA's stock "uzicase") on every shot:
+-- perpendicular to the barrel, kicked out to whichever side the turret is
+-- currently facing, with a small random angle and speed, gravity, no bounce,
+-- gone after 100 frames. tools/bake_sentry.py has no equivalent art, so
+-- sprites/casing is the native uzicase.spr frames (WA's own Gfx0), extracted
+-- and black-keyed exactly like the turret's own key_black() convention,
+-- driven the same way every other multi-frame sheet in this pack is.
+local CASING        = "sprites/casing"
+local CASING_FRAMES = 16
+local CASING_LIFE   = 100    -- PX SetLifeTime(100)
+-- PX's RandomFloat(-0.3, 0.3) rad (~+-17 deg) and RandomFloat(2.0, 3.0)
+-- speed, drawn now rather than approximated by a fixed table. Integer ranges:
+-- degrees directly, speed in hundredths.
+local CASING_JITTER_DEG = 17
+local CASING_SPEED_MIN  = 200
+local CASING_SPEED_MAX  = 300
+
+local state = {}
+-- Alliance currently taking its turn; that side's turrets hold fire.
+-- Alliance, not team: it is WA's colour index (0 red .. 5 cyan), so it is
+-- also what colours the turret, and allied teams share it -- a turret must
+-- not fire on its owner's allies either.
+local active_alliance = nil
+
+local function pad2(i)
+  return string.format("%02d", i)
 end
 
-return {
-  install = function(ctx)
-    require("components/loader").place(ctx)
-    local pools = pools_from(ctx.placed)
-    if #pools.offensive + #pools.second + #pools.movement == 0 then
-      wa.log("highlander: no placed weapon is in a pool, so nothing is dealt")
-      return
-    end
-    shared.pools = pools
-    require("scheme/pools")
-    require("scheme/state")
-    require("scheme/rules")
-  end,
-}
-`
-      },
-      {
-        path: 'components/loader.lua',
-        name: 'components/loader.lua',
-        language: 'lua',
-        content: `-- Highlander as components: which modules a match's placed weapons need, and
--- loading them once, in rules.lua's order (the order the pack's hooks were
--- tested in).
-local shared = require("lib/shared")
+-- Two sheets, drawn by the GPU renderer.
+--
+-- The palette bake needed 6 teams x 3 poses x 120 angles = 72 of the 223 WA
+-- sprite slots every pack shares, purely because WA's blitter can neither
+-- rotate nor tint. Both happen at draw time now, so the turret is:
+--
+--   turret_base   the tripod, upright, never rotates
+--   turret_gun    housing + barrel, greyscale, 3 poses
+--
+-- Greyscale is deliberate: the team colour is a vertex tint, and keeping the
+-- source art's own shading is what makes it read as tinted metal rather than
+-- a flat colour.
+local BASE  = "sprites/turret_base"
+local GUN   = "sprites/turret_gun"
+-- The muzzle flash is its own additive quad, never part of the gun sheet:
+-- tint is per-quad, so the team colour would multiply the flame too and a
+-- blue turret's muzzle would come out dark olive. PX drew it separately with
+-- a white colour and q.blend = 1 for the same reason.
+local FLARE = "sprites/turret_flare"
 
--- rules.lua's order, less the scheme's own modules (components/highlander.lua
--- loads those).
-local ORDER = {
-  "lib/holds", "weapons/catalog", "weapons/wep_data", "weapons/claims",
-  "weapons/super_drill", "weapons/fire_jump", "lib/anim", "weapons/sniper_rifle",
-  "lib/missile_sprites", "weapons/double_bazooka", "weapons/chilli_bomb",
-  "weapons/nuke_rocket", "weapons/helicopter", "weapons/hot_air_balloon",
-  "weapons/hang_glider", "weapons/swim_suit", "weapons/wind_gravity",
-  "weapons/jump", "weapons/laser_gun", "weapons/super_tele", "weapons/electrical",
-  "weapons/javelin", "weapons/ice_arrow", "weapons/valyrian_fire",
-  "weapons/reinforcement", "weapons/bowling_ball", "weapons/ferret",
-  "weapons/electromagnet", "weapons/crate_strike", "weapons/sentry_gun",
-  "weapons/sentry_laser", "weapons/kamikaze_rocket", "weapons/weapon_crate",
-  "weapons/portal_gun",
-}
+-- Occlusion band for the parts that sit above the landscape. Terrain's own
+-- queue depth is 0x180000; anything below that ignores terrain and is
+-- occluded only by the HUD.
+local IN_FRONT_OF_TERRAIN = 0x10000
 
--- What every placed weapon needs: its claim, art and the helpers most
--- sections read when they load.
-local BASE = {
-  "lib/holds", "weapons/catalog", "weapons/wep_data", "weapons/claims",
-  "lib/anim", "lib/missile_sprites",
-}
-
--- Home slot -> the module with the weapon's own code. A weapon missing here
--- is its claim alone (a PX record on a stock weapon).
-local MODULE = {
-  pneumatic_drill = "weapons/super_drill",
-  fire_punch = "weapons/fire_jump",
-  handgun = "weapons/sniper_rifle",
-  bazooka = "weapons/double_bazooka",
-  super_banana = "weapons/chilli_bomb",
-  mine = "weapons/nuke_rocket",
-  jet_pack = "weapons/helicopter",
-  bungee = "weapons/hot_air_balloon",
-  parachute = "weapons/hang_glider",
-  laser_sight = "weapons/swim_suit",
-  low_gravity = "weapons/wind_gravity",
-  surrender = "weapons/wind_gravity",
-  ninja_rope = "weapons/jump",
-  uzi = "weapons/laser_gun",
-  teleport = "weapons/super_tele",
-  earthquake = "weapons/electrical",
-  napalm_strike = "weapons/electrical",
-  prod = "weapons/javelin",
-  armageddon = "weapons/ice_arrow",
-  petrol_bomb = "weapons/valyrian_fire",
-  nuclear_test = "weapons/reinforcement",
-  sheep_strike = "weapons/bowling_ball",
-  salvation_army = "weapons/ferret",
-  baseball_bat = "weapons/electromagnet",
-  donkey = "weapons/crate_strike",
-  kamikaze = "weapons/sentry_gun",
-  dragon_ball = "weapons/sentry_laser",
-  suicide_bomber = "weapons/kamikaze_rocket",
-  freeze = "weapons/weapon_crate",
-  scales_of_justice = "weapons/portal_gun",
+-- Tints for a greyscale housing, from PX's own render rather than its script.
+-- Sampling its red housing gives G/R about 0.39 and B/R about 0.28; the
+-- script's flat 0.15/0.65 reads far more saturated than PX actually looks.
+-- PX multiplied through a doubling colour mod, which a vertex tint cannot
+-- reproduce (it only ever scales down), so the dominant channel is pinned at
+-- 255 and the minors carry those ratios.
+local function tint(r, g, b)
+  return r * 0x10000 + g * 0x100 + b
+end
+local TEAM_TINT = {
+  tint(255, 100,  71),   -- 1 red
+  tint( 71, 100, 255),   -- 2 blue
+  tint( 71, 255, 100),   -- 3 green
+  tint(230, 230,  71),   -- 4 yellow
+  tint(230,  71, 230),   -- 5 magenta
+  tint( 71, 230, 230),   -- 6 cyan
 }
 
--- Module -> modules whose helpers it reads as it loads. Their hooks act only
--- on what their own weapon made, or on Highlander's own weapons (by id, and
--- shared.owns).
--- What one weapon only calls into another (bowling balls, portals) is looked
--- up when it is called, so it needs nothing here.
-local NEEDS = {
-  ["weapons/fire_jump"] = { "weapons/super_drill" },
-  ["weapons/hot_air_balloon"] = { "weapons/helicopter" },
-  ["weapons/hang_glider"] = { "weapons/helicopter", "weapons/sniper_rifle" },
-  ["weapons/swim_suit"] = { "weapons/helicopter", "weapons/sniper_rifle" },
-  ["weapons/wind_gravity"] = { "weapons/helicopter" },
-  ["weapons/javelin"] = { "weapons/helicopter" },
-  ["weapons/electrical"] = { "weapons/sniper_rifle" },
-}
-
-local HOME = require("lib/homes")
-
-local loader = {}
-local loaded, placed_homes = false, nil
-
--- Which Highlander weapons this match places, by home slot, sorted: the
--- modules to load. The scheme installs first and calls this too.
-function loader.place(ctx)
-  if placed_homes then
-    return placed_homes
-  end
-  local homes = {}
-  for id in pairs(ctx.weapons) do
-    if HOME[id] then
-      homes[#homes + 1] = HOME[id]
-    end
-  end
-  -- pairs() order differs between machines; the set it builds does not.
-  table.sort(homes)
-  placed_homes = homes
-  return homes
-end
-
--- The modules every placed weapon needs, once, in rules.lua's order.
-function loader.load(homes)
-  if loaded then
-    return
-  end
-  loaded = true
-  local want = {}
-  local function need(module)
-    if want[module] then
-      return
-    end
-    want[module] = true
-    for _, m in ipairs(NEEDS[module] or {}) do
-      need(m)
-    end
-  end
-  for _, m in ipairs(BASE) do
-    need(m)
-  end
-  for _, home in ipairs(homes) do
-    if MODULE[home] then
-      need(MODULE[home])
-    end
-  end
-  for _, m in ipairs(ORDER) do
-    if want[m] then
-      require(m)
-    end
-  end
-end
-
--- A weapon component's install: where everything sits and the modules for
--- the whole loadout, once; then this weapon's claim of its slot.
-function loader.install(ctx)
-  loader.load(loader.place(ctx))
-  local home = HOME[ctx.id]
-  if not (home and shared.claim(home)) then
-    error(ctx.id .. ": not a Highlander weapon")
-  end
-end
-
-return loader
-`
-      },
-      {
-        path: 'components/weapon.lua',
-        name: 'components/weapon.lua',
-        language: 'lua',
-        content: `-- A Highlander weapon as a component: every one of the bundle's weapon
--- components runs this file, and ctx.id says which weapon it is. Its
--- defaults are its own (weapons/defaults.lua); its ammo, delay and crate
--- odds are the profile's, and under Highlander's rules they deal the ammo.
-return {
-  defaults = function(id) return require("weapons/defaults")[id] end,
-  install = function(ctx)
-    require("components/loader").install(ctx)
-  end,
-}
-`
-      },
-      {
-        path: 'lib/anim.lua',
-        name: 'lib/anim.lua',
-        language: 'lua',
-        content: `-- Highlander: sprite animation helpers. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-
--- PX's missile sprite animations share these two helpers. Holds are drawn
--- by the engine from each replace claim's hold table above.
-local HOLD_DEPTH = wa.depth.FRONT
-local function next_phase(phase, anim_speed)
-  if phase > 0.99 then return 0 end
-  return phase + anim_speed * 30 / 1000
-end
-local function frame_of(phase, frames)
-  return math.min(math.floor(phase * frames), frames - 1)
-end
-
-shared.HOLD_DEPTH = HOLD_DEPTH
-shared.frame_of = frame_of
-shared.next_phase = next_phase
-`
-      },
-      {
-        path: 'lib/holds.lua',
-        name: 'lib/holds.lua',
-        language: 'lua',
-        content: `-- Highlander: the weapon holds the engine draws. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-
--- ---------------------------------------------------------------- weapons
-
--- PX's sprite builder, for the weapons below whose hold PX draws at run
--- time: the worm posture with no weapon in it, and its hands. The engine
--- draws the weapon and optional hand from the hold claim below.
-local PX_POSTURE = {
-  weaponlnk = "sprites/px_hold/aim", weaponlnku = "sprites/px_hold/aimu",
-  weaponlnkd = "sprites/px_hold/aimd",
-  wthrow = "sprites/px_hold/draw", wthrowu = "sprites/px_hold/drawu",
-  wthrowd = "sprites/px_hold/drawd",
-}
-local PX_HANDS = {
-  "sprites/px_hold/hand_rad_lower", "sprites/px_hold/hand_rad", "sprites/px_hold/hand_rad_upper",
-}
-
--- Hold schema (one entry per weapon home slot). The engine reads \`spec.hold\`
--- and draws the weapon/hand itself; no simulation actors are created.
---
---   sheet           weapon sprite path (single PNG or frameNNN.png sheet)
---   draw_hand       whether to draw the hand (default true)
---   hand            hand sprite path; derived from hand_type via PX_HANDS if
---                   omitted
---   hand_type       1=lower, 2=mid, 3=upper (default 2)
---   hand_radius     hand distance from worm centre (default 17.0)
---   hand_rotation   hand angular offset multiplier (default 1.0)
---   hand_radial_rotation
---                   hand radial offset multiplier (default 1.0)
---   hand_scale      hand scale (default 0.8)
---   hand_size       hand quad half-size in pixels (default 16)
---   weap_rotation   weapon angular offset multiplier (default 1.0)
---   weap_radius     weapon distance from worm centre (default 9.0)
---   weap_radial_rotation
---                   weapon radial offset multiplier (default 1.0)
---   size            weapon quad half-size in pixels (default 30)
---   zplane          draw depth (default 10.0)
---   animate         cyclical frame animation (default false)
---   anim_speed      cyclical animation speed (default 1.0)
---   frames          number of frames in the cyclical cycle (default 12)
---   keep_while_firing
---                   keep drawing the hold through the shot (default true).
---                   Firing states (0x67-0x6C: ready→charging→prefiring→firing
---                   →firing_2→firing_3) still draw unless this is false.
---   sprite_firing   separate weapon sprite used during firing states
---                   (PX's spriteFiring, worms_anims_script.txt:121). Omitted
---                   means the aim sheet is used for firing too.
---   frame_firing    fixed frame index during firing (PX's firingIndex,
---                   :171). Omitted means the cyclical aim frame is used.
---   static          {weap = angle, hand = angle} fixed pose when idle and not
---                   aiming (dont_rotate_with_angle, ang_if_static)
---   flash           {sheet, out, side, scale, frames} muzzle flash on shot
---   thrown          the round leaves the worm's hands on fire (the hold is not
---                   kept while firing even if keep_while_firing is true)
-local PX_HOLDS = {
-  prod = {
-    keep_while_firing = true,
-    sheet = "sprites/javelin/hold", draw_hand = false,
-    hand_radius = 0, hand_rotation = 0, hand_radial_rotation = 0,
-    weap_radial_rotation = 0, weap_rotation = 1, weap_radius = -11.8,
-    animate = true, anim_speed = 1.25, frames = 12,
-    -- Firing animation: PX switches to a separate sprite/frame during the shot.
-    -- sprite_firing = "sprites/javelin/hold_fire", -- TODO: fill in PX's firing sprite
-    -- frame_firing = 0,                          -- TODO: fill in PX's firing frame
-  },
-  earthquake = { -- Electric Grenade (electric_grenade_anim)
-    thrown = true,
-    sheet = "sprites/px_hold/electric_grenade.png", hand_type = 1,
-    hand_radius = 15, hand_scale = 0.8,
-    weap_rotation = 0.5, weap_radius = 9,
-  },
-  grenade = { -- Sticky Bomb (sb_script)
-    -- Thrown: once fired it has left the worm's hands, and WA puts nothing
-    -- away (as for its own grenades), so neither does the rule.
-    thrown = true,
-    sheet = "sprites/px_hold/sticky_bomb", hand_type = 1, hand_radius = 24,
-    hand_rotation = 1.0, hand_radial_rotation = 1.05, hand_scale = 0.8,
-    weap_rotation = 0.5, weap_radial_rotation = 0.9, weap_radius = 10,
-  },
-  petrol_bomb = { -- Valyrian Fire (valyrianfire_s)
-    thrown = true,
-    sheet = "sprites/px_hold/valyrian_fire.png", hand_type = 1, hand_radius = -6.0,
-    hand_rotation = 0.0, hand_radial_rotation = 0.0, hand_scale = 1.0,
-    weap_rotation = 0.35, weap_radial_rotation = 0.0, weap_radius = -8.0,
-  },
-  super_banana = { -- Chilli Bomb (chilli_bomb_anim)
-    thrown = true,
-    sheet = "sprites/px_hold/chilli_bomb", hand_type = 1, hand_radius = 13,
-    hand_scale = 0.8, weap_rotation = 0.5, weap_radius = 9,
-  },
-  homing_missile = { -- Igniter (igniter_anim)
-    -- Up through the shot too: it has no firing poses of its own, so WA
-    -- fires it in the aim posture, empty-handed without the hold. Not PX's.
-    keep_while_firing = true,
-    sheet = "sprites/px_hold/igniter", hand_type = 2, hand_radius = -6.0,
-    hand_rotation = 1.0, hand_radial_rotation = 0.9, hand_scale = 0.8,
-    weap_rotation = 1.0, weap_radial_rotation = 0.0, weap_radius = 0.0,
-  },
-  salvation_army = { -- Ferret (ferret_s's WormSprite): held still, not at the
-    -- aim's angle (dont_rotate_with_angle), and thrown.
-    thrown = true,
-    sheet = "sprites/ferret/hold.png", hand_type = 2, hand_radius = -8.0,
-    hand_rotation = 0.0, hand_radial_rotation = -0.13, hand_scale = 1.0,
-    weap_rotation = 0.5, weap_radial_rotation = 0.22, weap_radius = -9.0,
-    static = { weap = 0.0, hand = 0.45 }, -- ang_if_static, hand_ang_if_static
-  },
-  mine = { -- Nuke Rocket (nuke_rocket_anim): held at a fixed angle, not
-    -- the aim's (dont_rotate_with_angle), and placed, so never put away.
-    thrown = true,
-    sheet = "sprites/px_hold/nuke_rocket", hand_type = 2, hand_radius = 13.0,
-    hand_rotation = -0.6, hand_radial_rotation = -0.95, hand_scale = 1.0,
-    weap_rotation = 0.45, weap_radial_rotation = 1.0, weap_radius = 8.5,
-    static = { weap = -0.1, hand = 0.4 }, -- ang_if_static, hand_ang_if_static
-  },
-  handgun = { -- Sniper Rifle (sniper_rifle_script): its hand at scale 0
-    -- Up through each shot, with its laser, over the snipefire poses (the
-    -- worm lit by the muzzle), so it does not flicker between the three.
-    -- Not PX's: PX hides it until the worm aims again.
-    keep_while_firing = true,
-    -- A muzzle flash on each shot. Not PX's: its rifle and snipefire poses
-    -- have none. The sentry gun's flare, smaller, at the barrel's tip (30
-    -- pixels out, on the barrel 2 to the side, as the laser leaves it).
-    flash = { sheet = "sprites/sniper_rifle/flash", out = 30, side = 2, scale = 0.45, frames = 3 },
-    sheet = "sprites/px_hold/sniper_rifle", draw_hand = false, hand_radius = -6.0,
-    hand_rotation = 1.0, hand_radial_rotation = 0.9,
-    weap_rotation = 1.0, weap_radial_rotation = 0.0, weap_radius = 0.1,
-  },
-  longbow = { -- Shadow-Bolt (shadow_bolt_script): no hand, the bolt animated
-    -- The crossbow stays up through the shot: it has no firing poses of
-    -- its own, so WA fires it in the aim posture. Not PX's.
-    keep_while_firing = true,
-    sheet = "sprites/px_hold/shadow_bolt", draw_hand = false, hand_radius = 0.0,
-    hand_rotation = 0.0, hand_radial_rotation = 0.0,
-    weap_rotation = 1.0, weap_radial_rotation = 0.0, weap_radius = 3.5,
-    animate = true, anim_speed = 1.30, frames = 6,
-  },
-}
-
--- Each replace claim carries its own hold data. The engine draws it and
--- handles walking/aim/firing; no simulation actors are created for it.
-for _, p in pairs(PX_HOLDS) do
-  if p.draw_hand ~= false then p.hand = PX_HANDS[p.hand_type or 2] end
-end
-
-shared.PX_HOLDS = PX_HOLDS
-shared.PX_POSTURE = PX_POSTURE
-`
-      },
-      {
-        path: 'lib/homes.lua',
-        name: 'lib/homes.lua',
-        language: 'lua',
-        content: `-- Highlander: each of its weapons' home slot, by component id. The code
--- names a weapon by its id when it asks the engine about it; its own tables
--- (the catalog, the claims, the art) are keyed by this home slot, the stock
--- slot PX's layout gave it ("bazooka" is the Double Bazooka). Where the
--- weapon sits this match is the profile's business, not the code's.
-local HOME = {
-  ["px.double_bazooka"] = "bazooka",
-  ["px.igniter"] = "homing_missile",
-  ["px.s_m_a_r_t_bomb"] = "mortar",
-  ["px.blaster_worm"] = "homing_pigeon",
-  ["px.burning_sheep_launcher"] = "sheep_launcher",
-  ["px.sticky_bomb"] = "grenade",
-  ["px.windy_cluster"] = "cluster_bomb",
-  ["px.super_gravedigger"] = "banana_bomb",
-  ["px.thumper_nade"] = "battle_axe",
-  ["px.electric_grenade"] = "earthquake",
-  ["px.real_shotgun"] = "shotgun",
-  ["px.sniper_rifle"] = "handgun",
-  ["px.laser_gun"] = "uzi",
-  ["px.burst_rifle"] = "minigun",
-  ["px.shadow_bolt"] = "longbow",
-  ["px.fire_jump"] = "fire_punch",
-  ["px.sentry_laser"] = "dragon_ball",
-  ["px.sentry_gun"] = "kamikaze",
-  ["px.kamikaze_rocket"] = "suicide_bomber",
-  ["px.javelin"] = "prod",
-  ["px.nuke_rocket"] = "mine",
-  ["px.pogo_sheep"] = "sheep",
-  ["px.ghost_sheep"] = "aqua_sheep",
-  ["px.gravler"] = "mole_bomb",
-  ["px.mortar_strike"] = "air_strike",
-  ["px.lightning_strike"] = "napalm_strike",
-  ["px.pigeon_strike"] = "mail_strike",
-  ["px.gravler_strike"] = "mole_squadron",
-  ["px.blowtorch"] = "blow_torch",
-  ["px.super_drill"] = "pneumatic_drill",
-  ["px.electromagnet"] = "baseball_bat",
-  ["px.3_girder_pack"] = "girder_pack",
-  ["px.jump"] = "ninja_rope",
-  ["px.hot_air_balloon"] = "bungee",
-  ["px.hang_glider"] = "parachute",
-  ["px.super_tele"] = "teleport",
-  ["px.portal_gun"] = "scales_of_justice",
-  ["px.chilli_bomb"] = "super_banana",
-  ["px.hellish_hand_grenade"] = "holy_grenade",
-  ["px.ferret"] = "salvation_army",
-  ["px.banana_express"] = "mb_bomb",
-  ["px.valyrian_fire"] = "petrol_bomb",
-  ["px.remote_roller"] = "skunk",
-  ["px.priceless_ming_vase"] = "ming_vase",
-  ["px.bowling_ball_strike"] = "sheep_strike",
-  ["px.thumper_nade_strike"] = "carpet_bomb",
-  ["px.cow_launcher"] = "mad_cow",
-  ["px.old_woman_launcher"] = "old_woman",
-  ["px.crate_strike"] = "donkey",
-  ["px.reinforcement"] = "nuclear_test",
-  ["px.ice_arrow"] = "armageddon",
-  ["px.skip_go_surrender"] = "skip_go",
-  ["px.wind_changer"] = "surrender",
-  ["px.weapon_crate"] = "freeze",
-  ["px.cluster_bomb"] = "magic_bullet",
-  ["px.helicopter"] = "jet_pack",
-  ["px.gravity_control"] = "low_gravity",
-  ["px.swim_suit"] = "laser_sight",
-  ["px.skunk"] = "damage_x2",
-  ["px.mole_bomb"] = "double_turn_time",
-}
-
-return HOME
-`
-      },
-      {
-        path: 'lib/laser.lua',
-        name: 'lib/laser.lua',
-        language: 'lua',
-        content: `-- Highlander: what Project X's two lasers share (weapon_gun_lasergun's
--- CLaserRay, which weapon_sentry_laser's CLaserRayS copies): their art, PX's
--- glow particles (PxParticle) and how both are drawn. A ray \`r\` carries its
--- own particles in \`r.fx\` and its own random sequence in \`r.seed\`, so the
--- effects come out the same on every machine.
-local laser = {}
-
-laser.GLOW = "sprites/laser_gun/laser_glow.png"
-laser.BEAM = "sprites/laser_gun/laser_beam.png"
-laser.DEPTH = wa.depth.FRONT
-
-function laser.rand(r)
-  r.seed = (r.seed * 1103515245 + 12345) % 0x80000000
-  return r.seed / 0x80000000
-end
-
-function laser.between(r, lo, hi)
-  return lo + (hi - lo) * laser.rand(r)
-end
-
--- A PX particle: moved, pulled and slowed each game frame, drawn additive.
--- { x, y (pixels), vx, vy (pixels/frame), life, drag, grav, jitter, s0, s1 (sizes, 1 = 32
--- px), c0, c1 ({ r, g, b } at birth and death), alpha (255) }.
-function laser.particle(r, p)
-  p.age, p.vx, p.vy = 0, p.vx or 0, p.vy or 0
-  r.fx[#r.fx + 1] = p
-end
-
--- One game frame of the ray's particles.
-function laser.step(r)
-  for i = #r.fx, 1, -1 do
-    local p = r.fx[i]
-    p.age = p.age + 1
-    if p.age >= p.life then
-      table.remove(r.fx, i)
-    else
-      if p.jitter then
-        p.vx = p.vx + (laser.between(r, -p.jitter, p.jitter))
-      end
-      p.vy = p.vy + (p.grav / 10)
-      p.vx, p.vy = p.vx * (1 - p.drag), p.vy * (1 - p.drag)
-      p.x, p.y = p.x + p.vx, p.y + p.vy
-    end
-  end
-end
-
--- An ARGB word from an alpha and { r, g, b }.
-function laser.argb(a, rgb)
-  return (math.floor(math.max(0, math.min(255, a))) << 24)
-    | (math.floor(rgb[1]) << 16) | (math.floor(rgb[2]) << 8) | math.floor(rgb[3])
-end
-
--- The glow sprite, \`px\` across, centred on (x, y).
-function laser.glow(x, y, px, color)
-  local h = px / 2
-  wa.draw.quad({ sprite = laser.GLOW, blend = "add", color = color, depth = laser.DEPTH,
-    points = { { x - h, y - h }, { x + h, y - h }, { x + h, y + h }, { x - h, y + h } } })
-end
-
--- The ray's particles, each fading from its birth size and colour to its
--- death ones.
-function laser.draw_particles(r)
-  for _, p in ipairs(r.fx) do
-    local t = p.age / p.life
-    local c = { p.c0[1] + (p.c1[1] - p.c0[1]) * t, p.c0[2] + (p.c1[2] - p.c0[2]) * t,
-      p.c0[3] + (p.c1[3] - p.c0[3]) * t }
-    laser.glow(p.x, p.y, 32 * (p.s0 + (p.s1 - p.s0) * t), laser.argb(p.alpha or 255, c))
-  end
-end
-
--- The beam: a strip of the beam texture \`width\` px wide from (x0, y0) to
--- (x1, y1).
-function laser.beam(x0, y0, x1, y1, width, color)
-  wa.draw.ribbon({ sprite = laser.BEAM, blend = "add", depth = laser.DEPTH, points = {
-    { x = x0, y = y0, width = width, u = 0, color = color },
-    { x = x1, y = y1, width = width, u = 1, color = color },
-  } })
-end
-
-return laser
-`
-      },
-      {
-        path: 'lib/missile_sprites.lua',
-        name: 'lib/missile_sprites.lua',
-        language: 'lua',
-        content: `-- Highlander: PX's missile sprites. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-local HOLD_DEPTH = shared.HOLD_DEPTH
-local frame_of = shared.frame_of
-local next_phase = shared.next_phase
-
--- ------------------------------------ PX's missile sprites, at run time
--- Shared with later sections; the rest of this section is local to it.
-local flying, current_worm
-do
---
--- For some weapons PX draws the missile itself (p_sprite_builder,
--- WeapSprite) and leaves WA's sprite 0: a sprite that follows the missile,
--- turned to its flight, mirrored when it flies left, and, if \`animate\`,
--- stepped through its sheet as a hold is. Here it is a GPU actor per
--- missile, placed from wa.on.missile_frame after WA has moved the missile.
--- It reads m.weapon (the missile's slot); on an engine without it nothing
--- matches and nothing is drawn. With \`hide\`, WA draws nothing for the
--- missile (m.sprite = 0), as PX's sprite 0 does; its record keeps its
--- sprite, which a thrown weapon's worm posture is picked by.
---
--- How it turns follows the record's animation type (the entry's +0x64,
--- PX's launchdata.anim.type): 2, WAT_TrackMovement, faces its flight
--- (WeapSprite type 2, as a bazooka shell); 1, WAT_Rotation, spins with its
--- speed (type 3, as a grenade), which \`spin\` asks for.
-
--- Slot -> the weapon's WeapSpriteParams, as its PX script states them.
-local PX_WEAP_SPRITES = {
-  prod = {
-    sheet = "sprites/javelin/flight", hide = true,
-    animate = true, anim_speed = 1.90, frames = 12,
-  },
-  longbow = { -- Shadow-Bolt
-    sheet = "sprites/shadow_bolt/bolt", animate = true, anim_speed = 1.30, frames = 6,
-  },
-  super_banana = { -- Chilli Bomb (chilli_bomb_anim) and the five it bursts into
-    sheet = "sprites/px_hold/chilli_bomb", frames = 1,
-    spin = true, -- its record's WAT_Rotation
-    -- WA's own sprite 0, as PX's record has it: nothing under the chilli.
-    hide = true,
-  },
-  homing_missile = { -- Igniter (igniter_anim: igniter_bullet, 16 frames)
-    sheet = "sprites/igniter/flight", animate = true, anim_speed = 1.0, frames = 16,
-  },
-  petrol_bomb = { -- Valyrian Fire: its bottle, spun at PX's 0.35 (WeapSprite speed)
-    sheet = "sprites/px_hold/valyrian_fire.png", frames = 1,
-    spin = true, spin_speed = 0.35,
-    hide = true, -- PX's record has sprite 0; the stock bottle is the throw sheet's
-  },
-  earthquake = { -- Electric Grenade (electric_grenade_anim: electric_grenade_bullet)
-    sheet = "sprites/px_hold/electric_grenade.png", frames = 1,
-    spin = true, -- its record's WAT_Rotation
-    -- PX's record has sprite 0; the pack's stock grenade is only for the
-    -- worm's throw sheet.
-    hide = true,
-  },
-}
-
-flying = {} -- missile id -> { actor, phase, seen }
-
--- The actor goes when its missile stops reporting: WA has freed it.
-local function follow_missile(id)
-  return function(a)
-    local f = flying[id]
-    if f and f.seen then
-      f.seen = false
-      return
-    end
-    if f and f.actor == a then
-      flying[id] = nil
-    end
-    a:despawn()
-  end
-end
-
--- The worm whose turn it is: WeapSprite's owner (GetCurrentWorm()). A
--- missile frame gives no spawn owner of its own.
-function current_worm()
-  for _, w in ipairs(wa.worms.all()) do
-    if w.turn then
-      return w
-    end
-  end
-end
-
--- A missile can outlive the turn it was fired in: a Chilli's five burst
--- after a blast that hurt the thrower, which ends WA's turn. With no worm
--- holding the turn, the last turn's worm owns the sprite, or it would not
--- be drawn at all while WA still flies the missile. That worm may have
--- died since, and WA frees a dead worm: it is kept by id and looked up
--- among the living, and if it is gone any living worm owns the sprite.
--- Left undrawn instead, the missile would show WA's own sprite, which
--- another weapon may have taken over (the Electric Grenade's is the stock
--- grenade, which the Sticky Bomb redraws as its bomb).
-local last_turn_id
-wa.on.turn_start(function(event)
-  last_turn_id = event.worm and event.worm.id
-end)
-
-local function sprite_owner()
-  local turn = current_worm()
-  if turn then return turn end
-  if not last_turn_id then return nil end
-  local any
-  for _, w in ipairs(wa.worms.all()) do
-    if w.id == last_turn_id then return w end
-    any = any or w
-  end
-  return any
-end
-
-wa.on.missile_frame(function(m)
-  local home = shared.home(m.weapon)
-  local p = shared.owns(home) and PX_WEAP_SPRITES[home]
-  -- WA's sprite is hidden only where PX's is drawn in its place: with no
-  -- owner for ours, WA's stays.
-  if p and p.hide and m.phase == "pre" and (flying[m.id] or sprite_owner()) then
-    m.sprite = 0
-  end
-  p = m.phase == "post" and p
-  if not p then
-    return
-  end
-  local f = flying[m.id]
-  if not f then
-    local owner = sprite_owner()
-    if not owner then
-      return
-    end
-    f = { phase = 0, rot = 0 }
-    f.actor = wa.actors.spawn({
-      sprite = p.sheet, x = m.x, y = m.y, gravity = false, collide = false,
-      owner = owner, on = follow_missile(m.id),
-    })
-    flying[m.id] = f
-  end
-  f.seen = true
-  local a = f.actor
-  a.x, a.y, a.vx, a.vy = m.x, m.y, 0, 0
-  a.facing = m.vx < 0 and -1 or 1
-  if p.animate then
-    f.phase = next_phase(f.phase, p.anim_speed)
-    a:frame(frame_of(f.phase, p.frames))
-  end
-  local rot
-  if p.spin then
-    -- WeapSprite type 3: speed * (vx * 0.15 + |vy| * 0.01, towards vx) a
-    -- frame, in pixels a frame and radians; WeapSprite's speed is 0.5
-    -- unless the weapon's script sets it.
-    local vx, vy = m.vx, m.vy
-    local sign = vx > 0 and 1 or vx < 0 and -1 or 0
-    f.rot = f.rot + (p.spin_speed or 0.5) * (vx * 0.15 + math.abs(vy * 0.01) * sign)
-    rot = f.rot
-  else
-    -- WeapSprite::CalculateAngle, rotation 0.
-    rot = -wa.math.atan(m.vx, m.vy) - math.pi
-  end
-  a:gfx({ angle = math.deg(rot) % 360, depth = HOLD_DEPTH })
-end)
-end
-
-shared.current_worm = current_worm
-`
-      },
-      {
-        path: 'lib/portals.lua',
-        name: 'lib/portals.lua',
-        language: 'lua',
-        content: `-- Reusable portal pairs. The gun supplies placement/controls/art; a pair
--- owns traversal, return suppression, clearance and its velocity strategy.
-local default_velocity = require("lib/portal_velocity")
-local Network = {}
-Network.__index = Network
-local OFFSET = { {0,1}, {-1,1}, {-1,0}, {-1,-1}, {0,-1}, {1,-1}, {1,0}, {1,1} }
-local function trunc(x) return x >= 0 and math.floor(x) or -math.floor(-x) end
-
--- PX's GetHitAngle: eight surface directions, using the outward normal.
-local function direction(nx, ny)
-  if ny >= 0.95 then return 1 end
-  if nx < 0 and ny > 0.25 and ny < 0.97 then return 2 end
-  if nx <= -0.90 then return 3 end
-  if nx < 0 and ny < -0.20 and ny > -0.97 then return 4 end
-  if ny <= -0.97 then return 5 end
-  if nx > 0 and ny < -0.20 and ny > -0.97 then return 6 end
-  if nx >= 0.97 then return 7 end
-  if nx > 0 and ny > 0.25 and ny < 0.97 then return 8 end
-end
-local function inside(p, x, y)
-  return x > p.x - p.w / 2 and x < p.x + p.w / 2
-     and y > p.y - p.h / 2 and y < p.y + p.h / 2
-end
--- Centre crossing, extended to a swept segment for shots faster than the
--- opening. Called before WA collides, so a missile survives the entry wall.
-local function crossing(p, x, y, vx, vy)
-  if inside(p, x, y) then return 0 end
-  local lo, hi = 0, 1
-  for _, axis in ipairs({ {x, vx, p.x, p.w}, {y, vy, p.y, p.h} }) do
-    local a, v, centre, size = table.unpack(axis)
-    local left, right = centre - size / 2, centre + size / 2
-    if v == 0 then
-      if a <= left or a >= right then return nil end
-    else
-      local t0, t1 = (left - a) / v, (right - a) / v
-      if t0 > t1 then t0, t1 = t1, t0 end
-      lo, hi = math.max(lo, t0), math.min(hi, t1)
-      if lo >= hi then return nil end
-    end
-  end
-  return lo < 1 and lo or nil
-end
-local function identity(body)
-  local kind = body.kind or "worm"
-  return kind .. ":" .. tostring((kind == "worm" or kind == "actor") and body.id or body.uid)
-end
-
-function Network.new(options)
-  options = options or {}
-  return setmetatable({ pairs = {}, last_exit = {}, age = 0,
-    width = (options.width or 40), height = (options.height or 50),
-    offset = (options.offset or 10),
-    velocity = options.velocity or default_velocity,
-    clearance = options.clearance,
-    on_transport = options.on_transport,
-    grace = options.grace or 150,
-  }, Network)
-end
-
-function Network:place(group, colour, x, y, nx, ny, team_colour)
-  local dir = direction(nx, ny)
-  if not dir then return nil end
-  assert(colour == 1 or colour == 2)
-  local pair = self.pairs[group] or { active = true }
-  local other = pair[3 - colour]
-  -- PX's exclusion uses the impact point and the other rect plus 10px.
-  if other and math.abs(x - other.x) < other.w / 2 + 10
-    and math.abs(y - other.y) < other.h / 2 + 10 then return nil end
-  local fresh = pair[colour] == nil
-  local p = pair[colour] or {}
-  p.group, p.colour, p.team_colour = group, colour, team_colour
-  p.x, p.y = x + OFFSET[dir][1] * self.offset, y + OFFSET[dir][2] * self.offset
-  p.draw_x, p.draw_y, p.dir, p.nx, p.ny = x, y, dir, nx, ny
-  p.w, p.h = self.width, self.height
-  -- PX's final constructor else puts straight exits at the centre. Its
-  -- diagonals use the inner x edge and one/ two thirds down the rectangle.
-  p.exit_x, p.exit_y = p.x, p.y
-  if dir == 2 or dir == 4 or dir == 6 or dir == 8 then
-    p.exit_x = p.x + OFFSET[dir][1] * (p.w / 2 - 5)
-    p.exit_y = trunc(p.y + OFFSET[dir][2] * p.h / 6)
-  end
-  pair[colour] = p
-  self.pairs[group] = pair
-  return p, fresh
-end
-
-function Network:active(group, on)
-  local pair = self.pairs[group]
-  if pair then pair.active = on ~= false end
-end
-function Network:turn_start()
-  for _, group in ipairs(wa.sorted(self.pairs)) do
-    local pair = self.pairs[group]
-    pair.active, pair.ended_at = true, nil
-  end
-end
-function Network:turn_end()
-  for _, group in ipairs(wa.sorted(self.pairs)) do
-    local pair = self.pairs[group]
-    pair.ended_at = self.age
-    if self.grace == 0 then pair.active = false end
-  end
-end
-function Network:tick()
-  self.age = self.age + 1
-  for _, group in ipairs(wa.sorted(self.pairs)) do
-    local pair = self.pairs[group]
-    if pair.ended_at and self.age - pair.ended_at > self.grace then pair.active = false end
-  end
-end
-function Network:move(body)
-  local kind = body.kind or "worm"
-  if kind == "worm" and (body.hp <= 0 or body.taken) then return false end
-  local key = identity(body)
-  local x, y, vx, vy = body.x, body.y, body.vx, body.vy
-  local last = self.last_exit[key]
-  if last then
-    if inside(last, x, y) then return false end
-    self.last_exit[key] = nil
-  end
-  local entry, exit, best
-  for _, group in ipairs(wa.sorted(self.pairs)) do
-    local pair = self.pairs[group]
-    if pair.active and pair[1] and pair[2] then
-      for colour = 1, 2 do
-        local p = pair[colour]
-        local t = crossing(p, x, y, vx, vy)
-        if t and (not best or t < best) then entry, exit, best = p, pair[3-colour], t end
-      end
-    end
-  end
-  if not entry then return false end
-  if best > 0 then
-    local hit = wa.land.trace(x, y, x + vx * best, y + vy * best)
-    if hit and hit.hit then return false end
-  end
-  local tx, ty = exit.exit_x, exit.exit_y
-  if self.clearance then
-    tx, ty = self.clearance(body, exit)
-    if not tx then return false end
-  elseif not body:fits(tx, ty, "terrain") then
-    -- PX's emergency clearance. Do not transport into a still blocked exit.
-    wa.land.cut({x = tx, y = ty, shape = "circle", radius = 15})
-    if not body:fits(tx, ty, "terrain") then return false end
-  end
-  local nvx, nvy, facing = self.velocity(kind, entry.dir, exit.dir, vx, vy, body.facing)
-  local spec = { x = tx, y = ty, vx = nvx, vy = nvy }
-  if kind == "worm" then spec.facing = facing end
-  if not body:warp(spec) then return false end
-  self.last_exit[key] = exit
-  if self.on_transport then self.on_transport(body, entry, exit) end
-  return true
-end
-Network.direction, Network.inside, Network.crossing = direction, inside, crossing
-return Network
-`
-      },
-      {
-        path: 'lib/portal_effects.lua',
-        name: 'lib/portal_effects.lua',
-        language: 'lua',
-        content: `-- PX p_portalgun2 DoTrailEffects/DoSpark/DoFlash and p_portal2
--- DoPortalEffects/DoTeleportationEffects, using the existing GPU draw API.
--- This local random stream drives looks only, never WA's gameplay RNG.
-local Effects = {}
-Effects.__index = Effects
-local TAU = 2 * math.pi
-local function trunc(x) return x >= 0 and math.floor(x) or -math.floor(-x) end
-local function palette(colour, shift)
-  if colour == 1 then return {255,255-shift,0}, {255,80-shift,0} end
-  return {0,120-shift,255}, {0,80-shift,255}
-end
-
-function Effects.new()
-  return setmetatable({ particles = {}, seed = 0x504F5254 }, Effects)
-end
-function Effects:random(lo, hi)
-  local s = self.seed
-  s = (s ~ (s << 13)) & 0xFFFFFFFF
-  s = (s ~ (s >> 17)) & 0xFFFFFFFF
-  s = (s ~ (s << 5)) & 0xFFFFFFFF
-  self.seed = s
-  return lo + (hi-lo) * (s / 0x100000000)
-end
-function Effects:particle(x, y, spec)
-  -- Twelve endpoints emit at most 180 ambient particles at once. Bound
-  -- bursts too, so repeated transport cannot accumulate an unbounded list.
-  if #self.particles >= 1024 then return end
-  local angle, speed = self:random(0, TAU), self:random(spec.speed[1], spec.speed[2])
-  self.particles[#self.particles+1] = {
-    x = x, y = y, vx = wa.math.cos(angle)*speed, vy = wa.math.sin(angle)*speed,
-    age = 0, life = spec.life, sprite = spec.sprite or "lightning_glow.png",
-    pixels = spec.pixels or 128, size = spec.size, end_size = spec.end_size or 0.01,
-    start = spec.start, finish = spec.finish, alpha = spec.alpha or 255,
-    resistance = 1/(1+(spec.resistance or 0)), gravity = spec.gravity or 0,
-    randomness = spec.randomness or 0, angle = spec.angle or 0, spin = spec.spin or 0,
-  }
-end
-function Effects:ambient(p)
-  local first, last = palette(p.colour, math.floor(self:random(0, 51)))
-  self:particle(p.x, p.y, { life=15, speed={2.5,4}, resistance=0.5, gravity=-0.5,
-    randomness=1, size=self:random(0.1,0.4), start=first, finish=last,
-    angle=p.colour==1 and 12 or 0.9, spin=p.colour==1 and 50 or 10 })
-end
-function Effects:transport(p)
-  for _=1,5 do
-    local first, last = palette(p.colour, math.floor(self:random(0, 51)))
-    self:particle(p.x, p.y, { life=40, speed={3.5,8}, resistance=0.5, gravity=-0.5,
-      randomness=3, size=self:random(0.3,1), start=first, finish=last })
-  end
-end
-function Effects:impact(x, y, failed)
-  -- PX's ExplodeAt emits 7 + 10 sparks; a rejected portal adds 30.
-  for _=1,(failed and 47 or 17) do
-    local shift = math.floor(self:random(0,51))
-    self:particle(x, y, { sprite="portal_glow.png", pixels=32, life=40,
-      speed={1.5,3.8}, resistance=0.05, gravity=1, randomness=0.2,
-      size=self:random(0.2,0.4), start={255,255-shift,0}, finish={255,80-shift,0},
-      angle=1.23, spin=25 })
-  end
-  local shift = math.floor(self:random(0,51))
-  self:particle(x, y, { life=3, speed={0,0}, alpha=150, randomness=0.2,
-    size=self:random(2,3.2), end_size=0.11,
-    start={255,255-shift,255}, finish={200,225-shift,125} })
-end
-function Effects:trail(x, y, colour)
-  local first = colour==1 and {45,10,4} or {4,10,45}
-  local last = colour==1 and {45,25,4} or {4,25,45}
-  self:particle(x, y, { life=15, speed={0,0}, size=0.5, end_size=0.35,
-    start=first, finish={0,0,0} })
-  self:particle(x, y, { life=40, speed={0,0.8}, size=0.3, end_size=0.35,
-    start=last, finish={0,0,0} })
-end
-function Effects:tick(gravity)
-  for i=#self.particles,1,-1 do
-    local p = self.particles[i]
-    p.age = p.age+1
-    if p.age >= p.life then table.remove(self.particles,i)
-    else
-      p.angle = (p.angle+p.spin+math.pi) % TAU-math.pi
-      p.x, p.y = p.x+p.vx, p.y+p.vy
-      p.vx, p.vy = p.vx*p.resistance, p.vy*p.resistance+p.gravity*gravity
-      if p.randomness > 0 then
-        local angle, speed = self:random(0,TAU), self:random(0,p.randomness)
-        p.vx, p.vy = p.vx+wa.math.cos(angle)*speed, p.vy+wa.math.sin(angle)*speed
-      end
-    end
-  end
-end
-function Effects:draw(quad)
-  for _, p in ipairs(self.particles) do
-    local t = p.age/p.life
-    local rgb = {}
-    for i=1,3 do rgb[i]=trunc(p.start[i]+t*(p.finish[i]-p.start[i])) end
-    local size = p.pixels*(p.size+t*(p.end_size-p.size))
-    local colour = (p.alpha << 24) | (rgb[1] << 16) | (rgb[2] << 8) | rgb[3]
-    quad(p.sprite, p.x, p.y, size, size, p.angle, colour, "add", wa.depth.EFFECTS - 1)
-  end
-end
-return Effects
-`
-      },
-      {
-        path: 'lib/px_bunker.lua',
-        name: 'lib/px_bunker.lua',
-        language: 'lua',
-        content: `-- Bunker Buster / Super Bunker Buster -- Worms Reloaded's air-strike drill,
--- rebuilt for WormForge API 4. PX's own version is
--- PX_pending/bunker_buster/scripts/bunkerbuster.txt; every number below cites
--- a line of it.
---
--- PX: an air strike (\`CWorm::FireFinal\`, :631-653) whose bomb is a mine-bodied
--- object, \`PxBunkerBuster : CMine\` (:106), dropped by a plane standing still
--- (\`BombSpX/SpY = 0\`, :637-638). The body falls on WA's gravity
--- (\`GravityFactor = 1\`, :255). Touching land switches it to drilling
--- (\`Collide\` -> \`StartDigging\`, :305-318): gravity off (:238), a direction and
--- a speed per frame (\`SpX = DirX * DrillSpeed\`, :497-498), terrain cut with
--- WA's own drill masks (\`ApplyMask(1, ...)\` at the body and \`ApplyMask(13, ...)\`
--- at two side offsets, :508-510), fuel spent per pixel drilled (:516), and
--- WA's own drill hole as it goes -- the pneumatic drill's mask, by PX's own
--- comment (:496). Out of land ahead it falls again (:530-537); out of fuel it
--- blows up (:523-527), as it does on touching anything that is not land
--- (:320-323, its \`ColGroupDigging\`, :185-196).
---
--- The port does not copy PX's implementation, only its behaviour and numbers.
--- The request is explicit: PX's body "bounces" where it should drill, and its
--- magnet steering (:449-452) goes:
---
---   * the fall: WA's gravity from above the level, at the click's x --
---     PX's plane drop, minus the plane;
---   * the drill: one fixed step down, at 1.5 px a frame (PX randomizes 0.5..2.0
---     every 5..15 frames, :463-467; its own top speed is \`DrillMaxSpeed = 2.0\`,
---     :127). A fixed step is how WA's own diggers move and is immune to a push,
---     as the request asks (PX's direction itself is steered by the magnet,
---     :449-452 -- dropped); 1.5 is a quarter under PX's top speed, from playtest;
---   * the hole: \`wa.land.cut{ shape = "drill" }\`, WA's own drill mask, which is
---     the shape PX's masks 1 and 13 make (super_drill.lua:17, cut_lab.lua:12).
---     PX cuts only while drilling (:508-510); the port cuts every 10 frames
---     whatever the body is doing, so a buster that has fallen into a wall gets
---     its hole cut for it instead of sitting there (seen stuck in match);
---   * the "limited distance": PX's \`DrillFuelAmount = 880\` (:124) spent per pixel
---     (:516). The port counts frames of drilling instead -- 587, which is PX's 880 px at
---     this port's 1.5 px a frame -- so the clock ticks only while the drill is going:
---     it pauses when the buster falls and carries on when it hits again, and is never
---     refreshed by a penetration (which is what let it dig without end);
---   * leaving the land: PX probes 10 px ahead of the body with its collision
---     mask (:530) and falls when there is no land there. The port runs a line
---     at each edge of the body instead (the request's "line check on both
---     edges"), and keeps drilling while either edge still has land;
---   * the detonation: fuel out (:523-527), or touching a worm, crate, oil drum
---     or mine (:320-323). WR's list is worm, crate and barrel; mines are PX's
---     own addition to it;
---   * the blast: the plain buster one, the super five, stepped 8 frames apart
---     along the line across the drill (\`ExplosionDistance = 40\`,
---     \`ExplosionDeltaTime = 8\`, :138-139, :393-416). Blast and damage are PX's
---     (:148-149, :159-160). The five blasts are WR's "horizontal flare that
---     cuts sideways through the terrain", made of blasts;
---   * the super's fire: PX's \`CFireDesc\` (:31-36) -- a one-flame fire every
---     4..10 frames while drilling (:472-494), and a six-flame fire at each
---     blast (:330-339).
---
--- What the API cannot carry (presentation only; REPORT.md 9.3):
---   * the fire's velocity. PX throws each drilling flame up the shaft at 5..15
---     a frame within 45 degrees of the drill (:480-486); \`wa.fire.spawn\` has no
---     velocity field, so each flame is placed at the body instead;
---   * the smoke and dust particles (:555-606);
---   * a sound that can be **stopped**. \`wa.sound.play\` and \`a:sound\` can neither
---     loop nor stop, and PX's drill wav (20.95 s -- an impact, then a long drill, with
---     no loop point in it) played once left the drilling going long after the buster
---     was gone -- in match, through every later shot. The port cuts that wav into an
---     impact piece and five loop pieces of 105 whole frames
---     (\`porting-analysis/tools/split_wav.py\`), plays the impact on **every** entry
---     into the land and the loop pieces in order while drilling, and stops playing
---     when the digging stops. The Attack Helicopter's rotor is the same idea with one
---     piece (\`weapons/attack_helicopter.lua:71,410\`);
---   * the \`space\` early detonation (:655-676) -- no such key is exposed;
---   * the magnet steering (:449-452), dropped on purpose.
---
--- Girders: the trace has no girder kind, so a girder in the path is simply
--- passed through -- which is WR's "burrows through terrain and girders".
---
--- A component's file, and anything it requires, runs where \`wa\` does not exist
--- yet: this module is pure data at load and touches \`wa\` only in \`install\`.
---
--- The two weapons are independent: each has its own component, record, sprites,
--- sounds and numbers, and a component that is in **no** panel slot registers
--- nothing (\`placed\` below), so either can be placed on its own -- and one of the
--- two unplaced does not take the match down with it.
-
--- Whether the profile placed this component on a panel slot.
---
--- A component that is in **no** slot must not register a weapon: the engine
--- builds one for every registration, and a slot-less weapon takes the match
--- down at turn start ("converting Lua nil to table" -- the panel cell it looks
--- up is nil). With two weapons in one bundle that is the difference between
--- placing either alone and a hard crash, so this asks first.
---
--- The placed set is the loader's own: \`ctx.placed\`, the placed weapons in slot
--- order, each \`{ id, position }\` (\`tools/audit/audit.lua:39-41\`,
--- \`highlander components/highlander.lua:16-17\`), and \`ctx.weapons\`, the same
--- ids as keys (\`highlander components/loader.lua:91\`). Either listing this
--- component is enough; only when a field is there and neither lists it is the
--- component in no slot. A context with neither field registers as before, so
--- nothing is lost if the fields move.
-local function placed(ctx)
-  local informed = false
-  if type(ctx.weapons) == "table" then
-    informed = true
-    if ctx.weapons[ctx.id] ~= nil then return true end
-  end
-  if type(ctx.placed) == "table" then
-    informed = true
-    for _, weapon in ipairs(ctx.placed) do
-      if weapon == ctx.id or (type(weapon) == "table" and weapon.id == ctx.id) then return true end
-    end
-  end
-  return not informed
-end
-
-local M = {}
-
-function M.install(ctx)
-  -- In no slot: no weapon, no art, no sound. The other component of the bundle
-  -- is unaffected -- each carries its own record, sprites and sounds, and reads
-  -- nothing the other leaves behind.
-  if not placed(ctx) then
-    wa.log(("Bunker Buster: %s is in no panel slot; nothing registered"):format(ctx.id))
-    return
-  end
-
-  -- Which of the two this component is. Both share this file and this one entry
-  -- point; their record, art, numbers and fire are each their own.
-  local super_buster = ctx.id == "px.super_bunker_buster"
-  local ART = "sprites/" .. (super_buster and "super_bunker_buster/" or "bunker_buster/")
-  local SND = "sounds/bunker_buster/" -- both weapons' sounds, PX's two wavs
-
-  -- PX's drill sound, cut in six (REPORT.md 11.14, \`porting-analysis/tools/split_wav.py\`).
-  -- PX plays one 20.95 s wav -- an impact, then a long drill with no loop point in it -- and
-  -- re-plays it every 15 s while digging (\`:240\`, \`:609-624\`); \`a:sound\` can neither loop nor
-  -- stop a sound, so playing it once ran the drilling on long after the buster was gone, and
-  -- through every later shot.
-  --
-  -- The pieces are cut for the game's own frame rate, which is **50 fps** -- not 60, which cost
-  -- this weapon one round of "the sound cuts, every time": PX's helicopter rotor, the one loop
-  -- that has always been inaudible, is 0.9155 s of audio re-triggered every 47 frames
-  -- (\`weapons/attack_helicopter.lua:71,410\`), which is 0.94 s at 50 fps (24 ms short of the
-  -- audio, inaudible) and 0.78 s at 60 fps (the audio cut by 132 ms a cycle). A piece cut for the
-  -- wrong rate is cut short by that rate's error on every cycle, which is exactly what was heard.
-  --
-  -- The wav's own period is 1.75 s, and at 50 fps the nearest whole frame count is 88 (1.76 s,
-  -- 10 ms over the period, so five pieces wrap within 50 ms of phase). So the first 10.56 s cuts
-  -- into an **impact** piece and five loop pieces of 88 frames each, at exact frame boundaries
-  -- with no snapping: played in order they are the original sample for sample.
-  local IMPACT_SOUND  = "bunkbustdrill_impact.wav"
-  local LOOP_SOUNDS   = { "bunkbustdrill_loop1.wav", "bunkbustdrill_loop2.wav",
-                          "bunkbustdrill_loop3.wav", "bunkbustdrill_loop4.wav",
-                          "bunkbustdrill_loop5.wav" }
-  local IMPACT_FRAMES = 88 -- the impact piece's own length, and the wait before the loop
-  local LOOP_FRAMES   = 88 -- every loop piece is the same 1.76 s, so the same wait
-
-  -- PX's numbers, by line in bunkerbuster.txt.
-  local R          = 8      -- the collision circle, CColMask(8, 8, MakeCircleMask(8)) (:38)
-  local SKY        = -128   -- the drop height above the level (PX's PlaneAppearYOffset; bowling_ball.lua:16)
-  -- PX's fixed-step drill (:497-498) at its **fastest** (DrillMaxSpeed = 2.0, :127); PX's own
-  -- random 0.5..2.0 (:463-467) averages 1.25. 1.5 is a quarter under PX's top speed, slower than
-  -- PX's average would be slow in feel terms: playtested as right for the weight of the buster.
-  local DIG_SPEED  = 1.15
-  -- PX's "limited distance" is a fuel amount (\`:124\`, spent per pixel at \`:516\`); the port counts
-  -- **frames of drilling** instead, which is the same distance at this fixed speed -- PX's 880 px
-  -- over 1.5 px a frame is 587 frames -- and reads as what it is: the drill's own clock. It ticks
-  -- only while the body is actually drilling, so it pauses when the buster falls (past a girder,
-  -- out of a cave roof) and carries on when it hits again, instead of starting over. It is not
-  -- refreshed on a penetration, which is what let a buster dig without end.
-  local DIG_FRAMES = super_buster and 450 or 300
-  -- The drill mask, cut every MASK_EVERY frames whether the body is drilling or still falling.
-  -- PX cuts only while drilling (:508-510); cutting on the way down as well means the body can
-  -- never come to rest inside land with no hole to move in -- a buster that fell into a wall was
-  -- seen stuck, because the drill starts only when the tip's line finds land (:317). While
-  -- drilling, cuts are DIG_SPEED * MASK_EVERY = 15 px apart, which the drill cut spans.
-  local MASK_EVERY = 3
-  local EDGE       = 6      -- the two probe lines, within the tunnel's edge
-  local LOOKAHEAD  = 13     -- PX probes 10 px ahead of the body (:530)
-  local ANIM_SPEED = 0.08   -- AnimSpeed (:136) over AnimCycleDuration 1.0 (:172)
-  local FRAMES     = 3      -- each sheet is a 3-frame strip (LoadSprite(f, 3, 0), :42-51)
-  local SINK, SUNK = 2, 200 -- sinking out of sight in the water (electromagnet.lua:184-188)
-  local FIRE_MIN, FIRE_MAX = 4, 10    -- DrillFireMinDelta/MaxDelta (:163-164)
-  local EXPL_DIST  = 40     -- ExplosionDistance (:139)
-  local EXPL_DELTA = 8      -- ExplosionDeltaTime (:138)
-  local NUM        = super_buster and 5 or 1    -- NumExplosions (:147, :158)
-  local BLAST      = super_buster and 80 or 100 -- ExplosionBlast (:148, :159)
-  local DAMAGE     = super_buster and 26 or 38  -- ExplosionDamage (:149, :160)
-  local FIRE       = { duration = 1000, up_power = 15, damage = 1 } -- CFireDesc (:33-35)
-  
-  local busters = {} -- body actor id -> state
-
-  -- PX's DoExplosion (:326-340): a real WA blast at the point, and for the super
-  -- a six-flame fire there. \`id\` is PX's \`ExplosionBlast\`, as the Highlander's
-  -- Electromagnet reads it (weapons/electromagnet.lua:198, \`BOOM\`).
-  --
-  -- One throwaway actor per blast: \`a:explode\` is the actor's own explosion and
-  -- may take it with it (the Attack Helicopter guards its companions on
-  -- \`a.dead\`, weapons/attack_helicopter.lua:181), so a five-blast sequence
-  -- cannot come out of one actor.
-  local function blast(m, x, y)
-    local b = wa.actors.spawn({ sprite = ART .. "idle", x = x, y = y,
-      gravity = false, collide = false, owner = m.owner, on = function() end })
-    b:scale(0)
-    b:explode({ damage = DAMAGE, id = BLAST, below = false })
-    if not b.dead then b:despawn() end
-    if super_buster and m.owner then
-      wa.fire.spawn({ owner = m.owner, x = x, y = y, count = 6,
-        duration = FIRE.duration, up_power = FIRE.up_power, damage = FIRE.damage })
-    end
-  end
-
-  local function remove(m)
-    busters[m.body.id] = nil
-    if not m.body.dead then m.body:despawn() end
-    if m.glow and not m.glow.dead then m.glow:despawn() end
-  end
-
-  -- PX's Explode (:270-285): the drill stops, then the blasts come out over the
-  -- following frames (:393-416). PX draws nothing once Dead (:347), so the body
-  -- art goes.
-  local function boom(m)
-    if m.boom then return end
-    m.boom, m.dig, m.vy, m.num, m.timer = true, false, 0, 0, 0
-    m.body:scale(0)
-    if m.glow then m.glow:scale(0) end
-  end
-
-  -- Where the drill probes: a line at one edge of the body, from its tip
-  -- LOOKAHEAD down (PX's FindInMask probe, :530).
-  local function land_ahead(m, edge)
-    local x, tip = m.x + edge, m.y + R
-    return wa.land.trace(x, tip, x, tip + LOOKAHEAD) ~= nil
-  end
-
-  -- PX's Collide on anything that is not land (:320-323): its \`ColGroupDigging\`
-  -- is worms, crates, oil drums and mines (:185-196). The body's own circle,
-  -- swept along the step, so a fast fall cannot step over a worm.
-  local function touched(x0, y0, x1, y1)
-    local res = wa.world.trace({ x0 = x0, y0 = y0, x1 = x1, y1 = y1, radius = R,
-      with = { "worms", "crates", "oil", "mines" } })
-    return res and res.hit
-  end
-
-  local function frame_of(m)
-    return function(a)
-      -- ------------------------------------------------------------- blasts
-      if m.boom then
-        if m.num >= NUM then remove(m) return end
-        if m.timer <= 0 then
-          local d = EXPL_DIST * m.num
-          -- PX: PosX + DirY * dist, PosY - DirX * dist (:406-409). The drill is
-          -- straight down, so (DirX, DirY) is (0, 1) and the offsets are across
-          -- it: the line of blasts is horizontal.
-          blast(m, m.x + d, m.y)
-          if m.num > 0 then blast(m, m.x - d, m.y) end
-          m.timer, m.num = EXPL_DELTA, m.num + 1
-        end
-        m.timer = m.timer - 1
-        return
-      end
-
-      -- -------------------------------------------------------------- water
-      -- PX's mine sinks and tints blue (:349-351); nothing left to drill for.
-      if m.y >= wa.world.water() then
-        m.sunk = true
-        m.y = m.y + SINK
-        a.x, a.y = m.x, m.y
-        a:gfx({ tint = 0x5A5AF0 }) -- PX's sink tint, RGB(90, 90, 240) (:349-351)
-        if m.y >= wa.world.water() + SUNK then remove(m) end
-        return
-      end
-
-      -- ------------------------------------------------------ drill or fall
-      local px, py = m.x, m.y
-      if m.dig then
-        -- PX's drill frame (:434-543), less the magnet steer (:449-452) and
-        -- the random speed (:463-467): one fixed step down.
-        if not land_ahead(m, -EDGE) and not land_ahead(m, EDGE) then
-          -- No land ahead at either edge: fall again (PX's StopDigging, :530-537).
-          -- PX also nudges a non-vertical drill on its way (:533-534); a
-          -- straight-down drill takes no nudge.
-          m.dig = false
-          m.vy = DIG_SPEED
-        else
-          m.y = m.y + DIG_SPEED
-          m.dig_time = m.dig_time - 1                  -- the drill's clock, ticking (see DIG_FRAMES)
-          if m.dig_time <= 0 then boom(m) return end   -- PX: out of fuel -> explode (:523-527)
-          -- PX's StartDigging sound (:240), in the two halves the wav is made of: the loop
-          -- piece under the drill, one piece per LOOP_FRAMES so the audio is continuous
-          -- through a drill and nothing is heard to stop when it ends.
-          m.snd_timer = m.snd_timer - 1
-          if m.snd_timer <= 0 then
-            a:sound(SND .. LOOP_SOUNDS[m.piece])
-            m.piece = m.piece % #LOOP_SOUNDS + 1
-            m.snd_timer = LOOP_FRAMES
-          end
-          if super_buster then
-            if m.fire_timer <= 0 then
-              wa.fire.spawn({ owner = m.owner, x = m.x, y = m.y, count = 1,
-                duration = FIRE.duration, up_power = FIRE.up_power, damage = FIRE.damage })
-              m.fire_timer = wa.random(FIRE_MIN, FIRE_MAX)
-            end
-            m.fire_timer = m.fire_timer - 1
-          end
-        end
-      else
-        -- Falling: WA's gravity while the land is clear (PX's GravityFactor 1,
-        -- :255). The tip's own path is the line traced, so a step of any size
-        -- meets the first land it crosses. PX's Collide -> StartDigging (:317).
-        m.vy = m.vy + wa.world.gravity()
-        local ny = m.y + m.vy
-        local hit = wa.land.trace(m.x, m.y + R, m.x, ny + R)
-        if hit then
-          m.y = (hit.y or ny) - R
-          m.dig, m.fire_timer = true, 0
-          -- PX's StartDigging sound (:240) is the wav's own impact, and it plays on
-          -- **every** entry into the land: the first drop, and each time a drill that ran out
-          -- of land (a girder, a cave roof) fell and struck something again. The loop then
-          -- starts again at its first piece, so the drill's own audio picks up where it left.
-          a:sound(SND .. IMPACT_SOUND)
-          m.piece, m.snd_timer = 1, IMPACT_FRAMES
-        else
-          m.y = ny
-        end
-      end
-
-      -- The drill mask, on every MASK_EVERY frames and whether or not the body is drilling
-      -- (see the constant). Only where there is land to cut: the body, or the tip -- a tip
-      -- inside land with the body still above it is the falling case, and cutting there opens
-      -- the hole before the body is in, which is what it is for.
-      m.mask_timer = m.mask_timer - 1
-      if m.mask_timer <= 0 then
-        m.mask_timer = MASK_EVERY
-        if wa.land.solid(m.x, m.y) or wa.land.solid(m.x, m.y + R) then
-          wa.land.cut({ x = m.x, y = m.y, shape = "drill" }) -- PX's masks 1 and 13 (:508-510)
-        end
-      end
-
-      -- Anything else it touched on the way blows it up (PX :320-323).
-      if (px ~= m.x or py ~= m.y) and touched(px, py, m.x, m.y) then boom(m) return end
-
-      -- ------------------------------------------------------------- drawing
-      a.x, a.y = m.x, m.y
-      local sheet = m.dig and (ART .. "digging") or (ART .. "idle")
-      if sheet ~= m.sheet then
-        a:look(sheet)
-        m.sheet = sheet
-      end
-      m.anim = (m.anim + ANIM_SPEED) % 1.0 -- PX's AnimCycle (:423-424)
-      a:frame(math.min(FRAMES - 1, math.floor(m.anim * FRAMES)))
-      a:gfx({ depth = wa.depth.OBJECTS + 2 }) -- PX's z 10.01, behind the worms
-      if m.glow then
-        -- PX's glow (SpriteGlow, :378-385): PX's z 10, in front of the body,
-        -- additive, tinted RGB(255, 70, 0).
-        m.glow.x, m.glow.y = m.x, m.y
-        m.glow:gfx({ depth = wa.depth.OBJECTS + 1, blend = "add", tint = 0xFF4600 })
-      end
-    end
-  end
-
-  -- PX's plane drop, less the plane: one buster at the click's x, standing
-  -- still above the level, on WA's gravity.
-  local function drop(worm, x, y)
-    wa.sound.play(worm, SND .. "bunkbustfall.wav") -- PX's fall sound (:202)
-    local m = { x = x, y = SKY, vy = 0, dig_time = DIG_FRAMES, dig = false, boom = false,
-      num = 0, timer = 0, anim = 0, fire_timer = 0, sunk = false, owner = worm,
-      mask_timer = 0, snd_timer = 0, piece = 1 } -- both timers fire on the first frame they can
-    m.body = wa.actors.spawn({
-      sprite = ART .. "idle", x = x, y = SKY, vx = 0, vy = 0,
-      gravity = false, collide = false, owner = worm, as_object = true,
-      on = frame_of(m),
-    })
-    if super_buster then
-      m.glow = wa.actors.spawn({ sprite = ART .. "glow.png", x = x, y = SKY,
-        gravity = false, collide = false, owner = worm, on = function() end })
-    end
-    busters[m.body.id] = m
-    return m
-  end
-
-  local sprites = { ART .. "idle", ART .. "digging" }
-  if super_buster then sprites[#sprites + 1] = ART .. "glow.png" end
-
-  -- The registration. Built in a local first: the \`handling\` line below then
-  -- reads as the Highlander's own claims do (\`weapons/claims.lua:69-89\`).
-  local spec = {
-    -- The slot is the profile's. The record is PX's own for this weapon (name
-    -- "Bunker Buster", a native air-strike record): as the Lightning Strike does
-    -- with PX's \`napalm_strike.wep\` (weapons/catalog.lua:319-336), the click-only
-    -- shape below means the worm never fires the record and the engine runs no
-    -- stock plane from it. One record per slot, as PX's own pack does
-    -- (\`weps/<slot>.wep\`), so neither weapon needs the other placed: the Super
-    -- gets its own copy of the record, because PX's own super record
-    -- (\`super_bunkerbuster_wep_broken.wep\`) is broken.
-    wep = super_buster and "weps/super_bunker_buster.wep" or "weps/bunkerbuster_wep1.wep",
-    panel_icon = ART .. "icon.png", -- PX's own icon (ico_bunkerbuster.png / ico_superbunkerbuster.png)
-    -- One directory of frameNNN.png per PX sprite, as cut_lab and stress do.
-    sprites = sprites,
-    params = { gpu_prefix = "sprites/" },
-    -- The bundle's sounds, by path: this list is the declaration, the way \`sprites\` is
-    -- (the drill was silent until it named the loop pieces -- a wav that is not named here
-    -- does not play, and a name here that is not in the bundle does not load). The impact
-    -- first, then the loop in order: \`LOOP_SOUNDS\` as the table spells them.
-    sounds = { SND .. IMPACT_SOUND, SND .. LOOP_SOUNDS[1], SND .. LOOP_SOUNDS[2],
-      SND .. LOOP_SOUNDS[3], SND .. LOOP_SOUNDS[4], SND .. LOOP_SOUNDS[5],
-      SND .. "bunkbustfall.wav" },
-    -- Click-only dispatch keeps the strike's cursor and turn handling, exactly
-    -- as the Lightning Strike: \`on_select.cursor\` overrides the record's own
-    -- aim mode, and there is no \`on_fire\` and no \`eat_fire\` -- an eat would
-    -- also swallow the turn end (REPORT.md 11.7).
-    on_select = { cursor = true },
-    on_click = function(ev)
-      -- WR's Bunker Buster is unavailable on cave maps: there is no sky to drop
-      -- from. The shot is already spent; nothing falls.
-      if wa.world.cavern() then
-        wa.log("Bunker Buster: no drop on a cavern map")
-        return
-      end
-      drop(ev.worm, ev.x, ev.y)
-    end,
-  }
-  -- Whether a weapon ends the turn is a profile's setting, and PX's records
-  -- carry it off ("PX's records have it off on almost every weapon; each claim
-  -- puts back the weapon's own instead", \`weapons/claims.lua:46-51\`), so a
-  -- weapon built on one says so itself: this click ends the turn, as WA's
-  -- strikes do (\`weapons/claims.lua:85\`; \`Profiles/Highlander.toml:105-109\`
-  -- documents the same setting for the weapons that do not). \`wfcheck\`'s
-  -- SPEC_KEYS has no \`handling\` and reads an unknown literal key as a no-op --
-  -- as it has no \`missile\`, where the pack's use and a match test outrank the
-  -- definition (REPORT.md 4.1). Setting it on a local spec is how the pack sets
-  -- it too, and what keeps that literal-key note off this file.
-  spec.handling = { ends_turn = true }
-  wa.weapons.replace(spec)
-end
-
-return M
-`
-      },
-      {
-        path: 'lib/px_trail.lua',
-        name: 'lib/px_trail.lua',
-        language: 'lua',
-        content: `-- Project X's effect-manager trail (wklua_and_px/utils/px_effects.c), as a
--- module: one trail per round, sampled in game frames and drawn with the
--- engine's textured beams (\`wa.draw.ribbon\`). It is what PX's bullet sets with
--- \`linkedEffect1->SetTrail(12, 2, 0)\`; TRAIL.md is how to bolt it onto a
--- weapon, and REPORT.md 11.9 is the line-by-line mapping back to px_effects.c.
---
---   * At most \`max\` points (PX's \`trailMaxL\`, :264), one appended every \`every\`
---     game frames while the round moves (PX's \`treshold\`, :266; sampled at
---     :579-582, made at :1210-1233), the oldest dropped past the cap
---     (\`DetractTrail\`, :1229-1232 and :1235-1248). No point while the round is
---     at rest (:1215), nor one within 0.01 of the point before it (:1223).
---   * \`DrawTrail\` (:1298-1380) draws two textured beams: a sharp core
---     (\`tazer_lightningBeamSprite\`) and, wider, a soft glow (\`beam_glowSprite\`;
---     it runs because \`shouldBeamGlow\` defaults true, :92). Point i of n has
---     t = (i+1)/(n+1) floored at 0.1 -- type 0, the third \`SetTrail\` argument,
---     is neither the wavy nor the mid-thick-edge-thin profile (:1311-1323) --
---     and that t is the point's texcoord, its colour scale, and, through the
---     width, how thick it draws.
---   * PX's widths are half widths (\`TexturedBeamPoint\` lays the section out at
---     +-dx; \`textured_beam(draw_quad).PXC:35-47\`), and \`wa.draw.ribbon\` wants
---     the full one, so \`core_w\` and \`glow_w\` are already doubled (PX's
---     rayThickness 4.0 and rayGlowThick 6.5, :149-150).
---   * The effect outlives its round: with the link gone \`IsTargetMoving()\` is
---     true again (:560), so the shed that is left is the vanish -- one point
---     every \`vanish\` game frames, from the oldest end (:583-587, and
---     trailVanishSpd is 2, :169).
-
-local trail = {}
-
--- The defaults are PX's bullet's. \`add\` copies them, so change these once, or
--- pass the same names in \`opts\` for one trail. \`beam\` and \`glow\` must also be
--- in the component's \`sprites\` list (the paths are bundle-relative).
-trail.MAX, trail.EVERY, trail.VANISH = 12, 2, 2
-trail.CORE_W, trail.GLOW_W = 8.0, 13.0
--- The effect's colour is its CEffectManager constructor's r, g, b, which PX's
--- bullet script does not show: white is a neutral stand-in.
-trail.R, trail.G, trail.B = 255, 255, 255
--- nil means \`wa.depth.OBJECTS\`, which only exists inside install(ctx): the engine
--- refuses \`wa\` while it is loading a component's file and everything it requires
--- ("a component's file only returns its data; use wa in install(ctx)").
-trail.DEPTH = nil
-trail.BEAM = "sprites/px_effects/beam.png"
-trail.GLOW = "sprites/px_effects/beam_glow.png"
-
--- Every trail drawn: the live rounds, and the ones outliving them.
-local trails = {}
--- Missile id -> its trail, while the round is in the air.
-local live = {}
--- One hidden actor, while there is a trail to sample or to shed. It ticks the
--- game frames, so nothing here depends on the render rate.
-local driver, tick = nil, 0
--- Game frames a live trail may go unsampled before its round counts as gone.
--- A missile fires a frame callback every game frame while it exists, so one
--- frame of slack is enough; two leaves room for callback order.
-local STALE = 2
-
-local function start_driver(t, owner)
-  if driver then return end
-  -- The sprite is never seen; it just has to be one the bundle declares.
-  driver = wa.actors.spawn({
-    sprite = t.beam, visible = false, gravity = false, collide = false, owner = owner,
-    on = function(a)
-      tick = tick + 1
-      for i = #trails, 1, -1 do
-        local v = trails[i]
-        if v.live and tick - v.seen >= STALE then
-          -- Its round stopped firing frames: hit, exploded or gone from the map.
-          v.live = false
-          live[v.id] = nil
-        end
-        if not v.live and tick % v.vanish == 0 then
-          table.remove(v.pts, 1)
-          if #v.pts == 0 then
-            -- \`table.remove\`, not \`trails[i] = nil\`: a hole anywhere before the
-            -- end makes \`#trails\` unspecified and stops the draw's \`ipairs\` at
-            -- the hole, which reads as "no trail is drawn any more" for every
-            -- round, live ones included. The loop runs backwards so shifting the
-            -- tail down cannot skip an element.
-            table.remove(trails, i)
-            live[v.id] = nil
-          end
-        end
-      end
-      if #trails == 0 then driver = nil; a:despawn() end
-    end,
-  })
-end
-
--- Trail the round \`id\`, owned by \`owner\` (a worm or a team, as \`wa.actors.spawn\`
--- wants). \`opts\` overrides any of the fields above for this trail alone.
-function trail.add(id, owner, opts)
-  local t = {
-    id = id, pts = {}, live = true, seen = tick,
-    max = trail.MAX, every = trail.EVERY, vanish = trail.VANISH,
-    core_w = trail.CORE_W, glow_w = trail.GLOW_W,
-    r = trail.R, g = trail.G, b = trail.B,
-    depth = trail.DEPTH, beam = trail.BEAM, glow = trail.GLOW,
-  }
-  -- Every field \`opts\` may override, one at a time: a \`pairs\` loop would read in
-  -- an unspecified order (wfcheck's lockstep note), even though copying values
-  -- cannot depend on it.
-  for _, k in ipairs({
-    "max", "every", "vanish", "core_w", "glow_w", "r", "g", "b", "depth", "beam", "glow",
-  }) do
-    if opts and opts[k] ~= nil then t[k] = opts[k] end
-  end
-  -- \`trail.DEPTH\` cannot be read at load time (see trail.DEPTH above), so the
-  -- default is resolved here, in a game frame, where \`wa\` does exist.
-  if t.depth == nil then t.depth = wa.depth.OBJECTS end
-  trails[#trails + 1] = t
-  live[id] = t
-  start_driver(t, owner)
-  return t
-end
-
--- Is this round trailed? For attaching to rounds you did not launch yourself.
-function trail.has(id)
-  return live[id] ~= nil
-end
-
--- The round is gone: stop sampling it and let its trail be shed. Optional -- the
--- driver notices a round that stopped firing frames within STALE game frames --
--- but this starts the fade at once.
-function trail.drop(id)
-  local t = live[id]
-  if t then
-    t.live = false
-    live[id] = nil
-  end
-end
-
-local installed = false
-
--- Register the engine callbacks. Call this from your component's install(ctx):
--- a component's file, and anything it requires, only returns data -- \`wa\` does
--- not exist yet, which is why nothing above this line touches it, and why
--- \`trail.DEPTH\` waits for \`add\` to resolve it.
-function trail.install()
-  if installed then return end
-  installed = true
-
-  -- PX's FillTrail (:1210-1233), on the missile's own game frame.
-  wa.on.missile_frame(function(m)
-    local t = live[m.id]
-    if not t then return end
-    t.seen = tick
-    if m.phase ~= "post" then return end
-    if tick % t.every ~= 0 then return end
-    if math.abs(m.vx) < 0.15 and math.abs(m.vy) < 0.15 then return end
-    local pts = t.pts
-    local last = pts[#pts]
-    if last
-        and (last[1] - m.x) * (last[1] - m.x) + (last[2] - m.y) * (last[2] - m.y) <= 0.01 then
-      return
-    end
-    pts[#pts + 1] = { m.x, m.y }
-    if #pts > t.max then table.remove(pts, 1) end
-  end)
-
-  -- PX's DrawTrail (:1298-1380), from the render callback. \`wa.draw.ribbon\`
-  -- copies its table, so one spec is refilled for every pass of every trail, as
-  -- the packs do (electrical.lua:409-440): a table per draw made enough garbage
-  -- for a collection inside the draw.
-  if wa.on.draw and wa.draw.ribbon then
-    local RIBBON = { blend = "add", points = {} }
-    local function pass(t, sprite, width)
-      local pts, n = t.pts, #t.pts
-      if n < 2 then return end -- \`if (trailAmount < 2) return;\` (:1300)
-      RIBBON.sprite, RIBBON.depth = sprite, t.depth
-      local rp = RIBBON.points
-      for i = 1, n do
-        -- PX's t (a 0-based i over n, plus one) floored at 0.1: strength,
-        -- texcoord and width in one number.
-        local f = i / (n + 1)
-        if f < 0.1 then f = 0.1 end
-        local p = rp[i]
-        if not p then p = {}; rp[i] = p end
-        p.x, p.y, p.u, p.width = pts[i][1], pts[i][2], f, f * width
-        p.color = (255 << 24) | (math.floor(t.r * f) << 16)
-          | (math.floor(t.g * f) << 8) | math.floor(t.b * f)
-      end
-      for i = #rp, n + 1, -1 do rp[i] = nil end
-      wa.draw.ribbon(RIBBON)
-    end
-    wa.on.draw(function()
-      for _, t in ipairs(trails) do
-        pass(t, t.beam, t.core_w)
-        if t.glow_w > 0 then pass(t, t.glow, t.glow_w) end
-      end
-    end)
-  end
-end
-
-return trail
-`
-      },
-      {
-        path: 'lib/sentry_mask.lua',
-        name: 'lib/sentry_mask.lua',
-        language: 'lua',
-        content: `-- Collision silhouette above the eight buried pixels of PX's feet.
--- Rows relative to the mask's bottom anchor (source x=31, y=41).
--- These runs also describe turret_mask.png; the original base art is untouched.
-local rows = {
-  { -22, -3, 4 },
-  { -21, -4, 5 },
-  { -20, -4, 5 },
-  { -19, -5, 6 },
-  { -18, -5, 6 },
-  { -17, -6, 7 },
-  { -16, -6, 7 },
-  { -15, -9, 7 },
-  { -14, -10, 7 },
-  { -13, -11, 7 },
-  { -12, -12, 7 },
-  { -11, -13, -7, -5, 6 },
-  { -10, -13, -9, -4, 5 },
-  { -9, -12, -10, -2, 3 },
-  { -8, -2, 3 },
-  { -7, -2, 3 },
-  { -6, -2, 3 },
-  { -5, -2, 3 },
-  { -4, -3, 4 },
-  { -3, -3, 4 },
-  { -2, -3, 4 },
-  { -1, -4, 5 },
-  { 0, -4, -1, 1, 5 },
-}
-local mask = { rows = rows, top = 22, left = -13, right = 7, burial = 8 }
-
--- Constant-time membership in the exact authored row runs.
-function mask.contains(x, y, px, py)
-  local row = rows[py - y + mask.top + 1]
-  if not row then return false end
-  for i = 2, #row, 2 do
-    if px >= x + row[i] and px <= x + row[i + 1] then return true end
-  end
-  return false
-end
-
-function mask.overlaps_worm(x, y, worm)
-  x, y = math.floor(x), math.floor(y)
-  local wx, wy = worm.x, worm.y
-  if x + mask.right < wx - 10 or x + mask.left > wx + 10
-    or y < wy - 20 or y - mask.top > wy + 6 then return false end
-  for _, row in ipairs(rows) do
-    local py = y + row[1]
-    if py >= wy - 20 and py <= wy + 6 then
-      for i = 2, #row, 2 do
-        if x + row[i] <= wx + 10 and x + row[i + 1] >= wx - 10 then return true end
-      end
-    end
-  end
-  return false
-end
-
-function mask.intersects(x, y, other_x, other_y)
-  x, y, other_x, other_y = math.floor(x), math.floor(y), math.floor(other_x), math.floor(other_y)
-  if x + mask.right < other_x + mask.left or x + mask.left > other_x + mask.right
-    or y < other_y - mask.top or y - mask.top > other_y then return false end
-  for _, row in ipairs(rows) do
-    -- Rows are contiguous from -top through zero: only one can share this y.
-    local other = rows[y + row[1] - other_y + mask.top + 1]
-    if other then
-      for i = 2, #row, 2 do
-        for j = 2, #other, 2 do
-          if x + row[i] <= other_x + other[j + 1] and x + row[i + 1] >= other_x + other[j] then return true end
-        end
-      end
-    end
-  end
-  return false
-end
-
-function mask.clear(x, y, worms, planter_id, burial, solid)
-  x, y = math.floor(x), math.floor(y)
-  burial = burial or 0
-  solid = solid or wa.land.solid
-  -- Test each worm once against the authored runs, rather than reading native
-  -- userdata properties again for every pixel. Burial never exempts a worm.
-  for _, w in ipairs(worms) do
-    if w.id ~= planter_id and w.hp > 0 and mask.overlaps_worm(x, y, w) then return false end
-  end
-  for _, row in ipairs(rows) do
-    if row[1] <= -burial then
-      local py = y + row[1]
-      for i = 2, #row, 2 do
-        for px = x + row[i], x + row[i + 1] do
-          if solid(px, py) then return false end
-        end
-      end
-    end
-  end
-  return true
-end
-
-return mask
-`
-      },
-      {
-        path: 'lib/shared.lua',
-        name: 'lib/shared.lua',
-        language: 'lua',
-        content: `-- Highlander: what its modules share, one table per match.
--- Split from rules.lua by tools/split_highlander.py.
-local shared = {}
-
--- The engine names a weapon by its id (\`px.javelin\`, \`stock.fast_walk\`); the
--- pack's own tables are keyed by each weapon's home slot (lib/homes.lua).
--- shared.home(id) is the home of a Highlander weapon, or the stock name of
--- one of WA's own that no Highlander weapon calls home (WA's Mine is not the
--- Nuke Rocket); nil for anything else.
-local HOME = require("lib/homes")
-local IS_HOME = {}
-for _, home in pairs(HOME) do IS_HOME[home] = true end
-
-function shared.home(id)
-  if id == nil then return nil end
-  if HOME[id] then return HOME[id] end
-  local stock = id:match("^stock%.(.+)$")
-  return stock and not IS_HOME[stock] and stock or nil
-end
-
-return shared
-`
-      },
-      {
-        path: 'lib/turret.lua',
-        name: 'lib/turret.lua',
-        language: 'lua',
-        content: `-- Highlander: Project X's sentry turrets (weapon_sentry_gun's PxSentryGun,
--- weapon_sentry_laser's PxSentryLaser), the part they share: a body dropped
--- where the worm stands, with passage for the planter until clear, a head that sweeps,
--- picks the nearest moving enemy in sight beyond its barrel sweep, turns and fires, reloads
--- each turn, and is disabled for the turn by positive damage and explodes at 0
--- health. What it aims at and what it fires are the weapon's: \`targets\` (by
--- default the worms) and \`fire(t, a, s, target)\`.
---
--- From the standalone sentry_gun port (mods/examples/sentry_gun_old), with
--- its numbers as the defaults. Angles: 0 down, 90 right, 180 up, 270 left.
-local turret = {}
-local turrets = {}
-local feet = require("lib/sentry_mask")
-
--- Scripted bodies are not in the stock electrical target list. Include
--- their whole body circle in Lightning's existing beam selection in Lua.
-function turret.on_beam(x0, y0, dx, dy, length)
-  local best, entry
-  for _, t in ipairs(turrets) do
-    for _, id in ipairs(wa.sorted(t.state)) do
-      local s = t.state[id]
-      if s.body.id == id then
-        local cx, cy = s.x - x0, s.y - t.capture_up - y0
-        local along = cx * dx + cy * dy
-        local miss = cx * cx + cy * cy - along * along
-        if miss <= t.capture_radius * t.capture_radius then
-          local at = along - math.sqrt(math.max(0, t.capture_radius * t.capture_radius - miss))
-          if at > 0 and at < length and (not best or at < best) then
-            best, entry = at, { t = t, s = s, body = s.body }
-          end
-        end
-      end
-    end
-  end
-  if best then return x0 + best * dx, y0 + best * dy, entry end
-end
-
-function turret.capture_hit(entry, x, y, alliance)
-  if not entry or entry.t.state[entry.body.id] ~= entry.s then return false end
-  local dx, dy = entry.s.x - x, entry.s.y - entry.t.capture_up - y
-  if dx * dx + dy * dy > (entry.t.capture_radius + 6) * (entry.t.capture_radius + 6) then return false end
-  return entry.t.capture(entry.body, entry.s, alliance)
-end
-
--- PX's Javelin includes sentries in its strict impact square. The stock
--- electrical list excludes Lua actors, so add them through this registry.
-function turret.projectile_target(x, y)
-  for _, t in ipairs(turrets) do
-    for _, id in ipairs(wa.sorted(t.state)) do
-      local s = t.state[id]
-      if s.body.id == id and math.abs(x - s.x) < 20
-        and math.abs(y - (s.y - t.capture_up)) < 20 then
-        return { t = t, s = s, body = s.body }
-      end
-    end
-  end
-end
-
-function turret.projectile_hit(entry, damage, vx, vy, uid)
-  if entry and entry.t.state[entry.body.id] == entry.s then
-    entry.t.projectile_hit(entry.body, entry.s, damage, vx, vy, uid)
-    return true
-  end
-  return false
-end
-
-local DEFAULTS = {
-  sensor_px = 360,      -- detection radius
-  ammo = 20,            -- rounds per turn
-  shot_frames = 6,      -- frames between rounds
-  activate = 60,        -- frames after acquiring before the first shot
-  beep_frames = 60,     -- minimum gap between alert beeps
-  rot_idle = 0.5,       -- degrees per frame while sweeping
-  rot_active = 1.5,     -- PX tracking speed, degrees per frame
-  sweep = 10,           -- PX idle sweep amplitude, degrees
-  aim_tolerance = 1.5,  -- PX fires only after rotation reaches the target
-  require_motion = true, -- PX only acquires walking/jumping/moving worms
-  hold_own_turn = true, -- the Sentry Gun holds fire on its colour's turns
-  settle_px = 4,        -- mask may overlap real terrain by this depth
-  foot_offsets = { -6, 7 }, -- support beside the buried mask, never inside it
-  top_px = feet.top,         -- top of the feet/hub silhouette above its anchor
-  capture_radius = 24, -- Lightning's circle around the body
-  capture_up = 16 - feet.burial,
-  muzzle_up = 25 - feet.burial,       -- pixels from the anchor up to the turret pivot
-  sight_grace_px = 4, -- terrain grace beyond the barrel tip's circular sweep
-  placement_reach = 64, -- bounded clear-space search around the planting worm
-  health = 50,
-  slide_friction = 0.20, -- pixels/frame lost on supported ground
-  contact_worm = 0.5,    -- fraction of incoming worm velocity transferred
-  contact_projectile = 0.25, -- PX Javelin transfers a quarter of its velocity
-  boom = { damage = 50, id = 100, below = false },
-  -- Occlusion band for the head: in front of terrain (0x180000), so the
-  -- landscape never buries it.
-  head_depth = wa.depth.FRONT,
-}
-
--- 0 = down, 90 = right: the art faces right, and screen y grows down.
--- wa.math: an aim reaches the simulation (what the turret sees and hits), so
--- it must come out the same on every machine.
-function turret.angle_to(ax, ay, tx, ty)
-  local dx = (tx - ax) // 1
-  local dy = (ty - ay) // 1
+local IMPACT = "sprites/impact.png"
+
+-- Pack sprites are installed at gfx init from this list only. A sprite missing
+-- from it does not exist at runtime, whatever a:look() asks for later.
+local SPRITES = { IMPACT, CASING, BASE, GUN, FLARE }
+
+-- 0 = down, 90 = right: the source art faces right, and screen y grows down.
+local function angle_to(ax, ay, tx, ty)
+  local dx = (tx - ax) // PX
+  local dy = (ty - ay) // PX
   local deg = math.deg(wa.math.atan(dx, dy))
-  if deg < 0 then deg = deg + 360 end
+  if deg < 0 then
+    deg = deg + 360
+  end
   return deg
-end
-
--- The same physical barrel tip is used for firing and its terrain gate.
-function turret.muzzle(t, a, angle)
-  local rad = math.rad(angle)
-  return a.x + wa.math.sin(rad) * t.muzzle_out,
-    a.y - t.muzzle_up + wa.math.cos(rad) * t.muzzle_out
-end
-
--- Terrain probes leave out this turret's stamped feet, but real terrain
--- and overlapping actors still block. Starting inside either must block too:
--- world.trace otherwise describes the exit from an initial overlap.
-function turret.trace(a, x0, y0, x1, y1)
-  local hit = wa.world.trace { x0 = x0, y0 = y0, x1 = x1, y1 = y1,
-    radius = 0, with = { "terrain" }, ignore = { a } }
-  if hit and hit.starts_solid then return { hit = true, x = x0, y = y0 } end
-  if hit and hit.hit then return hit end
-end
-
--- Ignore nearby terrain for sight only, inside the circle swept by every
--- possible muzzle position plus padding. Beyond it, even an initially solid
--- ray must block. Firing still checks the actual tip and uses the full terrain.
-function turret.sight(t, a, tx, ty)
-  local px, py = a.x, a.y - t.muzzle_up
-  local dx, dy = tx - px, ty - py
-  local radius = t.muzzle_out + t.sight_grace_px
-  local distance2 = dx * dx + dy * dy
-  if distance2 <= radius * radius then return true end
-  local scale = radius / math.sqrt(distance2)
-  return not turret.trace(a, px + dx * scale, py + dy * scale, tx, ty)
 end
 
 local function turn_toward(cur, want, speed)
   local d = (want - cur + 540) % 360 - 180
-  if d > speed then d = speed elseif d < -speed then d = -speed end
+  if d > speed then
+    d = speed
+  elseif d < -speed then
+    d = -speed
+  end
   return (cur + d) % 360
-end
-
--- A turret without one of the sounds (the laser has no firing loop) skips it.
-local function play(a, sound)
-  if sound then a:sound(sound) end
 end
 
 local function angle_gap(a, b)
@@ -2009,707 +246,1339 @@ local function angle_gap(a, b)
   return d < 0 and -d or d
 end
 
--- \`cfg\`: the weapon's numbers (over DEFAULTS), \`art\` { base, gun, flare,
--- barrel }, \`sounds\` { place, beep, fire_loop, fire_end, servo_start,
--- servo_loop, servo_end }, \`tints\` (team colours, red to cyan, 0xRRGGBB),
--- \`kind\`, \`fire(t, a, s, target)\`, which shoots once (a, the body; s, its
--- state), and optionally \`targets(t, a, s)\`, what it can aim at: a list of
--- { key, x, y, alliance, moving }, in an order the same on every machine.
--- Returns \`t\`, whose \`place(fire_ev)\` drops a turret for the firing worm.
---
--- The head: \`gun\`, team-tinted, its frames the firing poses; with a
--- \`barrel\`, the barrel is its own untinted layer behind it, its frames the
--- poses, and the gun's two frames are its art and its mirror image, for a
--- turret that has turned to face left (PX draws it flipped).
-function turret.new(cfg)
-  local t = {}
-  for k, v in pairs(DEFAULTS) do t[k] = v end
-  for k, v in pairs(cfg) do t[k] = v end
-  local state = {}
-  -- The colour taking its turn: its turrets hold fire. Alliance, not team:
-  -- it is WA's colour index (0 red .. 5 cyan), shared by allied teams.
-  local active_alliance = nil
-
-  local function note_motion(s, w)
-    local p = s.seen[w.id]
-    local m = (w.vx ~= 0 or w.vy ~= 0)
-    if p then
-      if p.x ~= w.x or p.y ~= w.y then m = true end
-      p.x, p.y, p.moving = w.x, w.y, m
-    else
-      s.seen[w.id] = { x = w.x, y = w.y, moving = m }
+-- Nearest moving enemy worm with line of sight. Ties break on worm id so both
+-- peers pick the same one.
+-- True when this worm is a valid target right now: an enemy, in range, with a
+-- clear line from the turret head. The head, not the anchor: the anchor is the
+-- tripod feet on the ground, so a ray from there hits the terrain it stands on.
+-- PX tested ObjState WS_WALKING/WS_JUMP before velocity, because WA walks a
+-- worm by stepping its position with vx/vy still zero. Worm state is not in
+-- the Lua surface, so motion is measured from frame to frame instead; testing
+-- velocity alone never sees a walking worm at all.
+local function note_motion(s, w)
+  local p = s.seen[w.id]
+  local m = (w.vx ~= 0 or w.vy ~= 0)
+  if p then
+    if p.x ~= w.x or p.y ~= w.y then
+      m = true
     end
+    p.x, p.y, p.moving = w.x, w.y, m
+  else
+    s.seen[w.id] = { x = w.x, y = w.y, moving = m }
   end
-
-  -- The Sentry Gun's targets: the worms, keyed by worm id; moving by
-  -- note_motion.
-  local function worm_targets(_, _, s)
-    local out = {}
-    for _, w in ipairs(wa.worms.all()) do
-      if w.visible ~= false then
-      local p = s.seen[w.id]
-        out[#out + 1] = { key = w.id, x = w.x, y = w.y, alliance = w.alliance, moving = p and p.moving, obj = w }
-    end
-    end
-    return out
-  end
-  local targets = cfg.targets or worm_targets
-
-  -- Movement is needed to notice a target; a held target may stop moving.
-  -- Nearby terrain has grace around the complete barrel sweep; normal sight
-  -- blocking applies beyond it. Firing also checks the current barrel tip.
-  local function can_track(a, s, c, need_motion)
-    if c.alliance == s.alliance then return false end
-    if need_motion and t.require_motion and not c.moving then return false end
-    local ex, ey = a.x, a.y - t.muzzle_up
-    local dx, dy = (c.x - ex) // 1, (c.y - ey) // 1
-    if dx * dx + dy * dy > t.sensor_px * t.sensor_px then return false end
-    return turret.sight(t, a, c.x, c.y)
-  end
-
-  -- The nearest moving enemy in sight; ties to the first listed, the same
-  -- everywhere.
-  local function acquire(a, s, list)
-    local ex, ey = a.x, a.y - t.muzzle_up
-    local best, best_d
-    for _, c in ipairs(list) do
-      if can_track(a, s, c, true) then
-        local dx, dy = (c.x - ex) // 1, (c.y - ey) // 1
-        local d = dx * dx + dy * dy
-        if not best_d or d < best_d then best, best_d = c, d end
-      end
-    end
-    return best
-  end
-
-  -- Keep the target while it remains eligible, in range and in sight.
-  local function held(a, s, list)
-    if s.tid == nil then return nil end
-    for _, c in ipairs(list) do
-      if c.key == s.tid then return can_track(a, s, c, false) and c or nil end
-    end
-    return nil
-  end
-
-  function t.start_firing(a, s)
-    if s.firing then return end
-    s.firing, s.anim = true, 0
-    -- PX zeroes ShootTimer as firing (re)starts: the first round goes now.
-    s.cooldown = 0
-    s.fire_sound = 35
-    play(a, t.sounds.fire_loop)
-  end
-
-  function t.stop_firing(a, s)
-    if not s.firing then return end
-    s.firing, s.anim = false, 0
-    play(a, t.sounds.fire_end)
-  end
-
-  local function update_servo(a, s, rotating)
-    if rotating then
-      if not s.rotating then
-        s.rotating, s.servo_sound = true, 17
-        play(a, t.sounds.servo_start)
-      elseif s.servo_sound <= 0 then
-        s.servo_sound = 47
-        play(a, t.sounds.servo_loop)
-      end
-    elseif s.rotating then
-      s.rotating, s.servo_sound = false, 0
-      play(a, t.sounds.servo_end)
-    end
-  end
-
-  local function think(a, s)
-    if not cfg.targets then
-    for _, w in ipairs(wa.worms.all()) do note_motion(s, w) end
-    end
-
-    local target
-    if s.active then
-      local list = targets(t, a, s)
-      target = held(a, s, list)
-      if not target and not s.lost then
-        target = acquire(a, s, list)
-        if target then s.tid = target.key end
-      end
-    end
-    local want
-    local hx, hy = a.x, a.y - t.muzzle_up
-    if target then
-      if not s.had_target then
-        s.activate = t.activate
-        wa.log("Sentry acquired " .. t.kind .. " id=" .. a.id .. " target=" .. target.key
-          .. " at=(" .. target.x .. "," .. target.y .. ")")
-        if s.beep <= 0 then
-          play(a, t.sounds.beep)
-          s.beep = t.beep_frames
-        end
-      end
-      s.had_target, s.lost = true, false
-      s.tx, s.ty = target.x, target.y
-      want = turret.angle_to(hx, hy, target.x, target.y)
-      s.angle = turn_toward(s.angle, want, t.rot_active)
-    elseif s.had_target then
-      -- PX stops firing at once, turns to the last place it saw it, then
-      -- drops it.
-      if not s.lost then t.stop_firing(a, s) end
-      s.lost = true
-      want = turret.angle_to(hx, hy, s.tx, s.ty)
-      s.angle = turn_toward(s.angle, want, t.rot_active)
-      if angle_gap(s.angle, want) <= t.aim_tolerance then
-        s.had_target, s.lost, s.tid = false, false, nil
-      end
-    else
-      -- PX sweeps to one side and turns back the moment it gets there.
-      s.had_target = false
-      want = s.idle + s.sweep_dir * t.sweep
-      s.angle = turn_toward(s.angle, want, t.rot_idle)
-      if s.angle == want then s.sweep_dir = -s.sweep_dir end
-    end
-
-    -- PX: turned over itself, it idles facing the other way.
-    if (180 - s.angle) * s.side < 0 then
-      s.side = -s.side
-      s.idle = 180 - 90 * s.side
-    end
-
-    if not s.active then
-      want = s.idle - 45 * s.side
-      s.angle = turn_toward(s.angle, want, t.rot_idle)
-      t.stop_firing(a, s)
-    end
-
-    if s.beep > 0 then s.beep = s.beep - 1 end
-    if s.activate > 0 then s.activate = s.activate - 1 end
-    if s.cooldown > 0 then s.cooldown = s.cooldown - 1 end
-    if s.servo_sound > 0 then s.servo_sound = s.servo_sound - 1 end
-    if s.fire_sound > 0 then s.fire_sound = s.fire_sound - 1 end
-
-    local aligned = target and angle_gap(s.angle, want) <= t.aim_tolerance
-    -- PX's long-rotation sound: a turn left of at least twice its speed.
-    update_servo(a, s, target ~= nil and angle_gap(s.angle, want) >= 2 * t.rot_active)
-
-    -- PX latches firing once on target, until it loses it, runs dry or is
-    -- disabled.
-    local hold_fire = t.hold_own_turn and active_alliance == s.alliance
-    local muzzle_clear = false
-    if target and not hold_fire and s.activate <= 0 and (s.firing or aligned) then
-      local mx, my = turret.muzzle(t, a, s.angle)
-      muzzle_clear = not turret.trace(a, mx, my, mx, my)
-    end
-    if muzzle_clear then
-      t.start_firing(a, s)
-      if s.fire_sound <= 0 then
-        s.fire_sound = 35
-        play(a, t.sounds.fire_loop)
-      end
-      if s.cooldown <= 0 then
-        t.fire(t, a, s, target)
-        s.cooldown = t.shot_frames
-      end
-    else
-      t.stop_firing(a, s)
-    end
-  end
-
-  -- Coalition owns the sentry. A living member is only WA's required
-  -- spawn/shot parent, chosen in stable worm-id order; it is not the owner.
-  function t.owner(a, s)
-    local best
-    for _, w in ipairs(wa.worms.all()) do
-      if w.hp > 0 and w.alliance == s.alliance and (not best or w.id < best.id) then best = w end
-    end
-    return best or a
-  end
-
-  local function disable(a, s)
-    s.disabled, s.active = true, false
-    s.had_target, s.lost, s.tid = false, false, nil
-    t.stop_firing(a, s)
-    update_servo(a, s, false)
-  end
-
-  local function destroy(a, s, explode)
-    state[a.id] = nil
-    if explode then
-      -- The blast's stock parent must come from the owning colour too.
-      -- This instant, invisible emission has no collision or lasting body.
-      local owner = t.owner(a, s)
-      if owner ~= a then
-        local e = wa.actors.spawn({ sprite = false, owner = owner,
-          x = a.x, y = a.y + feet.burial - 20, gravity = false, collide = false,
-          explode = { damage = t.boom.damage, id = t.boom.id, now = true } })
-        e:despawn()
-      else
-        a:explode(t.boom)
-      end
-    end
-    a:despawn()
-  end
-
-  local function hit(a, ev)
-    local s = state[a.id]
-    if not s then return end
-    local damage = math.max(0, ev.damage or 0)
-    if damage > 0 then
-      s.health = s.health - damage
-      disable(a, s)
-      if s.health <= 0 then destroy(a, s, true); return end
-    end
-    t.push(a, s, ev.vx or 0, ev.vy or 0)
-  end
-
-  function t.push(a, s, vx, vy)
-    s.vx, s.vy = s.vx + vx, s.vy + vy
-    a.vx, a.vy = 0, 0
-    if vy < 0 then s.planted = false end
-    if vx ~= 0 or vy ~= 0 then t.stop_firing(a, s) end
-  end
-
-  local function touched(a, ev)
-    local s = state[a.id]
-    if not s or not ev.other then return end
-    local uid = ev.other.uid
-    if uid and s.script_hits[uid] then s.script_hits[uid] = nil; return end
-    if ev.other.kind == "worm" and s.planter and ev.other.id == s.planter_id then return end
-    local fraction = ev.other.kind == "worm" and t.contact_worm or t.contact_projectile
-    t.push(a, s, (ev.vx or 0) * fraction, (ev.vy or 0) * fraction)
-  end
-
-  function t.projectile_hit(a, s, damage, vx, vy, uid)
-    if uid then s.script_hits[uid] = wa.world.frame() end
-    hit(a, { damage = damage, vx = vx, vy = vy })
-  end
-
-  local function motion(a, s)
-    local obstacles, land = nil, {}
-    local function other_feet()
-      if obstacles then return obstacles end
-      obstacles = {}
-      -- Settled sentries need only support probes. Snapshot obstacles once
-      -- when moving, including positions moved earlier in this Lua frame.
-      for _, other_t in ipairs(turrets) do
-        for _, id in ipairs(wa.sorted(other_t.state)) do
-          local other = other_t.state[id]
-          if id ~= a.id and other.body.id == id then
-            obstacles[#obstacles + 1] = { x = other.x, y = other.y }
-          end
-        end
-      end
-      return obstacles
-    end
-    local function solid(px, py)
-      px, py = math.floor(px), math.floor(py)
-      local row = land[py]
-      if not row then row = {}; land[py] = row end
-      if row[px] == nil then
-        -- Most leading pixels are air. Filter our own stamp only when the
-        -- grid says solid; real dirt and overlapping masks stay solid.
-        row[px] = wa.land.solid(px, py) and turret.trace(a, px, py, px, py) ~= nil
-      end
-      return row[px]
-    end
-    local function support(x, y)
-      for _, dx in ipairs(t.foot_offsets) do
-        if solid(x + dx, y - t.settle_px + 1) then return true end
-      end
-      return false
-    end
-    local function blocked(x, y)
-      for _, other in ipairs(other_feet()) do
-        if feet.intersects(x, y, other.x, other.y) then return true end
-      end
-      -- Test the newly entered silhouette pixels. Existing burial cannot
-      -- trap a knocked turret, and the burial band may slide through soil.
-      local ox, oy = math.floor(s.x), math.floor(s.y)
-      x, y = math.floor(x), math.floor(y)
-      for _, row in ipairs(feet.rows) do
-        if row[1] <= -t.settle_px then
-          for i = 2, #row, 2 do
-            for px = x + row[i], x + row[i + 1] do
-              if not feet.contains(ox, oy, px, y + row[1]) and solid(px, y + row[1]) then return true end
-            end
-          end
-        end
-      end
-      return false
-    end
-    if s.planted and not support(s.x, s.y) then
-      s.planted = false
-      t.stop_firing(a, s)
-      update_servo(a, s, false)
-    end
-    if s.planted and s.vy > 0 then s.vy = 0 end
-    if not s.planted then s.vy = s.vy + wa.world.gravity() end
-    if s.vx ~= 0 or s.vy ~= 0 or not s.planted then
-      local n = math.max(1, math.ceil(math.max(math.abs(s.vx), math.abs(s.vy))))
-      local dx, dy = s.vx / n, s.vy / n
-      for _ = 1, n do
-        if dx ~= 0 then
-          if blocked(s.x + dx, s.y) then s.vx, dx = 0, 0
-          else s.x = s.x + dx end
-        end
-        if dy < 0 then
-          if blocked(s.x, s.y + dy) then s.vy, dy = 0, 0
-          else s.y = s.y + dy; s.planted = false end
-        elseif dy > 0 then
-          if blocked(s.x, s.y + dy) and not support(s.x, s.y + dy) then
-            s.vy, dy = 0, 0
-          else
-            s.y = s.y + dy
-            if support(s.x, s.y) then
-              s.vy, dy = 0, 0
-              if not s.planted then
-                s.planted = true
-                wa.log(string.format("Sentry planted %s id=%d mask=(%.2f,%.2f) art_feet=%.2f support_y=%.2f overlap=%d",
-                  t.kind, a.id, s.x, s.y, s.y + feet.burial, s.y - t.settle_px + 1, t.settle_px))
-                play(a, t.sounds.place)
-              end
-            end
-          end
-        end
-        if s.planted and not support(s.x, s.y) then s.planted = false end
-      end
-      if s.planted then
-        if math.abs(s.vx) <= t.slide_friction then s.vx = 0
-        elseif s.vx > 0 then s.vx = s.vx - t.slide_friction
-        else s.vx = s.vx + t.slide_friction end
-      end
-    end
-    a.x, a.y, a.vx, a.vy = s.x, s.y, 0, 0
-    if a:in_water() then destroy(a, s, false); return false end
-    return true
-  end
-
-  local function brain(a)
-    local s = state[a.id]
-    if not s then return end
-    -- Damage is consumed only by on.hit; the legacy frame damage accumulator
-    -- may describe the same blast and must not deduct health twice.
-    s.tick = s.tick + 1
-    local frame = wa.world.frame()
-    for uid, at in pairs(s.script_hits) do
-      if at < frame - 1 then s.script_hits[uid] = nil end
-    end
-    if s.recoil > 0 then s.recoil = s.recoil - 1 end
-    if s.firing or s.recoil > 0 then s.anim = s.anim + 1 end
-    local stamped_x, stamped_y = s.x, s.y
-    if not motion(a, s) then return end
-    if s.planter then
-      local planter
-      for _, w in ipairs(wa.worms.all()) do
-        if w.id == s.planter_id and w.hp > 0 then planter = w; break end
-      end
-      -- WA uses the stamp from the frame's start until the next frame.
-      -- When falling, clear both that footprint and the moved feet before
-      -- ending passage, so a remaining old stamp cannot trap the planter.
-      if not planter or (not feet.overlaps_worm(s.x, s.y, planter)
-        and not feet.overlaps_worm(stamped_x, stamped_y, planter)) then
-        a:collision_ignore(s.planter, false)
-        wa.log(string.format("Sentry passage ended %s id=%d planter=%d (%s)",
-          t.kind, a.id, s.planter_id, planter and "clear" or "gone"))
-        s.planter, s.planter_id = nil, nil
-      end
-    end
-    s.active = not s.disabled and s.ammo > 0
-    if s.planted then think(a, s) end
-  end
-
-  local function status(s)
-    if s.ammo <= 0 then return 0x808080, true, "empty" end
-    if not s.planted or not s.active or (t.hold_own_turn and active_alliance == s.alliance) then
-      return 0x202020, false, "inactive"
-    end
-    if s.firing or s.had_target or s.lost or s.recoil > 0 then return 0xFF3030, true, "tracking" end
-    return 0x30FF50, true, "ready"
-  end
-  t.status = status
-
-  -- One gameplay actor; its head, barrel, flare and added LED are draw calls.
-  local function sheet(path, x, y, frame, angle, rgb, depth, blend, size)
-    local h = (size or 144) / 2
-    local r = math.rad(angle)
-    local c, sn = math.cos(r), math.sin(r)
-    local points = {}
-    for i, p in ipairs({ {-h,-h}, {h,-h}, {h,h}, {-h,h} }) do
-      points[i] = { x + p[1] * c - p[2] * sn, y + p[1] * sn + p[2] * c }
-    end
-    wa.draw.quad({ sprite = path, points = points, frame = frame,
-      color = 0xFF000000 | rgb, depth = depth, blend = blend or "alpha" })
-  end
-  if wa.on.draw then
-    wa.on.draw(function()
-      for _, id in ipairs(wa.sorted(state)) do
-        local s = state[id]
-        if s.body.id == id then
-          sheet(t.art.base, s.x + 1, s.y - 9, 0, 0, 0xFFFFFF, wa.depth.BEHIND_TERRAIN, "alpha", 64)
-          local x, y, angle = s.x, s.y - t.muzzle_up, (90 - s.angle) % 360
-          local pose = (s.firing or s.recoil > 0) and (1 + ((s.anim // 3) % 2)) or 0
-          if t.art.barrel then sheet(t.art.barrel, x, y, pose, angle, 0xFFFFFF, t.head_depth + 1) end
-          local look = t.art.barrel and (s.side < 0 and 1 or 0) or pose
-          sheet(t.art.gun, x, y, look, angle, t.tints[s.alliance + 1] or t.tints[1], t.head_depth)
-          if t.art.flare then
-            sheet(t.art.flare, x, y, pose == 1 and 1 or 0, angle, 0xFFFFFF, t.head_depth, "add")
-          end
-          local rgb, flash = status(s)
-          if flash and (s.tick % 30) >= 15 then rgb = (rgb & 0xFEFEFE) >> 1 end
-          local r = math.rad(angle)
-          local lx, ly = -7 * math.cos(r) + 3 * math.sin(r), -7 * math.sin(r) - 3 * math.cos(r)
-          sheet(t.art.light, x + lx, y + ly - 4, 0, 0, rgb, t.head_depth - 1, "alpha", 5)
-        end
-      end
-    end)
-  end
-
-  function t.capture(a, s, alliance)
-    if alliance < 0 or alliance > 5 then return false end
-    s.alliance = alliance
-    disable(a, s)
-    return true
-  end
-
-  -- Prefer the worm's position, then deterministic 4px rings if blocked.
-  -- The planter can walk out; every other worm keeps its body clearance.
-  local function placement(worm, facing)
-    local wx, wy, planter_id = worm.x, worm.y, worm.id
-    local x, y = wx, wy - feet.burial
-    -- Nothing moves during this callback. Snapshot native handles once and
-    -- share terrain reads across the overlapping candidates in this search.
-    local worms, obstacles, land = {}, {}, {}
-    for _, w in ipairs(wa.worms.all()) do
-      local id, hp = w.id, w.hp
-      if id ~= planter_id and hp > 0 then
-        worms[#worms + 1] = { id = id, hp = hp, x = w.x, y = w.y }
-      end
-    end
-    for _, other_t in ipairs(turrets) do
-      for _, id in ipairs(wa.sorted(other_t.state)) do
-        local other = other_t.state[id]
-        if other.body.id == id then obstacles[#obstacles + 1] = { x = other.x, y = other.y } end
-      end
-    end
-    local function solid(px, py)
-      local row = land[py]
-      if not row then row = {}; land[py] = row end
-      local value = row[px]
-      if value == nil then value = wa.land.solid(px, py); row[px] = value end
-      return value
-    end
-    for radius = 0, t.placement_reach, 4 do
-      local step = radius == 0 and 360 or math.max(15, math.floor(360 / (radius / 2)))
-      for deg = 0, 359, step do
-        local angle = math.rad(deg)
-        local tx = x + facing * radius * wa.math.cos(angle)
-        local ty = y + radius * wa.math.sin(angle)
-        local blocked = false
-        for _, other in ipairs(obstacles) do
-          if feet.intersects(tx, ty, other.x, other.y) then blocked = true; break end
-        end
-        if not blocked and feet.clear(tx, ty, worms, planter_id, t.settle_px, solid) then
-          local hit = wa.land.trace(wx, wy - 8, tx, ty - feet.top / 2)
-          if not hit or not hit.hit then return tx, ty end
-        end
-      end
-    end
-  end
-
-  -- Drop a turret for the firing worm, its owner's colour (not worm.team,
-  -- its roster slot: online a blue team in slot 1 placed a red turret).
-  function t.place(fire_ev)
-    local worm = fire_ev.worm
-    local alliance = worm.alliance or 0
-    if alliance < 0 or alliance > 5 then alliance = 0 end
-    local facing = worm.facing
-    local idle = facing < 0 and 270 or 90
-    local x, y = placement(worm, facing)
-    if not x then
-      -- The native placed shot consumes one charge; retain it on failure.
-      local ammo = worm:ammo(t.weapon)
-      if ammo >= 0 then worm:ammo(t.weapon, { set = ammo + 1 }) end
-      wa.log("Sentry: no clear placement within " .. t.placement_reach .. "px; charge refunded")
-      return nil
-    end
-    local body = wa.actors.spawn({
-      sprite = t.art.mask, x = x, y = y,
-      vx = 0, vy = 0,
-      loop = false, origin = "bottom", owner = worm, kind = t.kind, persist = true,
-      gravity = false, collide = false, drown = false, as_object = true,
-      mask = true, mask_worms = true, mask_weapons = true, mask_land = false, mask_actors = false,
-      on = { frame = brain, hit = hit, contact = touched },
-    })
-    assert(body:collision_ignore(worm, true), "Sentry: could not register planter passage")
-    local s = {
-      alliance = alliance, planted = false, active = true, disabled = false, ammo = t.ammo,
-      x = x, y = y, vx = body.vx, vy = body.vy, tick = 0,
-      script_hits = {}, health = t.health, angle = idle, idle = idle, side = facing < 0 and -1 or 1,
-      sweep_dir = 1, shots = 0, firing = false, anim = 0, rotating = false,
-      servo_sound = 0, fire_sound = 0, beep = 0, activate = 0, cooldown = 0,
-      had_target = false, lost = false, seen = {}, recoil = 0,
-      planter = worm, planter_id = worm.id,
-    }
-    state[body.id] = s
-    s.body = body
-    body:frame(0)
-    -- Zero additive colour hides the mechanical mask without removing its alpha.
-    body:gfx({ tint = 0, blend = "add", depth = wa.depth.BEHIND_TERRAIN })
-    wa.log(string.format("Sentry placed %s id=%d planter=%d at=(%.2f,%.2f) passage=on",
-      t.kind, body.id, worm.id, x, y))
-    return body, s
-  end
-
-  -- Each turn reloads and reactivates every turret, and forgets what moved
-  -- and what it aimed at. Order-independent: each entry gets the same reset.
-  wa.on.worm_message(function(worm, msg)
-    if msg ~= wa.msg.START_TURN then return end
-    active_alliance = worm.alliance
-    for id, s in pairs(state) do
-      if s.body.id ~= id then state[id] = nil else
-        s.ammo, s.active, s.disabled, s.had_target, s.tid, s.lost, s.seen = t.ammo, true, false, false, nil, false, {}
-      end
-    end
-  end, { msgs = { wa.msg.START_TURN } })
-
-  t.state = state -- for the Highlander mock
-  turrets[#turrets + 1] = t
-  return t
 end
 
-return turret
+local function moving(s, w)
+  local p = s.seen[w.id]
+  return p ~= nil and p.moving
+end
+
+-- need_motion only on acquisition: PX requires movement to notice a worm, but
+-- keeps an acquired target on line of sight alone, even if it stands still.
+local function sees(a, s, w, need_motion)
+  if w.alliance == s.alliance or w.visible == false then
+    return false
+  end
+  if need_motion and REQUIRE_MOTION and not moving(s, w) then
+    return false
+  end
+  local ex, ey = a.x, a.y - MUZZLE_UP * PX
+  local dx = (w.x - ex) // PX
+  local dy = (w.y - ey) // PX
+  if dx * dx + dy * dy > SENSOR_PX * SENSOR_PX then
+    return false
+  end
+  return not wa.land.trace(ex, ey, w.x, w.y)
+end
+
+local function acquire(a, s)
+  local ex, ey = a.x, a.y - MUZZLE_UP * PX
+  local best, best_d
+  for _, w in ipairs(wa.worms.all()) do
+    if sees(a, s, w, true) then
+      local dx = (w.x - ex) // PX
+      local dy = (w.y - ey) // PX
+      local d = dx * dx + dy * dy
+      if not best_d or d < best_d or (d == best_d and w.id < best.id) then
+        best, best_d = w, d
+      end
+    end
+  end
+  return best
+end
+
+-- PX keeps the target it acquired until it loses sight of it, rather than
+-- re-picking the nearest worm every frame. Re-picking swings the aim to a new
+-- worm mid-track, which reopens the aim gap and interrupts firing.
+local function held(a, s)
+  if not s.tid then
+    return nil
+  end
+  for _, w in ipairs(wa.worms.all()) do
+    if w.id == s.tid then
+      return sees(a, s, w, false) and w or nil
+    end
+  end
+  return nil
+end
+
+local function impact(b)
+  b:explode({ damage = DAMAGE, id = 101 })
+  b:despawn()
+end
+
+local function start_firing(a, s)
+  if s.firing then return end
+  s.firing = true
+  s.anim = 0
+  -- PX zeroes ShootTimer the instant firing (re)starts, guaranteeing the
+  -- first round of a burst fires this same tick rather than waiting out
+  -- whatever cooldown happened to be left over from before.
+  s.cooldown = 0
+  s.fire_sound = 35
+  a:sound("sounds/sentryfireloop.wav")
+end
+
+local function stop_firing(a, s)
+  if not s.firing then return end
+  s.firing = false
+  s.anim = 0
+  a:sound("sounds/sentryfireend.wav")
+end
+
+local function update_servo(a, s, rotating)
+  if rotating then
+    if not s.rotating then
+      s.rotating = true
+      s.servo_sound = 17
+      a:sound("sounds/sentryservostart.wav")
+    elseif s.servo_sound <= 0 then
+      s.servo_sound = 47
+      a:sound("sounds/sentryservoloop.wav")
+    end
+  elseif s.rotating then
+    s.rotating = false
+    s.servo_sound = 0
+    a:sound("sounds/sentryservoend.wav")
+  end
+end
+
+local function fire(a, s)
+  s.shots = s.shots + 1
+  local dev = 0
+  if s.shots % 5 ~= 0 then
+    dev = wa.random(-SPREAD_TENTHS, SPREAD_TENTHS) / 10
+  end
+
+  local rad = math.rad(s.angle + dev)
+  local dx, dy = wa.math.sin(rad), wa.math.cos(rad)
+  local mx = a.x + math.floor(dx * MUZZLE_OUT * PX)
+  local my = a.y - MUZZLE_UP * PX + math.floor(dy * MUZZLE_OUT * PX)
+  local reach = SENSOR_PX * PX
+  local ex = mx + math.floor(dx * reach)
+  local ey = my + math.floor(dy * reach)
+
+  -- Shell ejection: perpendicular to the barrel, kicked to whichever side
+  -- the turret currently faces (s.side, PX's TurretSide), a fixed pattern
+  -- standing in for PX's random jitter and speed. Cosmetic, so it fires even
+  -- on a shot the self-blast check below is about to cancel.
+  local jitter = wa.random(-CASING_JITTER_DEG, CASING_JITTER_DEG)
+  local eject_rad = rad + math.rad(90 * s.side + jitter)
+  local edx, edy = wa.math.sin(eject_rad), wa.math.cos(eject_rad)
+  local speed = wa.random(CASING_SPEED_MIN, CASING_SPEED_MAX) / 100
+  wa.actors.spawn({
+    sprite = CASING,
+    x = a.x,
+    y = a.y - MUZZLE_UP * PX,
+    vx = math.floor(edx * speed * PX),
+    vy = math.floor(edy * speed * PX),
+    gravity = false,
+    collide = false,
+    owner = s.owner,
+    kind = "casing",
+    on = (function()
+      local life = CASING_LIFE
+      local spin = 0
+      return function(c)
+        life = life - 1
+        if life <= 0 then
+          c:despawn()
+          return
+        end
+        c:gravity()
+        c:move({ terrain = false, worms = false })
+        spin = (spin + 1) % CASING_FRAMES
+        c:frame(spin)
+      end
+    end)(),
+  })
+
+  -- Terrain stops the round; a worm standing in front of that stops it sooner.
+  local hit = wa.land.trace(mx, my, ex, ey)
+  local hx, hy = ex, ey
+  if hit then
+    hx, hy = hit.x, hit.y
+  end
+  local rx, ry = (hx - mx) // PX, (hy - my) // PX
+  local hit_px = rx * rx + ry * ry
+  for _, w in ipairs(wa.worms.all()) do
+    if w.alliance ~= s.alliance and w.visible ~= false then
+      local wx = (w.x - mx) // PX
+      local wy = (w.y - my) // PX
+      local along = wx * dx + wy * dy
+      if along > 0 and along * along < hit_px then
+        local off = wx * dy - wy * dx       -- perpendicular distance to the ray
+        if off * off <= HIT_PX * HIT_PX then
+          hx = mx + math.floor(dx * along * PX)
+          hy = my + math.floor(dy * along * PX)
+          hit_px = along * along
+        end
+      end
+    end
+  end
+
+  if hit_px < SELF_BLAST_PX * SELF_BLAST_PX then
+    return                       -- muzzle-adjacent: do not blast ourselves
+  end
+
+  wa.actors.spawn({
+    sprite = IMPACT,
+    x = hx,
+    y = hy,
+    vx = 0,
+    vy = 0,
+    gravity = false,
+    collide = false,
+    origin = "center",
+    owner = s.owner,
+    on = impact,
+  })
+
+  s.ammo = s.ammo - 1
+  if s.ammo <= 0 then
+    s.active = false
+    stop_firing(a, s)
+  end
+end
+
+local function think(a, s)
+  -- A planted turret is immovable. Re-assert position and zero velocity every
+  -- frame so nothing external can shift it: an explosion blast (its own shots
+  -- included) or a sprite swap would otherwise accumulate into a launch.
+  if s.px then
+    a.x, a.y = s.px, s.py
+  end
+  a.vx, a.vy = 0, 0
+
+  for _, w in ipairs(wa.worms.all()) do
+    note_motion(s, w)
+  end
+
+  local target
+  if s.active then
+    target = held(a, s)
+    if not target and not s.lost then
+      target = acquire(a, s)
+      if target then
+        s.tid = target.id
+      end
+    end
+  end
+  local want
+
+  if target then
+    if not s.had_target then
+      s.activate = ACTIVATE
+      if s.beep <= 0 then
+        a:sound("sounds/sentrybeeps2.wav")
+        s.beep = BEEP_FRAMES
+      end
+    end
+    s.had_target = true
+    s.lost = false
+    s.tx, s.ty = target.x, target.y
+    want = angle_to(a.x, a.y - MUZZLE_UP * PX, target.x, target.y)
+    s.angle = turn_toward(s.angle, want, ROT_ACTIVE)
+  elseif s.had_target then
+    -- PX stops firing at once, turns to the last visible point, then drops it.
+    if not s.lost then stop_firing(a, s) end
+    s.lost = true
+    want = angle_to(a.x, a.y - MUZZLE_UP * PX, s.tx, s.ty)
+    s.angle = turn_toward(s.angle, want, ROT_ACTIVE)
+    if angle_gap(s.angle, want) <= AIM_TOLERANCE then
+      s.had_target = false
+      s.lost = false
+      s.tid = nil
+    end
+  else
+    s.had_target = false
+    -- PX carries no timer here: it sweeps toward one extreme and reverses
+    -- the instant the turret reaches it (turn_toward snaps exactly onto
+    -- \`want\` on the step that closes the gap). A fixed-period timer instead
+    -- left the turret motionless for most of each cycle once it arrived at
+    -- the extreme early -- a hold phase PX's own idle does not have.
+    want = s.idle + s.sweep_dir * SWEEP
+    s.angle = turn_toward(s.angle, want, ROT_IDLE)
+    if s.angle == want then
+      s.sweep_dir = -s.sweep_dir
+    end
+  end
+
+  -- PX: "turret rotated over itself, change the sentry's idle target angle
+  -- so it faces the other way when it goes back to idle." Tracking a target
+  -- can carry s.angle past the turret's own facing side; without this the
+  -- turret would sweep all the way back to its spawn-time idle angle
+  -- afterwards instead of idling on whichever side it now faces.
+  if (180 - s.angle) * s.side < 0 then
+    s.side = -s.side
+    s.idle = 180 - 90 * s.side
+  end
+
+  if not s.active then
+    want = s.idle - 45 * s.side
+    s.angle = turn_toward(s.angle, want, ROT_IDLE)
+    stop_firing(a, s)
+  end
+
+  if s.beep > 0 then s.beep = s.beep - 1 end
+  if s.activate > 0 then s.activate = s.activate - 1 end
+  if s.cooldown > 0 then s.cooldown = s.cooldown - 1 end
+  if s.servo_sound > 0 then s.servo_sound = s.servo_sound - 1 end
+  if s.fire_sound > 0 then s.fire_sound = s.fire_sound - 1 end
+
+  local aligned = target and angle_gap(s.angle, want) <= AIM_TOLERANCE
+  -- PX only starts the "long rotation" sound once the remaining turn is at
+  -- least double the rotation speed (a 3 degree gap at ROT_ACTIVE): the
+  -- StartRotatingSound()/StopRotatingSound() gate is \`speed >= 2*RotationSpeed\`,
+  -- not "not yet aligned" -- aligned uses AIM_TOLERANCE for a different thing
+  -- (whether to fire), and reusing it here started the servo too eagerly.
+  local long_rotation = target ~= nil and angle_gap(s.angle, want) >= 2 * ROT_ACTIVE
+  update_servo(a, s, long_rotation)
+
+  -- PX latches into a firing state once the target is in its sights and keeps
+  -- firing until it loses the target, runs dry or is disabled. Re-testing the
+  -- aim gap per shot makes it stutter against a moving worm, because the gap
+  -- oscillates around the tolerance while tracking.
+  local hold_fire = (active_alliance == s.alliance)
+
+  if target and not hold_fire and s.activate <= 0 and (s.firing or aligned) then
+    start_firing(a, s)
+    if s.fire_sound <= 0 then
+      s.fire_sound = 35
+      a:sound("sounds/sentryfireloop.wav")
+    end
+    if s.cooldown <= 0 then
+      fire(a, s)
+      s.cooldown = SHOT_FRAMES
+    end
+  elseif not target or hold_fire then
+    stop_firing(a, s)
+  end
+end
+
+-- The tripod is the actor itself; the gun is a child actor drawn above it.
+--
+-- Keeping the tripod as the main actor means every bit of the planting,
+-- feet-platform and collision logic below is untouched by the renderer
+-- change: it still lands, sinks and sits on exactly the footprint it always
+-- did. The gun carries no physics at all -- it is positioned, rotated and
+-- tinted purely for display.
+local function sync(a, s)
+  local gun = s.gun
+  if not gun or gun.dead then
+    return
+  end
+  -- The gun's pivot is the housing centre, which the bake put at the frame
+  -- centre, so rotating the quad about its centre matches PX's AddSpriteEx.
+  gun.x, gun.y = a.x, a.y - MUZZLE_UP * PX
+  gun.vx, gun.vy = 0, 0
+
+  local pose = s.firing and (1 + ((s.anim // 3) % 2)) or 0
+  if pose ~= s.pose then
+    gun:frame(pose)
+    s.pose = pose
+  end
+
+  -- The flare rides the same pivot and aim as the gun. It is always present
+  -- and simply selects an empty frame while idle: with premultiplied additive
+  -- a fully transparent texel adds nothing, so there is no cost to leaving it
+  -- in the batch.
+  local flare = s.flare
+  if flare and not flare.dead then
+    flare.x, flare.y = gun.x, gun.y
+    flare.vx, flare.vy = 0, 0
+    local lit = (pose == 1) and 1 or 0
+    if lit ~= s.lit then
+      flare:frame(lit)
+      s.lit = lit
+    end
+    flare:gfx({
+      angle = (90 - s.angle) % 360,
+      tint = 0xFFFFFF,
+      blend = "add",
+      depth = IN_FRONT_OF_TERRAIN,
+    })
+  end
+  -- s.angle is 0 down / 90 right; the art faces right and the renderer takes
+  -- clockwise screen degrees, so right (90) must map to 0.
+  -- Normalised to 0..360 so a logged angle is always comparable; -180 and
+  -- 180 are the same rotation but only one of them reads clearly.
+  -- The tripod keeps the default depth and is occluded by terrain, so its
+  -- sunk feet disappear into the ground. The gun sits in front of terrain:
+  -- it is mounted above the landscape and should never be buried by it.
+  --
+  -- Neither is occluded by worms, which no single painter-order depth can
+  -- express -- WA draws terrain behind worms, so "in front of worms and
+  -- behind terrain" is an empty interval. The renderer's mask decides per
+  -- pixel by source instead of inheriting one order.
+  gun:gfx({
+    angle = (90 - s.angle) % 360,
+    tint = TEAM_TINT[s.alliance + 1] or TEAM_TINT[1],
+    depth = IN_FRONT_OF_TERRAIN,
+  })
+end
+
+local function brain(a, ev)
+  local s = state[a.id]
+  if not s then
+    return
+  end
+  ev = ev or {}
+  if (ev.damage or 0) > 0 then
+    s.health = s.health - ev.damage
+    s.active = false
+    stop_firing(a, s)
+    update_servo(a, s, false)
+    if s.health <= 0 then
+      if s.gun and not s.gun.dead then
+        s.gun:despawn()
+      end
+      if s.flare and not s.flare.dead then
+        s.flare:despawn()
+      end
+      state[a.id] = nil
+      -- PX explodes at PosY-20 -- the turret's body, not its feet. explode()
+      -- defaults to \`below\` the actor, which for a bottom-anchored sprite
+      -- centres the blast underground instead of on the visible housing.
+      a:explode({ damage = 50, id = 100, below = false })
+      a:despawn()
+      return
+    end
+  end
+  if s.firing then s.anim = s.anim + 1 end
+
+  if not s.planted then
+    a:gravity()
+    local hit = a:move({ terrain = true, worms = false })
+
+    if hit.land then
+      a.vx, a.vy = 0, 0
+      s.planted = true
+      s.px, s.py = a.x, a.y + SINK_PX * PX
+      a:sound("sounds/sentryplace.wav")
+      sync(a, s)
+      return                     -- planted this tick: skip the drown check
+    end
+
+    a:advance()
+
+    if a:in_water() then
+      if s.gun and not s.gun.dead then
+        s.gun:despawn()
+      end
+      if s.flare and not s.flare.dead then
+        s.flare:despawn()
+      end
+      state[a.id] = nil
+      a:despawn()
+      return
+    end
+  else
+    think(a, s)
+  end
+
+  sync(a, s)
+end
+
+-- Alliance order, matching TEAM_TINT.
+local TEAM_NAMES = { "red", "blue", "green", "yellow", "magenta", "cyan" }
+
+local function team_sheets(pose)
+  local list = {}
+  for i, team in ipairs(TEAM_NAMES) do
+    list[i] = "sprites/teams/" .. team .. "/" .. pose
+  end
+  return list
+end
+
+-- Where the turret lands: slightly in front of the worm, not on it. A wall
+-- that close leaves it at the worm, as before.
+local FRONT_PX = 5
+
+local function placement_x(worm, facing)
+  local x = worm.x + facing * FRONT_PX * PX
+  if wa.land.trace(worm.x, worm.y, x, worm.y) then
+    return worm.x
+  end
+  return x
+end
+
+wa.weapons.replace({
+  weapon = "donkey",
+  copy_from = "mine",
+  name = "Sentry Gun",
+  -- PX's own icon, copied byte for byte so replays share its asset.
+  panel_icon = "sprites/ico_sentrygun.png",
+  is_weapon = true,
+  -- One sheet per team colour, so the housing the worm carries is its team's
+  -- colour like the planted turret. tools/bake_sentry_team_sprites.py bakes
+  -- them from PX's grey sheets with TEAM_TINT. The grey sheets
+  -- (sprites/equip*, sprites/unequip*) stay for a neutral sentry.
+  worm_sprites = {
+    weaponlnk = team_sheets("equip"), weaponlnku = team_sheets("equipu"),
+    weaponlnkd = team_sheets("equipd"),
+    wthrow = team_sheets("unequip"), wthrowu = team_sheets("unequipu"),
+    wthrowd = team_sheets("unequipd"),
+  },
+
+  -- Single-frame sprites, not strips. sprite_columns defaults to 8, which
+  -- would slice every one of them into eight slivers.
+  -- Draw order comes from the render queue's per-command depth, where high is
+  -- further back. Measured in a live match: soil 0x1b0000, terrain 0x180000,
+  -- and the turret was landing at 0x50001 -- in front of everything. 0x190000
+  -- sits between terrain and soil, so the turret is occluded by the landscape
+  -- but still draws over the soil behind it.
+  --
+  -- depth_prefix keeps this to the turret sheets: the worm holding the gun is
+  -- a separate sheet and belongs in front of terrain, where it already is.
+  --
+  -- (Display \`layer\` is palette-bound and is NOT the way to do this: installing
+  -- against another layer's PaletteContext renders every colour wrong.)
+  params = {
+    sprite_columns = 1,
+    -- equip/unequip above are one-shot animations played frame by frame, not
+    -- aim-angle sheets like the web editor's aiming GIFs (the default).
+    worm_sprites_animate = true,
+    depth = 0x190000,
+    depth_prefix = "sprites/turret_",
+    -- The GPU renderer takes these sheets: packed into a texture atlas,
+    -- drawn as rotated and tinted quads, occupying none of the 223 shared WA
+    -- sprite slots and never touching the map palette.
+    gpu_prefix = "sprites/turret_",
+    -- NOT reserving palette slots. Twice now that has repainted the scene:
+    -- PaletteContext's in_use flag does not mean "no pixels on screen carry
+    -- this index", so writing a slot's RGB changes the colour of whatever
+    -- already uses it -- terrain included. An index is global, so CPU palette
+    -- mutation cannot be scoped to one pack. See the notes in sprite.rs.
+  },
+  sprites = SPRITES,
+  sounds = {
+    "sounds/sentryplace.wav", "sounds/sentrybeeps2.wav",
+    "sounds/sentryfireloop.wav", "sounds/sentryfireend.wav",
+    "sounds/sentryservostart.wav", "sounds/sentryservoloop.wav",
+    "sounds/sentryservoend.wav",
+  },
+
+  -- Stock mine fire timing/ammo/retreat, but a Lua body instead of a MineEntity.
+  on_fire = function(fire_ev)
+    local worm = fire_ev.worm
+    -- The owner's colour. Not worm.team: that is the team's slot in the
+    -- roster, which matches its colour only in a default offline game --
+    -- online, a blue team in slot 1 placed a red turret.
+    local alliance = (worm and worm.alliance) or 0
+    if alliance < 0 or alliance > 5 then
+      alliance = 0
+    end
+    local facing = worm.facing
+    local idle = facing < 0 and 270 or 90
+    local x = placement_x(worm, facing)
+
+    local body = wa.actors.spawn({
+      sprite = BASE,
+      x = x,
+      y = worm.y,
+      -- Small placement nudge, independent of aim or charged power.
+      vx = (worm.vx // 2) + facing * 19661,
+      vy = (worm.vy // 2) - 9830,
+      loop = false,
+      origin = "bottom",
+      owner = worm,
+      kind = "sentry",
+      persist = true,
+      on = brain,
+    })
+
+    state[body.id] = {
+      alliance = alliance,
+      owner = worm,
+      planted = false,
+      active = true,
+      ammo = AMMO,
+      health = 50,
+      angle = idle,
+      idle = idle,
+      side = facing < 0 and -1 or 1,
+      sweep_dir = 1,
+      shots = 0,
+      firing = false,
+      anim = 0,
+      rotating = false,
+      servo_sound = 0,
+      fire_sound = 0,
+      beep = 0,
+      activate = 0,
+      cooldown = 0,
+      had_target = false,
+      lost = false,
+      seen = {},
+      pose = nil,
+      lit = nil,
+      gun = nil,
+      flare = nil,
+    }
+    -- The gun and its muzzle flash ride along with no physics of their own:
+    -- sync() places both every frame from the tripod's position.
+    state[body.id].gun = wa.actors.spawn({
+      sprite = GUN,
+      x = x,
+      y = worm.y - MUZZLE_UP * PX,
+      vx = 0, vy = 0,
+      gravity = false,
+      collide = false,
+      loop = false,
+      origin = "center",
+      owner = worm,
+      kind = "sentry_gun",
+      persist = true,
+      on = function() end,
+    })
+    state[body.id].flare = wa.actors.spawn({
+      sprite = FLARE,
+      x = x,
+      y = worm.y - MUZZLE_UP * PX,
+      vx = 0, vy = 0,
+      gravity = false,
+      collide = false,
+      loop = false,
+      origin = "center",
+      owner = worm,
+      kind = "sentry_flare",
+      persist = true,
+      on = function() end,
+    })
+    sync(body, state[body.id])
+  end,
+})
+
+-- Each turn reloads and reactivates every turret, as the original did.
+-- \`pairs(state)\` is fine here because the body is order-independent: every
+-- entry gets the same reset, none reads another. If this ever grows an early
+-- \`return\` or a read of \`state\` inside the loop, switch to
+-- \`ipairs(wa.sorted(state))\` -- string-keyed \`pairs()\` order differs per
+-- process (Lua randomises its string-hash seed).
+wa.on.worm_message(function(worm, msg)
+  if msg ~= wa.msg.START_TURN then
+    return
+  end
+  active_alliance = worm.alliance
+  for _, s in pairs(state) do
+    s.ammo = AMMO
+    s.active = true
+    s.had_target = false
+    -- A new turn needs new movement. The target acquired last turn -- often
+    -- while this turret held fire through its own side's turn -- is dropped,
+    -- and so is the motion memory; otherwise the turret opened fire on a
+    -- worm that had stood still since, the moment its teammate's turn began.
+    s.tid = nil
+    s.lost = false
+    s.seen = {}
+  end
+end, { msgs = { wa.msg.START_TURN } })
 `
-      },
+      }
+    ],
+  },
+  {
+    id: 'example.bee',
+    name: 'Spawn Bees',
+    version: '0.8.0',
+    author: 'reddaz',
+    category: 'weapons',
+    replacesSlot: 'skunk',
+    description: 'A flying object: the replaced Skunk spawns a bee that steers, roams, picks targets and animates in flight.',
+    tags: ['example', 'weapon', 'actor'],
+    files: [
+      {
+        path: 'bee.lua',
+        name: 'bee.lua',
+        language: 'lua',
+        content: `-- Keeper Bee Script with wa.on.worm_message FRAME_FINISH Spawner
+local PX = 0x10000
+
+-- Map Auto-Spawn Configuration
+local BEE_SPAWN_QUANTITY = 4
+local SPAWN_TOP_MARGIN_PX = 100  -- don't probe within this far of the map's ceiling
+local spawnedMapBees      = false
+local gameFrame           = 0
+
+-- Bee AI Constants
+local SENSOR_RADIUS_PX  = 235
+local CONTACT_RADIUS_PX = 26
+local CHASE_SPEED       = (3.5) * PX
+local CHASE_STRENGTH    = 0.17
+local CHASE_STEER_EVERY = 2
+local ROAM_SPEED        = (0.6) * PX
+local ROAM_SPEED_BASE   = 0.12
+local ROAM_COOLDOWN_MIN = 10
+local ROAM_COOLDOWN_MAX = 20
+local ROT_SMOOTH_DEG    = 4
+local ROAM_STRENGTH     = 0.15
+local ROAM_STEER_EVERY  = 2
+local BONK_LIMIT        = 4
+local SPIN_FRAMES       = 20
+local MAX_HP            = 25
+local ROAM_RANGE_X      = 55
+local ROAM_RANGE_Y      = 110
+local ROAM_ARRIVE_PX    = 20
+local BEE_RADIUS_PX     = 9
+local CORNER_BUFFER_PX  = 6
+local HOMING_MAX_DIST_PX = 470
+local HOMING_MAX_DURATION = 160
+local ROAM_MAX_DIST_PX   = 420
+local LOOKOUT_COOLDOWN_GIVEUP  = 150
+local LOOKOUT_COOLDOWN_TIMEOUT = 200
+
+local ROAM_FAIL_THRESHOLD  = 10
+local ROAM_FAIL_SCALE      = 0.5
+local CLIP_FRAMES_LIMIT    = 20
+
+local ROAM_SLOWDOWN_RADIUS_PX = 60
+local ROAM_SLOWDOWN_MIN_FRAC  = 0.35
+
+local BEE_FRAME_COUNT = 4
+local BEE_FRAME_HOLD  = 5
+local BEE_FRAME_HOLD_MIN = 2
+
+local SPRITE  = "sprites/bee_flight.png"
+local beeSOUNDS = { "sounds/bzz1.wav", "sounds/bzz2.wav", "sounds/bzz3.wav", "sounds/bzz4.wav" }
+
+local state = {}
+
+local function shouldStop(s)
+  return s.dead or s.freeMe or s.stopMe
+end
+
+local function playBuzz(target)
+  if not target or #beeSOUNDS == 0 then return end
+  local snd = beeSOUNDS[wa.random(1, #beeSOUNDS)]
+  wa.sound.play(target, snd)
+end
+
+local function isClearOfTerrain(x, y, radiusPx)
+  if wa.land.solid(x, y) then return false end
+  local probes = 8
+  for i = 0, probes - 1 do
+    local ang = (i / probes) * 2 * math.pi
+    local px = x + math.floor(radiusPx * wa.math.cos(ang)) * PX
+    local py = y + math.floor(radiusPx * wa.math.sin(ang)) * PX
+    if wa.land.solid(px, py) then return false end
+  end
+  return true
+end
+
+local function checkSpawnPoint(x, y, targetX, targetY, maxRadiusPx, clearRadiusPx)
+  maxRadiusPx = maxRadiusPx or (50 * PX)
+  clearRadiusPx = clearRadiusPx or (BEE_RADIUS_PX + 1)
+  local r = 0
+  while r <= maxRadiusPx do
+    local step = (r == 0) and 360 or math.max(15, math.floor(360 / ((r / PX) / 2)))
+    local deg = 0
+    while deg < 360 do
+      local rad = deg * math.pi / 180
+      local tx = x + math.floor(r * wa.math.cos(rad))
+      local ty = y + math.floor(r * wa.math.sin(rad))
+      if isClearOfTerrain(tx, ty, clearRadiusPx) then
+        local hit = wa.land.trace(tx, ty, targetX, targetY)
+        if not hit or not hit.hit then return tx, ty end
+      end
+      deg = deg + step
+    end
+    r = r + 4 * PX
+  end
+  return targetX, targetY
+end
+
+local function steer(a, tx, ty, speed, strength)
+  local dx, dy = tx - a.x, ty - a.y
+  local dist = math.sqrt(dx * dx + dy * dy)
+  if dist > 0 then dx, dy = dx / dist, dy / dist end
+  local wantVx = math.floor(dx * speed)
+  local wantVy = math.floor(dy * speed)
+  a.vx = a.vx + math.floor((wantVx - a.vx) * strength)
+  a.vy = a.vy + math.floor((wantVy - a.vy) * strength)
+end
+
+local function distPx(a, tx, ty)
+  local dx, dy = (tx - a.x) // PX, (ty - a.y) // PX
+  return math.sqrt(dx * dx + dy * dy)
+end
+
+local function isThereLandThere(a, tx, ty)
+  local b = CORNER_BUFFER_PX * PX
+  local tyOff = ty - 3 * PX
+
+  local function blocked(x0, y0, x1, y1)
+    local hit = wa.land.trace(x0, y0, x1, y1)
+    return hit and hit.hit
+  end
+
+  if blocked(a.x, a.y, tx, tyOff) then return true end
+  if blocked(a.x - b, a.y - b, tx - b, tyOff - b) then return true end
+  if blocked(a.x + b, a.y - b, tx + b, tyOff - b) then return true end
+  if blocked(a.x - b, a.y + b, tx - b, tyOff + b) then return true end
+  if blocked(a.x + b, a.y + b, tx + b, tyOff + b) then return true end
+  return false
+end
+
+local function findClosestEnemy(a, s)
+  if (s.lookoutCooldown or 0) > 0 then return nil end
+  local best, bestDist2
+  for _, w in ipairs(wa.worms.all()) do
+    local moving = w.vx ~= 0 or w.vy ~= 0
+    local isEnemy = s.rogue or (w.team ~= s.team)
+    if isEnemy and w.hp > 0 and moving then
+      local dx = (w.x - a.x) // PX
+      local dy = (w.y - a.y) // PX
+      local d2 = dx * dx + dy * dy
+      if d2 <= SENSOR_RADIUS_PX * SENSOR_RADIUS_PX and (not bestDist2 or d2 < bestDist2) then
+        if not isThereLandThere(a, w.x, w.y) then
+          best, bestDist2 = w, d2
+        end
+      end
+    end
+  end
+  return best
+end
+
+local function wormById(id)
+  if not id then return nil end
+  for _, w in ipairs(wa.worms.all()) do
+    if w.id == id then return w end
+  end
+  return nil
+end
+
+local function randomizeSpeed()
+  local randspeed = wa.random(1, 7)
+  return (ROAM_SPEED_BASE * randspeed) * PX
+end
+
+local function tryFindPath(a, s, scale)
+  local rangeX = math.floor(ROAM_RANGE_X * scale)
+  local rangeY = math.floor(ROAM_RANGE_Y * scale)
+
+  local fx = wa.random(-rangeX, rangeX) * PX
+  local fy = wa.random(-rangeY, rangeY) * PX
+  local tx, ty = s.startX - fx, s.startY - fy
+
+  if not isThereLandThere(a, tx, ty) then
+    return tx, ty
+  end
+  return nil, nil
+end
+
+local function pickRoamPoint(a, s)
+  s.roamFailStreak = s.roamFailStreak or 0
+  local shrink = s.roamFailStreak >= ROAM_FAIL_THRESHOLD
+  local scale1 = shrink and (1.0 * ROAM_FAIL_SCALE) or 1.0
+  local scale2 = shrink and (0.78 * ROAM_FAIL_SCALE) or 0.78
+
+  local tx, ty = tryFindPath(a, s, scale1)
+  if tx then
+    s.arriveX, s.arriveY = tx, ty
+    s.roamSpeed = randomizeSpeed()
+    s.roamFailStreak = 0
+    return true
+  end
+
+  tx, ty = tryFindPath(a, s, scale2)
+  if tx then
+    s.arriveX, s.arriveY = tx, ty
+    s.roamSpeed = randomizeSpeed()
+    s.roamFailStreak = 0
+    return true
+  end
+
+  s.roamFailStreak = s.roamFailStreak + 1
+  return false
+end
+
+local function detonate(a, s)
+  a:explode({ damage = s.supercharged and 55 or 40, id = 100 })
+  state[a.id] = nil
+  a:despawn()
+end
+
+local function updateAnim(a, s)
+  local speedPx = (math.abs(a.vx) + math.abs(a.vy)) / PX
+  local hold = math.max(BEE_FRAME_HOLD_MIN, BEE_FRAME_HOLD - math.floor(speedPx / 2))
+  s.animTick = (s.animTick or 0) + 1
+  if s.animTick >= hold then
+    s.animTick = 0
+    s.sprnum = (s.sprnum % BEE_FRAME_COUNT) + 1
+    a:frame(s.sprnum - 1)
+  end
+end
+
+--------------------------------------------------------------------------------
+-- Bee Actor Brain
+--------------------------------------------------------------------------------
+local function brain(a, ev)
+  local s = state[a.id]
+  if not s then return end
+  ev = ev or {}
+
+  if (ev.damage or 0) > 0 then
+    s.hp = s.hp - ev.damage
+    s.spin = true
+    s.spinN = (s.spinN or 0) + 8
+    if s.hp <= 0 then s.dead = true end
+  end
+
+  if s.freeMe then
+    state[a.id] = nil
+    a:despawn()
+    return
+  end
+
+  if s.dead and not s.spin and not s.softSpin then
+    s.spin = true
+    s.spinN = 0
+  end
+
+  if s.spin or s.softSpin then
+    if s.spinN == 0 then playBuzz(a) end
+    a.vx, a.vy = 0, 0
+    s.rot = (s.rot + (s.dead and 9 or 7)) % 360
+    a:angle(s.rot)
+    s.spinN = s.spinN + 1
+    if s.spinN >= SPIN_FRAMES then
+      if s.dead then
+        detonate(a, s)
+        return
+      end
+      s.spin, s.softSpin, s.spinN = false, false, 0
+    end
+    return
+  end
+
+  if shouldStop(s) then
+    a.vx, a.vy = 0, 0
+    return
+  end
+
+  local hit = a:move({ terrain = true, worms = false })
+
+  -- Per-actor tick counter for bonk decay -- (a.id % 10) is constant for the
+  -- actor's whole life (always true or always false), so it never actually
+  -- decayed for most bees. This decays every 10 real frames per bee, same
+  -- cadence the original's \`gframe % 10\` intended, just scoped correctly.
+  s.ticks = (s.ticks or 0) + 1
+
+  -- Threshold computed from THIS bee's own s.targetId, not a shared
+  -- module-level variable other bees were racing to overwrite. Direction
+  -- (tighter while chasing) kept as you had it -- worth double-checking
+  -- that's the intent you want, since PX's own beeBonkReset went the other
+  -- way (24 while a target is locked, vs 10 while roaming: "targets too
+  -- close will never get exploded"). If clipping-while-chasing should be
+  -- MORE tolerated rather than less, flip this to \`s.targetId and 24 or 10\`
+  -- (adjusted to this port's SPIN_FRAMES scale) instead.
+  local bonkLimit = s.targetId and 1 or BONK_LIMIT
+  if s.bonk == 0 then
+    s.lastSafeX, s.lastSafeY = a.x,a.y
+  end
+  if hit.terrain then
+    s.bonk = (s.bonk or 0) + 1
+    if s.bonk > bonkLimit then
+      s.spin, s.bonk, s.targetId = false, 0, nil
+      local sx, sy = checkSpawnPoint(a.x, a.y, a.x, a.y, 50 * PX)
+      if sx then
+        a.x, a.y = sx, sy
+        a.vx, a.vy = 0, 0
+      end
+      if not pickRoamPoint(a, s) then
+        pickRoamPoint(a, s)
+      end
+      return
+    end
+  elseif s.bonk and s.bonk > 0 and s.ticks % 10 == 0 then
+    s.bonk = s.bonk - 1
+  end
+
+  if wa.land.solid(a.x, a.y) then
+    s.clipFrames = (s.clipFrames or 0) + 1
+    if s.clipFrames > CLIP_FRAMES_LIMIT then
+      a.x, a.y = s.lastSafeX, s.lastSafeY
+      --state[a.id] = nil
+      --a:despawn()
+      return
+    end
+  else
+    s.clipFrames = 0
+  end
+
+  if a:in_water() then
+    s.dead = true
+    return
+  end
+
+  updateAnim(a, s)
+
+  if a.vx ~= 0 then
+    a.facing = a.vx > 0 and 1 or -1
+  end
+
+  if (s.lookoutCooldown or 0) > 0 then
+    s.lookoutCooldown = s.lookoutCooldown - 1
+  end
+
+  local target = wormById(s.targetId)
+
+  if target and (target.hp <= 0 or (not s.rogue and target.team == s.team)) then
+    target = nil
+    s.targetId = nil
+  end
+  if not target then
+    target = findClosestEnemy(a, s)
+    s.targetId = target and target.id or nil
+  end
+
+  if target then
+    s.roamCooldown = 0
+
+    if distPx(a, s.startX, s.startY) > ROAM_MAX_DIST_PX then
+      s.targetId = nil
+      s.homingDuration = 0
+      s.lookoutCooldown = LOOKOUT_COOLDOWN_GIVEUP
+      s.spin, s.spinN = true, 0
+      return
+    end
+
+    local tdist = distPx(a, target.x, target.y)
+    if tdist > HOMING_MAX_DIST_PX then
+      s.targetId = nil
+      s.homingDuration = 0
+      s.lookoutCooldown = LOOKOUT_COOLDOWN_GIVEUP
+      s.spin, s.spinN = true, 0
+      return
+    end
+
+    s.homingDuration = (s.homingDuration or 0) + 1
+    if s.homingDuration > HOMING_MAX_DURATION then
+      s.targetId = nil
+      s.homingDuration = 0
+      s.lookoutCooldown = LOOKOUT_COOLDOWN_TIMEOUT
+      s.spin, s.spinN = true, 0
+      return
+    end
+
+    s.chaseCD = (s.chaseCD or 0) - 1
+    if s.chaseCD <= 0 then
+      steer(a, target.x, target.y, CHASE_SPEED, CHASE_STRENGTH)
+      s.chaseCD = CHASE_STEER_EVERY
+    end
+
+    if tdist <= CONTACT_RADIUS_PX then
+      s.dead = true
+      detonate(a, s)
+      return
+    end
+
+    if s.homingDuration % 15 == 0 then
+      playBuzz(a)
+    end
+
+    local vxpx, vypx = a.vx / PX, a.vy / PX
+    if vxpx ~= 0 or vypx ~= 0 then
+      s.desiredAngle = math.deg(wa.math.atan(vypx, math.abs(vxpx) + 0.001))
+    end
+  else
+    s.homingDuration = 0
+
+   -- s.ambientBuzzCD = (s.ambientBuzzCD or 60) - 1
+   -- if s.ambientBuzzCD <= 0 then
+  --    s.ambientBuzzCD = wa.random(50, 90)
+  --    playBuzz(a)
+  --  end
+
+    if (s.roamCooldown or 0) > 0 then
+      s.roamCooldown = s.roamCooldown - 1
+      s.desiredAngle = 0
+      a.vx = a.vx - math.floor(a.vx * 0.25)
+      a.vy = a.vy - math.floor(a.vy * 0.25)
+      if s.roamCooldown <= 0 then
+        pickRoamPoint(a, s)
+      end
+    elseif not s.arriveX then
+      pickRoamPoint(a, s)
+    elseif distPx(a, s.arriveX, s.arriveY) < ROAM_ARRIVE_PX then
+      s.roamCooldown = wa.random(ROAM_COOLDOWN_MIN, ROAM_COOLDOWN_MAX)
+    else
+      s.roamCD = (s.roamCD or 0) - 1
+      if s.roamCD <= 0 then
+        local baseSpeed = s.roamSpeed or ROAM_SPEED
+        local speed = baseSpeed
+        local dist = distPx(a, s.arriveX, s.arriveY)
+        if dist < ROAM_SLOWDOWN_RADIUS_PX then
+          local frac = dist / ROAM_SLOWDOWN_RADIUS_PX
+          if frac < ROAM_SLOWDOWN_MIN_FRAC then
+            frac = ROAM_SLOWDOWN_MIN_FRAC
+          end
+          speed = math.floor(baseSpeed * frac)
+        end
+        steer(a, s.arriveX, s.arriveY, speed, ROAM_STRENGTH)
+        s.roamCD = ROAM_STEER_EVERY
+      end
+      local vxpx, vypx = a.vx / PX, a.vy / PX
+      if vxpx ~= 0 or vypx ~= 0 then
+        s.desiredAngle = math.deg(wa.math.atan(vypx, math.abs(vxpx) + 0.001))
+      end
+    end
+  end
+
+  local MAX_PITCH_DEG = 90 * 0.7
+  s.desiredAngle = math.max(-MAX_PITCH_DEG, math.min(MAX_PITCH_DEG, s.desiredAngle or 0))
+
+  if s.rot < s.desiredAngle then
+    s.rot = math.min(s.rot + ROT_SMOOTH_DEG, s.desiredAngle)
+  elseif s.rot > s.desiredAngle then
+    s.rot = math.max(s.rot - ROT_SMOOTH_DEG, s.desiredAngle)
+  end
+
+  if a.facing < 0 then
+    a:angle(-s.rot)
+  else
+    a:angle(s.rot)
+  end
+end
+
+--------------------------------------------------------------------------------
+-- Generalized Actor Spawner
+--------------------------------------------------------------------------------
+local function spawn_actor(opts)
+  opts = opts or {}
+  local owner = opts.owner or (wa.worms.active and wa.worms.active()) or (wa.worms.all and wa.worms.all()[1])
+
+  wa.log("[ACTOR SPAWN] Attempting spawn at X=" .. tostring(opts.x // PX) .. " Y=" .. tostring(opts.y // PX))
+
+  local body = wa.actors.spawn({
+    sprite  = opts.sprite or SPRITE,
+    x       = opts.x,
+    y       = opts.y,
+    vx      = opts.vx or (wa.random(-20, 20) * PX // 10),
+    vy      = opts.vy or (wa.random(-60, -12) * PX // 10),
+    origin  = opts.origin or "center",
+    owner   = owner,
+    kind    = opts.kind or "bee",
+    persist = opts.persist ~= false,
+    on      = opts.brain or brain,
+  })
+
+  if body then
+    wa.log("[ACTOR SPAWN] Successfully spawned actor ID=" .. tostring(body.id) .. " (Rogue=" .. tostring(opts.rogue or false) .. ")")
+    state[body.id] = {
+      rogue           = opts.rogue or false,
+      team            = opts.team or (owner and owner.team) or -1,
+      owner           = owner,
+      hp              = opts.hp or MAX_HP,
+      dead            = false,
+      freeMe          = false,
+      stopMe          = false,
+      spin            = true,
+      softSpin        = false,
+      spinN           = 0,
+      bonk            = 0,
+      bonkhome        = 0,
+      rot             = 0,
+      supercharged    = false,
+      startX          = opts.x,
+      startY          = opts.y,
+      arriveX         = nil,
+      arriveY         = nil,
+      lastSafeX       = opts.x,
+      lastSafeY       = opts.y,
+      roamCooldown    = 0,
+      roamSpeed       = nil,
+      desiredAngle    = 0,
+      targetId        = nil,
+      sprnum          = 1,
+      animTick        = 0,
+      roamFailStreak  = 0,
+      clipFrames      = 0,
+      homingDuration  = 0,
+      lookoutCooldown = 0,
+      ambientBuzzCD   = wa.random(30, 60),
+    }
+  else
+    wa.log("[ACTOR SPAWN ERROR] wa.actors.spawn returned nil!")
+  end
+  return body
+end
+
+--------------------------------------------------------------------------------
+-- Slice-Based Random Map Spawner
+--------------------------------------------------------------------------------
+local function spawnRandomBees(quantity, ownerWorm)
+  quantity = quantity or BEE_SPAWN_QUANTITY
+
+  -- Real map dimensions, not hardcoded 1920x1080 -- maps vary in size, and
+  -- the old WATER_Y_PX=200 constant collapsed the vertical probe range to a
+  -- fixed-point 30px sliver near the top of the map regardless of where
+  -- terrain actually sits (wa.random(100,100) is not random at all).
+  --
+  -- NOTE: there's no documented wa.world.water()/wa.land.water-level call --
+  -- the only confirmed wa.world fields are size/bounds/cavern/networked/
+  -- keys/pointer/gravity/wind. Using map height as the scan floor instead;
+  -- if there IS a water query hiding somewhere undocumented, swap it in
+  -- here, since water level (not map bottom) is what actually matters for
+  -- "don't spawn underwater."
+  local size= wa.world.size()
+  local levelSX = size.w* PX
+  local waterY = size.h* PX
+  local sliceWidth = levelSX // quantity
+
+  wa.log("[BEE SPAWN] Starting slice spawner. Quantity=" .. tostring(quantity) .. " MapWidth=" .. tostring(size.width) .. " MapHeight=" .. tostring(size.height) .. " SliceWidth=" .. tostring(sliceWidth // PX))
+
+  for currentSlice = 0, quantity - 1 do
+    local sliceAttempts = 0
+    local spawnedInSlice = false
+
+    local sliceStart = currentSlice * sliceWidth
+    local sliceEnd = sliceStart + sliceWidth
+
+    if sliceStart < 30 * PX then sliceStart = 30 * PX end
+    if sliceEnd > levelSX - (30 * PX) then sliceEnd = levelSX - (30 * PX) end
+
+    while sliceAttempts < 10 and not spawnedInSlice do
+      sliceAttempts = sliceAttempts + 1
+
+      local tryX = wa.random(sliceStart // PX, sliceEnd // PX) * PX
+      -- Scan almost the whole map height above water, not a fixed sliver --
+      -- terrain can be anywhere between the ceiling margin and the water line.
+      local tryY = wa.random(SPAWN_TOP_MARGIN_PX, math.max(SPAWN_TOP_MARGIN_PX + 1, (waterY // PX) - 100)) * PX
+      local traceEndY = waterY - (70 * PX)
+
+      local hit = wa.land.trace(tryX, tryY, tryX, traceEndY)
+
+      if hit and hit.hit then
+        local spawnX = hit.x
+        local spawnY = hit.y - (15 * PX)
+
+        if isClearOfTerrain(spawnX, spawnY, BEE_RADIUS_PX) then
+          spawn_actor({
+            x     = spawnX,
+            y     = spawnY,
+            owner = ownerWorm,
+            rogue = true,
+          })
+          spawnedInSlice = true
+          wa.log("[BEE SPAWN] Slice #" .. tostring(currentSlice) .. " SUCCESS on attempt #" .. tostring(sliceAttempts))
+        end
+      end
+    end
+
+    if not spawnedInSlice then
+      wa.log("[BEE SPAWN] Slice #" .. tostring(currentSlice) .. " FAILED to find valid terrain clearance!")
+    end
+  end
+end
+
+--------------------------------------------------------------------------------
+-- Weapon Registration
+--------------------------------------------------------------------------------
+wa.weapons.replace({
+  weapon    = "skunk",
+  name      = "Keeper Bee",
+  copy_from = "grenade",
+  is_weapon = true,
+
+  sounds    = beeSOUNDS,
+  params    = { gpu_prefix = "sprites/bee_", sprite_columns = BEE_FRAME_COUNT },
+  panel_icon = "sprites/beeico.png",
+  sprites   = { SPRITE },
+
+  worm_sprites = {
+    weaponlnk = "sprites/aim_p_muitb55w.gif",
+    weaponlnku = "sprites/aim_u_muitb55w.gif",
+    weaponlnkd = "sprites/aim_d_muitb55w.gif",
+    wthrow = "sprites/draw_p_muitb55w.gif",
+    wthrowu = "sprites/draw_u_muitb55w.gif",
+    wthrowd = "sprites/draw_d_muitb55w.gif",
+  },
+
+  on_fire = function(fire)
+    local worm = fire.worm
+    playBuzz(worm or { x = fire.x, y = fire.y })
+
+    local sx, sy = checkSpawnPoint(fire.x, fire.y, fire.x, fire.y, 50 * PX)
+    sx = sx or fire.x
+    sy = sy or fire.y
+
+    spawn_actor({
+      x     = sx,
+      y     = sy,
+      owner = worm,
+      rogue = false,
+    })
+  end,
+})
+
+--------------------------------------------------------------------------------
+-- Worm Message Callback Hook (Frame Finish)
+--------------------------------------------------------------------------------
+wa.on.worm_message(function(worm, msg)
+  if msg ~= wa.msg.FRAME_FINISH then return end
+  if worm.id ~= (1 * 16 + 1) then return end
+  if spawnedMapBees then return end
+
+  gameFrame = gameFrame + 1
+  wa.log("[BEE HOOK] Received FRAME_FINISH on target worm. Frame count: " .. tostring(gameFrame))
+
+  if gameFrame > 2 then
+    wa.log("[BEE HOOK] Target tick reached! Spawning slice-based map bees...")
+    spawnRandomBees(BEE_SPAWN_QUANTITY, worm)
+    spawnedMapBees = true
+  end
+end)
+
+return {
+  spawnRandomBees = spawnRandomBees,
+  spawn_actor     = spawn_actor,
+}`
+      }
+    ],
+  },
+  {
+    id: 'example.highlander_pure_lua',
+    name: 'Highlander Rules',
+    version: '0.1.0',
+    author: 'wkLua',
+    category: 'rules',
+    description: 'A pure-Lua scheme: deal one weapon from each pool, track each worm\'s inventory, and take a killed worm\'s kit.',
+    tags: ['example', 'rules', 'scheme'],
+    files: [
       {
         path: 'rules.lua',
         name: 'rules.lua',
         language: 'lua',
-        content: `-- Highlander as the test suites run it: the Highlander profile's match, on
--- Project X's layout. Every Highlander weapon sits on its home slot, WA's own
--- weapons the profile deals sit on theirs, and the hl.rules add-on deals from
--- the pools the weapons suggest (mod.toml) and the profile sets
--- (profiles/Highlander.toml). They install as the engine installs a profile's
--- components: hl.rules first (before_weapons), then each weapon, in slot
--- order. A real match runs the components the player's profile selects; the
--- engine never runs this file.
+        content: `-- Highlander, stock weapons only.
 --
--- A port of Project X's \`scheme_hl_0rang3\` (Highlander 0rang3 1.1): every
--- worm is dealt one weapon from each of three pools at the start of the
--- match, may use each once a turn, and takes everything a worm it kills
--- carried (scheme/rules.lua).
-local HOME = require("lib/homes")
-local root = HIGHLANDER_ROOT or "mods/px/"
-
--- WA's 71 slots in order: where each weapon sits decides the deal's order.
-local STOCK = {
-  "bazooka", "homing_missile", "mortar", "homing_pigeon", "sheep_launcher",
-  "grenade", "cluster_bomb", "banana_bomb", "battle_axe", "earthquake", "shotgun",
-  "handgun", "uzi", "minigun", "longbow", "fire_punch", "dragon_ball", "kamikaze",
-  "suicide_bomber", "prod", "dynamite", "mine", "sheep", "super_sheep",
-  "aqua_sheep", "mole_bomb", "air_strike", "napalm_strike", "mail_strike",
-  "mine_strike", "mole_squadron", "blow_torch", "pneumatic_drill", "girder",
-  "baseball_bat", "girder_pack", "ninja_rope", "bungee", "parachute", "teleport",
-  "scales_of_justice", "super_banana", "holy_grenade", "flame_thrower",
-  "salvation_army", "mb_bomb", "petrol_bomb", "skunk", "ming_vase",
-  "sheep_strike", "carpet_bomb", "mad_cow", "old_woman", "donkey",
-  "nuclear_test", "armageddon", "skip_go", "surrender", "select_worm", "freeze",
-  "magic_bullet", "jet_pack", "low_gravity", "fast_walk", "laser_sight",
-  "invisibility", "damage_x2", "crate_spy", "double_turn_time", "crate_shower",
-}
-local INDEX = {}
-for i, name in ipairs(STOCK) do INDEX[name] = i end
-
--- Each weapon's hl.rules settings: pool and cavern, as mod.toml suggests
--- them for PX's weapons and the profile sets them for WA's own.
-local settings = {}
--- \`header\`: a table header naming the weapon (the profile's); else the
--- weapon is the last \`id =\` seen (mod.toml's components).
-local function read(path, header)
-  local f = assert(io.open(root .. path, "r"))
-  local id
-  for line in f:lines() do
-    id = line:match('^id = "([%w_%.]+)"') or (header and line:match(header)) or id
-    local pool = line:match('^pool = "([%w ]+)"')
-    local cavern = line:match("^cavern = (%a+)")
-    if id and (pool or cavern) then
-      settings[id] = settings[id] or {}
-      if pool then settings[id].pool = pool end
-      if cavern then settings[id].cavern = cavern == "true" end
-    end
-  end
-  f:close()
-end
-read("mod.toml")
-read("profiles/Highlander.toml", '^%[weapon_options%."hl%.rules"%."([%w_%.]+)"%]')
-
--- The match's weapons: PX's on their home slots, and WA's own with a pool.
-local placed = {}
-for id, home in pairs(HOME) do
-  placed[#placed + 1] = { id = id, slot = home }
-end
-for id in pairs(settings) do
-  local stock = id:match("^stock%.(.+)$")
-  if stock then
-    placed[#placed + 1] = { id = id, slot = stock }
-  end
-end
-table.sort(placed, function(a, b) return INDEX[a.slot] < INDEX[b.slot] end)
-local weapons = {}
-for _, w in ipairs(placed) do
-  local s = settings[w.id] or {}
-  w.options = { pool = s.pool or "not dealt", cavern = s.cavern ~= false }
-  weapons[w.id] = w
-end
-
--- hl.rules first, then each weapon claiming its slot.
-local loader = require("components/loader")
-require("components/highlander").install({ id = "hl.rules", weapons = weapons, placed = placed })
-for _, w in ipairs(placed) do
-  if HOME[w.id] then
-    HIGHLANDER_CLAIMING = w.slot
-    loader.install({ id = w.id, weapons = weapons, placed = placed })
-  end
-end
-HIGHLANDER_CLAIMING = nil
-`
-      },
-      {
-        path: 'scheme/pools.lua',
-        name: 'scheme/pools.lua',
-        language: 'lua',
-        content: `-- Highlander: the weapon pools. Each worm is dealt one weapon from each.
+-- A port of the rules in Project X's \`scheme_hl_0rang3\` (Highlander 0rang3
+-- 1.1), without its custom weapons. Every worm is dealt one weapon from each
+-- of three pools at the start of the match. Only the worm whose turn it is
+-- may use its weapons, one shot of each per turn. Kill a worm and you take
+-- everything it carried.
 --
--- The pools are each placed weapon's settings under the hl.rules add-on
--- ("Highlander pool", "Dealt on cavern maps"), which components/highlander.lua
--- reads into shared.pools, by weapon id, before this loads. A PX weapon
--- suggests its PX pool in mod.toml.
-local shared = require("lib/shared")
-
-local pools = assert(shared.pools, "scheme/pools: components/highlander.lua sets the pools")
-
--- Every pooled weapon, in a fixed order. Zeroing walks this list, so it must
--- not depend on pairs() order: Lua's string hashing is seeded per process,
--- and a different order on each peer is a different sequence of writes.
-local POOLED, seen = {}, {}
-for _, name in ipairs({ "offensive", "second", "movement" }) do
-  for _, id in ipairs(pools[name]) do
-    if not seen[id] then
-      seen[id] = true
-      POOLED[#POOLED + 1] = id
-    end
-  end
-end
-
-shared.POOLS = pools
-shared.POOLED = POOLED
-`
-      },
-      {
-        path: 'scheme/rules.lua',
-        name: 'scheme/rules.lua',
-        language: 'lua',
-        content: `-- Highlander: the rules. Split from rules.lua by tools/split_highlander.py.
---
--- A port of Project X's \`scheme_hl_0rang3\` (Highlander 0rang3 1.1).
 -- The source (\`highlander.txt\`) does all of this with four calls:
 -- SetWeaponEx(team, weapon, 1) to grant and SetWeaponEx(team, weapon, 0) to
 -- take away. \`worm:ammo(name, { set = n })\` is the same absolute write. It has
@@ -2731,137 +1600,101 @@ shared.POOLED = POOLED
 --     just the previous worm's. PX relied on its scheme having those slots at
 --     zero. Here the scheme can say anything, so the pack enforces it itself.
 --
---   * PX's GiveWeapons also sets the Hot Air Balloon to 3 and the Wind
---     Changer to 1 each turn. The Highlander scheme gives them as weapon data
---     (profiles/Highlander.toml), so this file alone doesn't.
+--   * Wind Changer (x1) and Hot Air Balloon (x3) are PX weapons with no stock
+--     equivalent, so nothing is granted in their place.
 --
--- Lockstep: dealing, turn_start and death are all dispatched from WA's own
--- simulation messages, and every random choice is wa.random(). Two peers, or
--- a peer and a replay, deal the same hands and make the same grants. Nothing
--- here reads local input or the clock.
-local shared = require("lib/shared")
-local POOLS = shared.POOLS
-local arsenal = shared.arsenal
-local dead_hands = shared.dead_hands
-local dealt = shared.dealt
-local describe = shared.describe
-local revived_by_lightning = shared.revived_by_lightning
+--   * The cavern rule bans strikes by NAME. PX did it by cutting the random
+--     range short (RandomInt(0,20) instead of (0,28)), which only works
+--     because its list happened to keep the strikes at the end.
+--
+-- Lockstep: every rule runs inside wa.on.worm_message, which is WA's own
+-- simulation, and every random choice is wa.random(). Two peers, or a peer
+-- and a replay, deal the same hands and make the same grants. Nothing here
+-- reads local input or the clock.
 
--- ----------------------------------------------------------------- rules
+-- ----------------------------------------------------------------- pools
 
--- One from each pool, dealt to a worm on the first message it receives -- as
--- PX does on each worm's first M_FRAME. Dealing everyone at once on the very
--- first message would assume every worm already exists by then; this makes no
--- such assumption. Worms receive messages in WA's own entity order, which is
--- the same on every peer, so the draws still come out of WA's RNG in the same
--- sequence everywhere.
-local function deal(worm)
-  local cave = wa.world.cavern()
-  for _, name in ipairs({ "offensive", "second", "movement" }) do
-    local pool = POOLS[cave and "cave_" .. name or name]
-    -- A profile may leave a pool empty: nothing to deal from it.
-    if #pool > 0 then
-      arsenal:deal(worm, pool, 1)
-    end
+-- Movement: exactly the seven the design names.
+local MOVEMENT = {
+  "ninja_rope", "girder", "girder_pack", "jet_pack", "low_gravity",
+  "fast_walk", "parachute",
+}
+
+-- Second weapon: the F4 row, plus what is left of F7 once the girders have
+-- gone to movement.
+local SECOND = {
+  "fire_punch", "dragon_ball", "kamikaze", "suicide_bomber", "prod",
+  "blow_torch", "pneumatic_drill", "baseball_bat",
+}
+
+-- Offensive: every remaining weapon that does damage, super weapons included.
+-- The non-attacks -- bungee, teleport, scales, select worm, freeze, the
+-- utilities, skip go and surrender -- are not in any pool. Highlander never
+-- touches them, so their ammo is whatever the scheme says.
+local OFFENSIVE = {
+  -- F1-F3
+  "bazooka", "homing_missile", "mortar", "homing_pigeon", "sheep_launcher",
+  "grenade", "cluster_bomb", "banana_bomb", "battle_axe", "earthquake",
+  "shotgun", "handgun", "uzi", "minigun", "longbow",
+  -- F5-F6
+  "dynamite", "mine", "sheep", "super_sheep", "aqua_sheep", "mole_bomb",
+  "air_strike", "napalm_strike", "mail_strike", "mine_strike", "mole_squadron",
+  -- F9-F11
+  "super_banana", "holy_grenade", "flame_thrower", "salvation_army", "mb_bomb",
+  "petrol_bomb", "skunk", "ming_vase", "sheep_strike", "carpet_bomb",
+  "mad_cow", "old_woman", "donkey", "nuclear_test", "armageddon",
+  -- F12
+  "magic_bullet",
+}
+
+-- Everything that arrives from the sky. PX keeps strikes out of caverns, where
+-- they would hit the roof.
+local CAVE_BANNED = {
+  air_strike = true, napalm_strike = true, mail_strike = true,
+  mine_strike = true, mole_squadron = true, sheep_strike = true,
+  carpet_bomb = true, donkey = true, armageddon = true,
+}
+
+-- Every slot this pack owns, in a fixed order. Zeroing walks this list, so it
+-- must not depend on pairs() order: Lua's string hashing is seeded per
+-- process, and a different order on each peer is a different sequence of
+-- writes.
+local POOLED = {}
+for _, pool in ipairs({ OFFENSIVE, SECOND, MOVEMENT }) do
+  for _, name in ipairs(pool) do
+    POOLED[#POOLED + 1] = name
   end
-  dealt[worm.id] = true
-  wa.log(string.format(
-    "highlander: worm %d dealt %s (%s map)",
-    worm.id, describe(arsenal:list(worm)), cave and "cavern" or "open"
-  ))
 end
-
--- The hand, one use of each, for the turn. PX's GiveWeapons (the Hot Air
--- Balloons and the Wind Changer) is weapon data in the Highlander profile:
--- the engine gives it.
-local function start_turn(worm)
-  arsenal:apply(worm, { clear = true, each = 1 })
-end
-
-local function on_death(event)
-  local victim = event.victim
-  local active = event.active
-  revived_by_lightning[victim.id] = nil
-  local mine = arsenal:list(victim)
-  dead_hands[victim.id] = mine
-
-  if active and active.id == victim.id then
-    -- Died on its own turn: nothing to hand on, just take its weapons away.
-    arsenal:clear(victim)
-    arsenal:apply(victim, { clear = true, each = 1 })
-    wa.log(string.format("highlander: worm %d died on its own turn", victim.id))
-    return
-  end
-
-  -- Otherwise the worm whose turn it is gets everything -- whoever or
-  -- whatever did the killing, friend or foe, exactly as in PX.
-  if not active or active.hp <= 0 then
-    return
-  end
-  arsenal:transfer(victim, active, {
-    weapons = "all", mode = "move", x = victim.x, y = victim.y,
-  })
-  -- Usable at once, this turn, not from the stealer's next turn.
-  arsenal:apply(active, { weapons = mine, each = 1 })
-  wa.log(string.format(
-    "highlander: worm %d took %s from worm %d",
-    active.id, describe(mine), victim.id
-  ))
-end
-
-wa.on.worm_message(function(worm, msg)
-  if not dealt[worm.id] then
-    deal(worm)
-  end
-end, { msgs = { wa.msg.FRAME_FINISH, wa.msg.START_TURN } })
-
--- A worm that comes in a dead worm's place (the Reinforcement) is a new
--- worm: a fresh hand, dealt at its first message as every worm's is, not
--- what the dead one held or left behind.
-shared.fresh_hand = function(worm)
-  arsenal:clear(worm)
-  dealt[worm.id] = nil
-  dead_hands[worm.id] = nil
-  revived_by_lightning[worm.id] = nil
-end
-
-wa.on.turn_start(function(event)
-  start_turn(event.worm)
-end)
-
-wa.on.death(on_death)
-
-`
-      },
-      {
-        path: 'scheme/state.lua',
-        name: 'scheme/state.lua',
-        language: 'lua',
-        content: `-- Highlander: the scheme's state. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-local POOLED = shared.POOLED
 
 -- ----------------------------------------------------------------- state
 
--- The engine store is keyed by stable worm id (team * 16 + index), never by
--- entity address. It is virtual: WA's physical ammo is still alliance-shared
--- and is materialized from one worm's inventory at turn start.
-local arsenal = wa.inventory.create({ id = "arsenal", slots = POOLED })
-local dealt = {}
-local dead_hands = {}
-shared.revived_by_lightning = shared.revived_by_lightning or {}
-local revived_by_lightning = shared.revived_by_lightning
+-- Keyed by stable worm id (team * 16 + index), which is the same on every
+-- peer and in a replay. Never by handle: a handle is an entity address, and a
+-- dead worm's entity is freed while its id lives on in these tables.
+local hands = {} -- [id] = { weapon names }, draw order first, then stolen
+local dead = {} -- [id] = true once the worm has been seen at 0 hp
+local active_id -- PX's CurW: the worm whose turn it is, or was
 
--- The current Highlander port moves a dead worm's hand to the active worm.
--- A grave revived by Lightning also gets that original hand back. This is a
--- copy: the active worm keeps the weapons it already stole.
-shared.restore_lightning_inventory = function(worm)
-  local hand = dead_hands[worm.id]
-  if not hand then return end
-  arsenal:clear(worm)
-  for _, weapon in ipairs(hand) do arsenal:add(worm, weapon, 1) end
-  dealt[worm.id] = true
-  dead_hands[worm.id] = nil
+local function by_id(a, b)
+  return a.id < b.id
+end
+
+-- The live worms, in id order. Called fresh every time rather than cached:
+-- the list shrinks as worms die, and a cached handle to a freed worm would be
+-- a read of freed memory.
+local function worms()
+  local list = wa.worms.all()
+  table.sort(list, by_id)
+  return list
+end
+
+local function find(id)
+  for _, w in ipairs(worms()) do
+    if w.id == id then
+      return w
+    end
+  end
+  return nil
 end
 
 local function describe(list)
@@ -2871,6244 +1704,141 @@ local function describe(list)
   return table.concat(list, ", ")
 end
 
-shared.arsenal = arsenal
-shared.dead_hands = dead_hands
-shared.dealt = dealt
-shared.describe = describe
-shared.revived_by_lightning = revived_by_lightning
-`
-      },
-      {
-        path: 'test_pools.lua',
-        name: 'test_pools.lua',
-        language: 'lua',
-        content: `-- Highlander rules as the hl.rules add-on: its pools come from each placed
--- weapon's settings, in slot order. From the repo root:
--- lua mods/px/test_pools.lua
-local root = HIGHLANDER_ROOT or "mods/px/"
-package.path = root .. "?.lua;" .. package.path
-local logs, hooks, dealt_from = {}, {}, {}
-local cavern = false
-wa = {
-  log = function(s) logs[#logs + 1] = s end,
-  msg = setmetatable({}, { __index = function(_, k) return k end }),
-  on = setmetatable({}, { __index = function(_, name) return function(f) hooks[name] = f end end }),
-  world = { cavern = function() return cavern end },
-  inventory = {
-    create = function(spec)
-      local inv = { slots = spec.slots }
-      function inv:deal(_, pool) dealt_from[#dealt_from + 1] = table.concat(pool, ",") end
-      function inv:list() return {} end
-      return inv
-    end,
-  },
-}
+-- ----------------------------------------------------------------- rules
 
-local function check(what, ok, detail)
-  print((ok and "  ok   " or "  FAIL ") .. what .. (detail and ("   [" .. detail .. "]") or ""))
-  if not ok then error(what, 2) end
+local function draw(pool)
+  return pool[wa.random(1, #pool)]
 end
 
--- A small set, not PX's: two offensive (one kept off cavern maps), one
--- second, one movement, one not dealt; in slot order, as ctx.placed is.
-local function w(id, pool, cave) return { id = id, options = { pool = pool, cavern = cave } } end
-local placed = {
-  w("px.double_bazooka", "offensive", true),
-  w("stock.shotgun", "second", true),
-  w("stock.mine_strike", "offensive", false),
-  w("px.jump", "movement", true),
-  w("stock.skip_go", "not dealt", true),
-}
-local weapons = {}
-for _, p in ipairs(placed) do weapons[p.id] = {} end
-local rules = dofile(root .. "components/highlander.lua")
-rules.install({ weapons = weapons, placed = placed })
-local shared = require("lib/shared")
-local P = shared.POOLS
-print("pools: from each placed weapon's settings, by id")
-check("offensive, in slot order", table.concat(P.offensive, ",") == "px.double_bazooka,stock.mine_strike",
-  table.concat(P.offensive, ","))
-check("off cavern maps by its own setting", table.concat(P.cave_offensive, ",") == "px.double_bazooka")
-check("second and movement", P.second[1] == "stock.shotgun" and P.movement[1] == "px.jump")
-check("not dealt is in no pool",
-  table.concat(shared.POOLED, ",") == "px.double_bazooka,stock.mine_strike,stock.shotgun,px.jump",
-  table.concat(shared.POOLED, ","))
-
-print("deal: one from each pool")
-hooks.worm_message({ id = 17 }, "FRAME_FINISH")
-check("open map", table.concat(dealt_from, " | ") == "px.double_bazooka,stock.mine_strike | stock.shotgun | px.jump",
-  table.concat(dealt_from, " | "))
-dealt_from, cavern = {}, true
-hooks.worm_message({ id = 18 }, "FRAME_FINISH")
-check("cavern map", table.concat(dealt_from, " | ") == "px.double_bazooka | stock.shotgun | px.jump",
-  table.concat(dealt_from, " | "))
-
-print("ALL PASS")
-`
-      },
-      {
-        path: 'test_portals.lua',
-        name: 'test_portals.lua',
-        language: 'lua',
-        content: `-- Focused Portal Gun simulation tests, from the repo root:
--- lua mods/px/test_portals.lua
-local root = HIGHLANDER_ROOT or "mods/px/"
-package.path = root .. "?.lua;" .. package.path
-local hooks, actors, keys, sounds, worms, draws = {}, {}, {}, {}, {}, {}
-local cut, obstruction, solid_exit = 0, false, false
-local next_hit
-wa = {
-    depth = { FRONT = 0x10000, EFFECTS = 0xC0000, WORMS = 0xD0000, OBJECTS = 0xE0000, TERRAIN = 0x180000, BEHIND_TERRAIN = 0x190000 },
-  sorted = function(t) local a = {}; for k in pairs(t) do a[#a+1]=k end; table.sort(a); return a end,
-  math = { sin = math.sin, cos = math.cos, atan = math.atan },
-  world = { keys = function() return keys end, water = function() return 1000 end,
-    size = function() return {w=2000,h=1000} end, gravity = function() return (1 / 8) end,
-    trace = function() return next_hit end },
-  land = { trace = function() return obstruction and {hit=true} or nil end,
-    cut = function(s) assert(s.shape=="circle" and s.radius==15); cut=cut+1 end },
-  worms = { all = function() return worms end },
-  sound = { play = function(target, name)
-    assert(target==nil or type(target)=="table")
-    assert(type(name)=="string"); sounds[#sounds+1] = name
-  end },
-  actors = { spawn = function(spec)
-    local a = { id = #actors+1, x = spec.x, y = spec.y, on = spec.on }
-    function a:scale(v) self.scale_value=v end
-    function a:gfx(v) self.gfx_value=v end
-    function a:frame(v) self.frame_value=v end
-    function a:despawn() self.dead=true end
-    actors[#actors+1]=a; return a
-  end },
-  on = {}, msg = { FRAME_FINISH = 2 },
-  draw = { quad = function(q)
-    assert(#q.points==4)
-    for _, p in ipairs(q.points) do assert(math.abs(p[1])<32000 and math.abs(p[2])<32000) end
-    draws[#draws+1]=q
-  end },
-}
-for _, name in ipairs({ "missiles", "mines", "crates", "oil", "graves", "arrows" }) do wa[name]={all=function() return {} end} end
-for _, name in ipairs({"body_move", "worm_message", "turn_start", "turn_end", "draw"}) do
-  wa.on[name] = function(f, opts) hooks[name] = f; hooks[name .. "_opts"] = opts end
-end
-local function body(kind, uid, x, y, vx, vy)
-  local b = { kind=kind, uid=uid, id=uid, x=x, y=y, vx=vx or 0, vy=vy or 0, facing=1, hp=100 }
-  function b:fits(_, _, mode) assert(mode=="terrain"); return not solid_exit end
-  function b:warp(s)
-    self.warps=(self.warps or 0)+1
-    self.x,self.y,self.vx,self.vy=s.x,s.y,s.vx or self.vx,s.vy or self.vy
-    self.facing=s.facing or self.facing; return true
+local function offensive_pool()
+  if not wa.world.cavern() then
+    return OFFENSIVE
   end
-  return b
-end
-local Portals = require("lib/portals")
-local velocity = require("lib/portal_velocity")
-local function pair(options)
-  local n = Portals.new(options)
-  assert(n:place(0,1,100,100,-1,0))
-  assert(n:place(0,2,400,100,1,0))
-  return n
-end
-local n = pair()
-local worm = body("worm", 17,90,100,8,3)
-assert(n:move(worm) and worm.x == 410 and worm.vx == 8 and worm.vy == -3)
-assert(not n:move(worm), "return suppressed while still inside exit")
-worm.x, worm.vx = 450, -10
-assert(not n:move(worm))
-worm.x=420
-assert(n:move(worm) and worm.x==90, "return allowed once body leaves exit")
--- A different body's same raw address must not inherit the old exit lock.
-local missile = body("missile", 101,90,100,8,3)
-assert(n:move(missile))
-local reuse = body("missile", 102,410,100,-8,0)
-assert(n:move(reuse))
--- Native IDs are prefixed by kind, since worm ids and actor ids have their
--- own sequences. Dead and taken worms keep their WA handoff.
-local other = body("worm",101,90,100,2,0); assert(n:move(other))
-other.hp=0; other.x=90; assert(not n:move(other))
-other.hp=100; other.taken=true; assert(not n:move(other))
-local fast = body("arrow",303,20,100,150,0)
-assert(pair():move(fast), "fast arrow intercepted before the wall")
-obstruction=true; assert(not pair():move(body("missile",304,20,100,150,0)))
-obstruction=false
-solid_exit=true; assert(not pair():move(body("crate",305,90,100,0,0)) and cut==1)
-solid_exit=false
-local fit_calls=0
-local clearing=body("oil",306,90,100,0,0)
-function clearing:fits(_, _, mode) assert(mode=="terrain"); fit_calls=fit_calls+1; return fit_calls>1 end
-assert(pair():move(clearing) and cut==2)
-local old = n.pairs[0][1]
-assert(n:place(0,1,200,100,-1,0)==old, "relocation retains endpoint identity")
-assert(not n:place(0,1,400,100,-1,0), "overlapping partner rejected")
-assert(n:place(1,1,200,300,-1,0) and not n.pairs[1][2], "pair belongs to its team")
-n:active(0,false); assert(not n:move(body("mine",307,190,100,0,0)))
-n:turn_start(); assert(n.pairs[0].active)
-n:turn_end(); for _=1,150 do n:tick() end; assert(n.pairs[0].active)
-n:tick(); assert(not n.pairs[0].active)
-local immediate=pair({grace=0}); immediate:turn_end()
-assert(not immediate.pairs[0].active, "zero grace disables transport at retreat end")
--- PX distinguishes the worm's and an object's right->right exit. Its
--- diagonal rules combine momentum; this is not a simple vector rotation.
-local x,y,f=velocity("worm",3,3,8,3,1); assert(x==-8 and y==3 and f==-1)
-x,y=velocity("missile",3,3,8,3,1); assert(x==-8 and y==-3)
-x,y,f=velocity("worm",3,2,8,3,1); assert(x==-4 and y==1 and f==-1)
-x,y=velocity("worm",3,3,0,0,1); assert(x==-2)
-for entry=1,8 do for exit=1,8 do for _, kind in ipairs({"worm","missile"}) do
-  for _, speed in ipairs({{0,0},{8,3},{-7,-11},{1,-1},{40,40}}) do
-    x,y,f=velocity(kind,entry,exit,speed[1],speed[2],-1)
-    assert(type(x)=="number" and type(y)=="number" and (f==1 or f==-1))
+  local pool = {}
+  for _, name in ipairs(OFFENSIVE) do
+    if not CAVE_BANNED[name] then
+      pool[#pool + 1] = name
+    end
   end
-end end end
-assert(Portals.direction(0,1)==1 and Portals.direction(-1,0)==3 and Portals.direction(0,-1)==5)
-assert(Portals.direction(1,0)==7 and Portals.direction(-.7,.7)==2 and Portals.direction(.7,-.7)==6)
-local strategy_calls=0
-local custom=pair({velocity=function() strategy_calls=strategy_calls+1; return 3,4,1 end,
-  clearance=function() return 600,200 end})
-local custom_body=body("actor",909,90,100,0,0)
-assert(custom:move(custom_body) and strategy_calls==1 and custom_body.x==600 and custom_body.vx==3)
+  return pool
+end
 
--- Gun: Space while airborne uses PX's direction keys at full power,
--- retains worm momentum, and captures owner/team/colour per bolt.
-local shared=require("lib/shared"); shared.fires={}; shared.current_worm=function() return worms[1] end
-require("weapons/portal_gun")
-worm=body("worm",17,100,100,4,-6)
-worm.team,worm.alliance,worm.weapon,worm.turn,worm.aim=0,0,"px.portal_gun",true,.5
-worm.stock=3
-function worm:ammo(_,delta) if delta then self.stock=self.stock+delta end; return self.stock end
-function worm:air_fire(on) self.air_enabled=on~=false; return true end
-worms={worm}
-for _, entry in ipairs({{{up=true,left=true},.75},{{down=true,right=true},.175},{{up=true},1},{{down=true},0},{{left=true},.5},{{},.5}}) do
-  keys=entry[1]
-  local aim=shared.portal_air_aim(worm,keys); assert(aim==entry[2])
-  shared.fires.portal_gun({worm=worm,airborne=true})
-  assert(worm.vx==4 and worm.vy==-6 and worm.stock==3)
+-- One from each pool, dealt to a worm on the first message it receives -- as
+-- PX does on each worm's first M_FRAME. Dealing everyone at once on the very
+-- first message would assume every worm already exists by then; this makes no
+-- such assumption. Worms receive messages in WA's own entity order, which is
+-- the same on every peer, so the draws still come out of WA's RNG in the same
+-- sequence everywhere.
+local function deal(worm)
+  local cave = wa.world.cavern()
+  hands[worm.id] = { draw(offensive_pool()), draw(SECOND), draw(MOVEMENT) }
+  wa.log(string.format(
+    "highlander: worm %d dealt %s (%s map)",
+    worm.id, describe(hands[worm.id]), cave and "cavern" or "open"
+  ))
 end
-keys={plus_key=true}; hooks.worm_message(worm); assert(not worm.air_enabled, "airborne fire is the claim's, not a per-frame call")
-shared.fires.portal_gun({worm=worm,airborne=true})
-local a=actors[#actors]
--- Replace the trace with a supported terrain hit. The first successful
--- blue placement auto-selects orange, without consuming half a pair's ammo.
-next_hit={hit=true,x=300,y=100,nx=-1,ny=0}; obstruction=true
-a.on.frame(a); assert(a.dead and shared.portals.pairs[0][2] and worm.stock==3)
-local function endpoint(sprite)
-  for _, q in ipairs(draws) do if q.sprite=="sprites/portal_gun/"..sprite then return q end end
+
+local function set_all(worm, list, n)
+  for _, name in ipairs(list) do
+    worm:ammo(name, { set = n })
+  end
 end
-draws={}; hooks.draw()
-local single=assert(endpoint("portal_blue.png"), "first endpoint drawn before its partner exists")
-assert(single.color==0xFFFFFFFF and single.blend=="add", "single endpoint stays bright")
-assert(endpoint("portal_black_mask"), "PX's team marker is drawn")
-assert(endpoint("lightning_glow.png"), "PX's impact flash replaces the placeholder halo")
-hooks.turn_end(); assert(not shared.portals.pairs[0].active)
-worm.turn=false; draws={}; hooks.draw()
-assert(endpoint("portal_blue.png").color==single.color, "inactive endpoint keeps its appearance between turns")
-assert(not shared.portals:move(body("arrow",999,290,100,2,0)))
-worm.turn=true; hooks.turn_start(); assert(shared.portals.pairs[0].active)
-keys={ctrl=true}
-shared.fires.portal_gun({worm=worm,airborne=true}); a=actors[#actors]
-next_hit={hit=true,x=600,y=100,nx=1,ny=0}; a.on.frame(a)
-assert(worm.stock==2 and shared.portals.pairs[0][2].draw_x==600, "one-shot Ctrl inversion and pair ammo")
--- Ground charge uses normalized native power; native ammo use is refunded.
-keys={}; obstruction=false; next_hit=nil
-shared.fires.portal_gun({worm=worm,power=.25}); a=actors[#actors]; worm.stock=worm.stock-1
-local before=a.x; a.on.frame(a); assert(math.abs(a.x-before-35*.25)<2 and worm.stock==2)
-keys={pause_key=true}; hooks.worm_message(worm); assert(not shared.portals.pairs[0].active)
-hooks.worm_message(worm); assert(not shared.portals.pairs[0].active, "Pause is an edge")
-keys={}; hooks.worm_message(worm); keys={pause_key=true}; hooks.worm_message(worm)
-assert(shared.portals.pairs[0].active)
--- Complete the pair: ambience runs only while transport is active; endpoint
--- art is always submitted. Particle lifetimes/motion stay in Lua looks.
-shared.portals:place(0,1,300,100,-1,0)
-actors[1].on.frame(actors[1])
-draws={}; hooks.draw()
-assert(endpoint("portal_orange.png") and endpoint("portal_blue.png"))
-local Effects=require("lib/portal_effects")
-local fx=Effects.new(); fx:ambient(shared.portals.pairs[0][1]); assert(#fx.particles==1)
-assert(fx.particles[1].life==15 and fx.particles[1].gravity==-0.5)
-fx:transport(shared.portals.pairs[0][1]); assert(#fx.particles==6)
-fx:trail(100,100,2); assert(#fx.particles==8)
-fx:impact(100,100,false); assert(#fx.particles==26)
-for _=1,40 do fx:tick((1 / 8)) end
-assert(#fx.particles==0, "PX effects expire instead of accumulating")
-assert(#hooks.body_move_opts.kinds==7, "bolts and magnets excluded from transport")
-print("Portal Gun: placement, controls, air aim, transport, visibility across turns and PX effects passed")
-`
-      },
-      {
-        path: 'weapons/attack_helicopter.lua',
-        name: 'weapons/attack_helicopter.lua',
-        language: 'lua',
-        content: `-- Attack Helicopter -- Project X's "COLADOR AEREO" (PX_pending/attack_helicopter.txt).
--- Ported by hand to WormForge API 4, as a weapon component.
+
+-- Take every pooled weapon away from every team.
 --
--- PX: a custom missile body (\`heliShoot : CMissile\`, :3) fired from
--- \`CWorm::FireFinal\` when the fired weapon is named "COLADOR AEREO" (:423-494).
--- It is an air strike: WA shows its cursor, the click gives the target
--- (\`Desc->AddX/AddY\`, :427-428), and the body then enters from off the map
--- (\`Y=-288\`, \`X=-500\`/\`LevelSX+500\`, :434-445), hovers toward the target
--- (\`SpX=±15\`), fires 17 homing bullets (\`bulletCount\`, :31; 4-frame cadence,
--- :264-271), and finally leaves or blows up over water (:214-239).
---
--- Here the body is a Lua actor we move ourselves (\`wa.actors.spawn\`, the
--- Electromagnet pattern), the bullets are real WA missiles (\`wa.weapons.launch\`)
--- of the slot's **own record** -- PX's \`weps/bullet_wep.wep\`, which the same
--- click weapon carries: a weapon a worm never fires, only \`shoot\` launches it --
--- turned onto the target in \`wa.on.missile_frame\` (the Double Bazooka pattern),
--- and the blast-damage absorption (\`TakeExplosionDamage\`, :175-191) is the
--- actor's \`hit\` event. The strike itself is the Lightning Strike's shape
--- (Highlander weapons/catalog.lua:319-337): a click-only strike --
--- \`on_select = { cursor = true }\` keeps WA's cursor and turn handling, and
--- \`on_click(ev)\` gets the coordinate and \`ev.worm\`. The side it enters from is
--- the worm's facing, as PX's own strike reads it (\`ev.worm.facing\`,
--- wklua_and_px/electrical.lua:157); the Highlander port's \`ev.vx\` guess
--- (weapons/electrical.lua:174, weapons/bowling_ball.lua:533) is not PX's. No
--- \`on_fire\` and no \`eat_fire\`: a real strike needs neither.
---
--- Art is one directory of \`frameNNN.png\` per PX sprite, as cut_lab and stress
--- do: \`empty\` (2 rotor frames), \`aim\` (32), \`gun\` (2: idle, firing) and
--- \`casing\` (16, the shell), plus \`bullet.png\` for the bullets. The rotated
--- draws need the sheets in the GPU atlas (\`params.gpu_prefix\`).
---
--- What the API cannot carry (presentation/feel, none a blocker -- REPORT.md 9.3):
--- sound volume/pan and the rotor loop rate (\`wa.sound.play\` has neither), the
--- \`CSmoker\` on impact, and the \`CFire\` fan's directional velocity (the three
--- fires are placed apart instead). PX's \`CColMask(15,15,MakeCircleMask(15))\`
--- circle is dropped on purpose: an actor only takes \`mask = true\`, a square.
---
--- The rounds trail: PX's effect-manager trail, as a module (lib/px_trail.lua).
--- REPORT.md 11.9 maps it back to px_effects.c, and TRAIL.md is how to put it on
--- another weapon. The module is required at load, but is pure data until
--- trail.install() -- a component's file, and anything it requires, runs where
--- \`wa\` does not exist yet.
-local trail = require("lib/px_trail")
-
-return {
-  defaults = {
-    ammo = { round_start = -1 },
-    delay = 0,
-  },
-  install = function(ctx)
-    trail.install() -- the module's wa.on.missile_frame/wa.on.draw, now that wa is here
-    -- --------------------------------------------------------------- tuning
-    -- PX's own numbers, in pixels (PX is 16.16 fixed point, so "SpX = 15.0" is 15).
-    local BULLETS        = 17      -- bulletCount (:31)
-    local ENTER_Y        = -288    -- spawn height, above the map (:434)
-    local SIDE           = 500     -- spawn offset past the map edge (:437,439)
-    local HOVER          = 15      -- entry/hover speed (:443,445)
-    local SHOOT_RANGE    = 450     -- begin firing within this of the target (:249)
-    local COOLDOWN_START = 40      -- wind-up before the first shot (:252)
-    local COOLDOWN_SHOT  = 4       -- frames between shots (:270)
-    local BULLET_SPEED   = 35      -- homeToPlace speed (:387, "35.0")
-    local BULLET_FRAMES  = 3       -- homeToPlace runs this long (:384)
-    local BULLET_FUSE    = 3000    -- timeBeforeExplosion (:304)
-    local MUZZLE         = 22      -- barrel length: the gun sheet's tip above its centre
-    local BLAST_DAMAGE   = 80      -- Weap->launch.explosion.damage (:477)
-    local BLAST_KIND     = 100     -- big blast (PX's pushPower 120 has no field here)
-    local DEAD_DAMAGE    = 25      -- TakeExplosionDamage -> Collide above this (:190)
-    local DRIFT          = 0.984   -- SpX damping while shooting (:263)
-    local LEAVE          = 1.082    -- SpX growth after the magazine (:281)
-    local TURN           = 0.75    -- gunAngle interpolation (:83)
-    local ROTOR_TICKS    = 47      -- heli2Wav loop period (:229-233)
-    local HALF_PI        = math.pi / 2
-    -- The shell eject (:369-379): the same PxParticle(115) the sentry port runs
-    -- as its casing (weapons/sentry_gun.lua:16-49) -- 16 frames, life 100,
-    -- jitter +-0.3 rad, speed 2.0-3.0, gravity, no bounce.
-    local CASING_FRAMES  = 16
-    local CASING_LIFE    = 100     -- p->SetLifeTime(100) (:371)
-    local CASING_JITTER  = 17      -- RandomFloat(-0.3, 0.3) rad (:372), in degrees
-    local CASING_SPEED_MIN, CASING_SPEED_MAX = 200, 300 -- 2.0 .. 3.0 (:373), hundredths
-    -- Mirror of the aiming worm and the gun, against the body's. PX's flags
-    -- (:130-140): the body mirrors when flying left, the worm when flying right
-    -- (the opposite \`wormTurnflag\`), the gun like the body. Seen in game with
-    -- this art the worm and gun both came out on the wrong side, so both are
-    -- flipped. The mirror flips the art ONLY: \`a:gfx\` takes the angle as given
-    -- and does not reflect it (see \`place\`), so the angles are PX's raw ones and
-    -- carry no mirror factor.
-    local FLIP_AIM, FLIP_GUN = true, true
-
-    local ART = "sprites/attack_helicopter/"
-    local BULLET = "sprites/bullet.png" -- the redWeapSheet bullet PX draws itself (:364)
-    local SND = "sounds/attack_helicopter/"
-
-    local helis = {}   -- body actor id -> helicopter state
-    local shots = {}   -- bullet missile id -> { x, y, frames } the homing target
-
-
-    -- Round toward zero, as PX's fixed-point arithmetic does.
-    local function trunc(n) return n < 0 and math.ceil(n) or math.floor(n) end
-
-    local frame, hit -- forward declarations (the actor callbacks, defined below)
-
-    -- PX's UpdateRotation (:69-91): the gun angle eases toward the straight-line
-    -- angle to the target, and drives the aiming worm's 32-frame pose.
-    local function update_aim(h, spawned)
-      local instant = wa.math.atan(h.ty - h.y, math.abs(h.tx - h.x)) -- atan2(dy, |dx|)
-      if instant > HALF_PI then instant = HALF_PI end
-      if instant < -math.pi then instant = -math.pi end
-      if spawned then
-        h.gun = instant
-      else
-        h.gun = h.gun + (instant - h.gun) * TURN
-      end
-      local n = (h.gun + math.pi) / (math.pi * 1.5) -- 0.0 to 1.0
-      if n < 0 then n = 0 elseif n > 1 then n = 1 end
-      h.worm_frame = math.floor((1 - n) * 31)
-    end
-
-    -- PX's UpdateHelicopterRotation (:93-125): the body leans into its motion.
-    local function update_rot(h)
-      local fast = h.vx < -14 or h.vx > 14
-      local slow = h.vx > -14 and h.vx < 14
-      if h.dir >= 0 then
-        if fast and h.shots < BULLETS then
-          h.rot = 0.3
-        elseif slow and h.shots < BULLETS then
-          if h.rot > -0.115 then h.rot = h.rot - 0.01 end
-        elseif h.shots >= BULLETS then
-          if h.rot < 0.3 then h.rot = h.rot + 0.01 end
-        end
-      else
-        if fast and h.shots < BULLETS then
-          h.rot = -0.3
-        elseif slow and h.shots < BULLETS then
-          if h.rot < 0.115 then h.rot = h.rot + 0.01 end
-        elseif h.shots >= BULLETS then
-          if h.rot > -0.3 then h.rot = h.rot - 0.01 end
-        end
-      end
-    end
-
-    -- PX's Draw (:127-173): three sprites -- the body (2 frames), the aiming
-    -- worm (32 frames) and the gun (2 frames: idle, firing). A lower depth is
-    -- nearer, so the gun goes on top: gun (PX z 4.9) in front of the worm (5.1)
-    -- in front of the body (10.01).
-    local function place(h)
-      local a, aim, gun = h.body, h.aim, h.gun_actor
-      local right = h.dir >= 0
-      -- PX mirrors its art with \`turnflag\` (:127-140); our sheets are the
-      -- mirror of PX's sprite bank, so the flags invert. \`facing\` flips the art
-      -- only: \`a:gfx\` takes the angle as given and does NOT reflect it for a
-      -- mirrored actor (the Highlander missile follow sprite relies on the same,
-      -- lib/missile_sprites.lua:140,158), so every part is drawn at PX's raw
-      -- angle -- only the art's own mirror carries the flip. The gun's absolute
-      -- bearing is negated (PX's clockwise \`HALF_PI + final\` reads the other way
-      -- here); the body/worm lean is the signed \`heliRotation\` and keeps its sign.
-      local face = right and -1 or 1
-      local aface = FLIP_AIM and -face or face -- the worm's own mirror
-      local gface = FLIP_GUN and -face or face -- the gun's own mirror
-      a.x, a.y, a.vx, a.vy, a.facing = h.x, h.y, 0, 0, face
-      a:frame(h.frame)
-      a:gfx({ angle = math.deg(h.rot) % 360, depth = wa.depth.OBJECTS + 2 })
-
-      local gx = h.x + (right and 5 or -5)
-      aim.x, aim.y, aim.facing = gx - 2, h.y + 6, aface
-      aim:frame(h.worm_frame)
-      aim:gfx({ angle = math.deg(h.rot * 0.9) % 360, depth = wa.depth.OBJECTS + 1 })
-
-      local final = right and h.gun or (math.pi - h.gun) -- (:161-165) mirror left
-      gun.x, gun.y, gun.facing = gx, h.y + 12, gface
-      -- The gun sheet is a 2-frame trim of PX's multiplex: frame 0 idle, 1 firing.
-      gun:frame(h.firing and 1 or 0)
-      -- PX draws the gun at \`HALF_PI + finalRenderAngle\` (:170); the art's own
-      -- mirror is the only flip.
-      gun:gfx({ angle = -math.deg(HALF_PI + final) % 360, depth = wa.depth.OBJECTS })
-    end
-
-    -- Clear every actor of a helicopter and forget it. The companions go first:
-    -- despawning an already-exploded body can throw, and a skipped companion
-    -- would strand a gun sprite on the map -- the "cursor" that would not leave.
-    local function despawn(a)
-      if a and not a.dead then a:despawn() end
-    end
-    local function drop(h)
-      helis[h.body.id] = nil
-      despawn(h.aim)
-      despawn(h.gun_actor)
-      despawn(h.body)
-    end
-
-    -- PX's ExplodeAt (:392-421) plus the missile's own blast: three fanned fires,
-    -- then the 80-damage explosion. (The fan's SpX/SpY cannot be carried; the
-    -- three fires are placed apart instead.)
-    local function boom(h)
-      if h.owner then
-        for _, f in ipairs({ { -3, -1 }, { 3, 20 }, { 0, -3 } }) do
-          wa.fire.spawn({
-            owner = h.owner, x = h.x + f[1], y = h.y + f[2],
-            count = 7, duration = 1500, up_power = 55, damage = 9,
-          })
-        end
-      end
-      h.body:explode({ damage = BLAST_DAMAGE, id = BLAST_KIND, below = false })
-      drop(h)
-    end
-
-    -- PX's shell eject (:369-379): a casing thrown sideways off the barrel, with
-    -- a little random angle and speed, gravity and no bounce, gone after 100
-    -- frames. The sentry port's \`casing()\` (weapons/sentry_gun.lua:16-49) is the
-    -- same PxParticle(115); its sprite is WA's uzicase sheet.
-    local function eject(h)
-      local ang = h.gun + HALF_PI + math.rad(wa.random(-CASING_JITTER, CASING_JITTER))
-      local speed = wa.random(CASING_SPEED_MIN, CASING_SPEED_MAX) / 100
-      local life, spin = CASING_LIFE, 0
-      wa.actors.spawn({
-        sprite = ART .. "casing", x = h.x, y = h.y + 10, -- PX: PosX, PosY + 10 (:369)
-        vx = wa.math.cos(ang) * speed, vy = wa.math.sin(ang) * speed,
-        gravity = false, collide = false, owner = h.owner, kind = "casing",
-        on = function(c)
-          life = life - 1
-          if life <= 0 then c:despawn(); return end
-          c:gravity()
-          c:move({ terrain = false, worms = false })
-          spin = (spin + 1) % CASING_FRAMES
-          c:frame(spin)
-        end,
-      })
-    end
-
-    -- PX's target selection in shootBullet (the FindWormInBox / FindShootableInBox
-    -- calls, with IsInBox strict on all four sides). Each Find picks uniformly at
-    -- random among its matches (PX's reservoir sampling), so the draws come from
-    -- wa.random in a fixed object order: worms, mines, crates, oil.
-    local function in_box(o, l, r, t, b)
-      return o.x > l and o.x < r and o.y > t and o.y < b
-    end
-
-    -- FindWormInBox(l, r, t, b, true): living worms, the firing worm excluded.
-    local function find_worm(h, l, r, t, b)
-      local pick, count = nil, 0
-      for _, w in ipairs(wa.worms.all()) do
-        if w.hp > 0 and w.id ~= h.owner.id and in_box(w, l, r, t, b) then
-          count = count + 1
-          if wa.random(1, count) == 1 then pick = w end
-        end
-      end
-      return pick
-    end
-
-    -- FindShootableInBox: worms, mines, crates and oil drums. No exclusion of the
-    -- firing worm here -- the caller compares, as PX does. (Dead worms are
-    -- skipped, which PX's version does not bother with.)
-    local function find_any(l, r, t, b)
-      local pick, count = nil, 0
-      for _, group in ipairs({ wa.worms, wa.mines, wa.crates, wa.oil }) do
-        if group then
-          for _, o in ipairs(group.all()) do
-            if (o.kind ~= "worm" or o.hp > 0) and in_box(o, l, r, t, b) then
-              count = count + 1
-              if wa.random(1, count) == 1 then pick = o end
-            end
-          end
-        end
-      end
-      return pick
-    end
-
-    -- TraceLine(this, PosX, PosY, o->PosX, o->PosY, CMASK_TERRAIN): clear when
-    -- nothing of the terrain is hit. Traced from the helicopter's centre.
-    local function clear(h, o)
-      return wa.land.trace(math.floor(h.x), math.floor(h.y),
-        math.floor(o.x), math.floor(o.y)) == nil
-    end
-
-    -- Where a bullet is aimed: a visible worm near the click, else a visible
-    -- shootable near it, else one underneath the flight path, else the click.
-    local function pick_target(h)
-      local tx, ty = h.tx, h.ty
-      local function is_cur(o) return o.kind == "worm" and o.id == h.owner.id end
-
-      local worm = find_worm(h, tx - 130, tx + 130, ty - 70, ty + 80)
-      if worm and clear(h, worm) then
-        return worm.x, worm.y
-      end
-      -- Fallback: the worm was missing or covered (the find has no trace in it).
-      local obj = find_any(tx - 130, tx + 130, ty - 50, ty + 70)
-      local visible = obj and not is_cur(obj) and clear(h, obj)
-      if not visible then
-        if h.dir < 0 then -- PX regDir < 0: check underneath
-          obj = find_any(h.x - 30, tx + 80, ty - 90, ty + 120)
-        else
-          obj = find_any(tx - 80, h.x + 30, ty - 90, ty + 120)
-        end
-        visible = obj and not is_cur(obj) and clear(h, obj)
-      end
-      if visible then
-        return obj.x, obj.y
-      end
-      return tx, ty -- PX: shoots at the click itself (sometimes "kinda fun")
-    end
-
-    -- PX's shootBullet (:288-380): pick a shooting sound, launch a real missile
-    -- at the muzzle and remember the target so wa.on.missile_frame can home it.
-    local function shoot(h)
-      wa.sound.play(h.owner, SND .. "hks" .. wa.random(1, 3) .. ".wav")
-      h.firing = true
-      -- PX spawns each round at PosX + spriteXOffset + 10, PosY + spriteYOffset
-      -- + 20 (:310-311), a fixed offset from the gun's anchor -- that reads as a
-      -- nudge off the hull, not the barrel. Fire from the muzzle instead: the
-      -- gun's anchor plus the barrel length turned by the gun's drawn angle. The
-      -- hull carries no collision mask (we did not add PX's), so nothing blocks
-      -- the round at the tip.
-      local right = h.dir >= 0
-      local gx = h.x + (right and 5 or -5) -- the gun's anchor x (:136, :150)
-      local final = right and h.gun or (math.pi - h.gun)
-      local ang = -(HALF_PI + final)          -- the gun's drawn angle, radians
-      local gface = right and 1 or -1         -- the gun's own mirror
-      local lx, ly = gface * 1, -MUZZLE        -- tip in the sheet, from its centre
-      -- Turn that offset by the same angle the gun is drawn at (\`place\` passes
-      -- \`deg(ang)\` to a:gfx), in the engine's own sense: a local (x, y) lands at
-      -- (x*cos - y*sin, x*sin + y*cos), y down on screen. The turret proves it
-      -- (\`lib/turret.lua:109-113\` against its drawn \`90 - angle\` at \`:590\`): its
-      -- muzzle offset is the aim direction, and no art orientation satisfies that
-      -- unless the engine turns a:gfx's angle this way. Both sines had the other
-      -- sign here, so the tip was turned by \`-ang\` -- a lateral error of
-      -- \`2 * sin(ang) * MUZZLE\` that vanishes when the gun points straight down
-      -- (ang = 180 deg, sin = 0), which is exactly how it read in game.
-      local cos, sin = wa.math.cos(ang), wa.math.sin(ang)
-      local sx = gx + cos * lx - sin * ly
-      local sy = (h.y + 12) + sin * lx + cos * ly
-      -- The round: PX's runtime values ride as \`missile\` overrides on a weapon
-      -- that is already on the scheme (\`stock.bazooka\`, as PX sets \`damage\` 13
-      -- and \`timeBeforeExplosion\` 3000 at :298, :304). WA's own trail is off
-      -- (\`trail = { sprite = 0 }\`) because the trail drawn is PX's
-      -- (lib/px_trail.lua); gravity and wind are off because PX zeroes its
-      -- bullet's \`GravityFactor\` for the whole flight (:386, "Stable
-      -- direction"), so the bullet flies the straight line PX aims along and
-      -- nothing has to be compensated for. The \`missile\` keys are the \`.wep\`
-      -- field names (\`weapons/wep_data.lua\`), which is why \`gravity_pct\` and
-      -- \`wind_pct\` take (verified in match, REPORT.md 11.8).
-      -- A \`missile\` override on PX's own bullet record crashed WA on launch
-      -- (Access Violation, null read; REPORT.md 11.8), so what the slot builds
-      -- on is not what is launched.
-      local id = wa.weapons.launch({
-        weapon = "stock.bazooka", owner = h.owner, x = sx, y = sy, vx = 0, vy = 0,
-        missile = { trail = { sprite = 0 }, explosion = { power = 13 }, fuse = BULLET_FUSE,
-          gravity_pct = 0, wind_pct = 0 },
-      })
-      if id then
-        -- PX aims each bullet at the picked target, +-1 random on its x (:362).
-        local tx, ty = pick_target(h)
-        shots[id] = { x = tx + wa.random(-1, 1), y = ty, frames = BULLET_FRAMES,
-          owner = h.owner }
-        trail.add(id, h.owner,  {every = 1, g = 30, b = 10}) -- the round's trail, drawn by lib/px_trail.lua
-      end
-      eject(h) -- (:369) the casing, after the shot
-    end
-
-    -- PX's heliShoot::Message M_FRAME (:203-284).
-    frame = function(a)
-      local h = helis[a.id]
-      if not h then return end
-      local w = wa.world.size().w
-
-      -- Gone off the map either side (:214-217): just leave.
-      if (h.vx >= 0 and h.x >= w + SIDE + 50) or (h.vx < 0 and h.x < -(SIDE + 50)) then
-        drop(h)
-        return
-      end
-      -- Magazine spent, over water and on the map (:234-239): blow up.
-      if h.done and h.y >= wa.world.water() and h.x < w + 300 and h.x > -300 then
-        boom(h)
-        return
-      end
-
-      update_rot(h)
-
-      -- Acquire and begin firing within 450 px (:243-256).
-      if not h.shooting and h.shots < BULLETS then
-        update_aim(h, false)
-        if math.abs(h.x - h.tx) < SHOOT_RANGE then
-          update_aim(h, true)
-          h.cooldown = COOLDOWN_START
-          h.shooting = true
-        end
-      end
-      if h.shots >= BULLETS and h.shooting then
-        h.shooting = false
-        h.vx = h.dir * 0.15 -- (:261)
-      end
-      if h.shooting then h.vx = h.vx * DRIFT end -- (:263)
-
-      h.firing = false
-      if h.shooting and h.cooldown == 0 then
-        update_aim(h, false)
-        shoot(h)
-        h.shots = h.shots + 1
-        h.cooldown = COOLDOWN_SHOT
-      elseif h.shooting and h.cooldown > 0 then
-        update_aim(h, false)
-        h.cooldown = h.cooldown - 1
-      end
-      if h.shots >= BULLETS and not h.shooting then
-        h.done = true
-        if math.abs(h.vx) < HOVER then h.vx = h.vx * LEAVE end -- (:281)
-      end
-
-      h.x = h.x + h.vx
-      h.frame = (h.frame + 1) % 2
-      h.ticks = h.ticks + 1
-      if h.ticks % ROTOR_TICKS == 0 then wa.sound.play(h.owner, SND .. "loop.wav") end
-      place(h)
-    end
-
-    -- PX's TakeExplosionDamage (:175-191): less the further off, and it only
-    -- throws the helicopter if the leftover is over 25.
-    hit = function(a, event)
-      local h = helis[a.id]
-      if not h then return end
-      local dmg = math.max(0, event.damage or 0)
-      if event.kind == "blast" and dmg > 0 then
-        local dx, dy = a.x - (event.x or a.x), a.y - (event.y or a.y)
-        dmg = trunc((1 - (dx * dx + dy * dy) / (dmg * dmg * 4)) * dmg)
-      end
-      if dmg > DEAD_DAMAGE then boom(h) end
-    end
-
-    -- The strike: the click gives the target and the side. PX enters from the
-    -- side the shot aimed at (\`Desc->SpX\`, :436-445).
-    local function fire(worm, x, y)
-      if not worm or not x or not y then return end
-      local w = wa.world.size().w
-      -- PX enters from the side the aim points (\`Desc->SpX <= 0\`, :436-445); the
-      -- click's facing sign is that aim (\`ev.worm.facing\`).
-      local from_left = (worm.facing or 1) <= 0
-      local h = {
-        owner = worm, tx = x, ty = y,
-        dir = from_left and 1 or -1,          -- the direction it drifts
-        x = from_left and -SIDE or (w + SIDE),
-        y = ENTER_Y,
-        vx = (from_left and 1 or -1) * HOVER,
-        shots = 0, cooldown = 0, shooting = false, done = false, firing = false,
-        gun = -math.pi, worm_frame = 0, rot = 0, frame = 0, ticks = 0,
-      }
-      h.body = wa.actors.spawn({
-        sprite = ART .. "empty", x = h.x, y = h.y, vx = 0, vy = 0,
-        gravity = false, collide = true, owner = worm, as_object = true, mask = true,
-        on = { frame = frame, hit = hit },
-      })
-      h.aim = wa.actors.spawn({ sprite = ART .. "aim", x = h.x, y = h.y,
-        gravity = false, collide = false, owner = worm, on = function() end })
-      h.gun_actor = wa.actors.spawn({ sprite = ART .. "gun", x = h.x, y = h.y,
-        gravity = false, collide = false, owner = worm, on = function() end })
-      helis[h.body.id] = h
-    end
-
-    wa.log(("Attack Helicopter at %s %d"):format(ctx.position.row, ctx.position.column))
-
-    wa.weapons.replace({
-      -- The slot is the profile's (\`F6 2\`); a component names no \`weapon\`, only
-      -- the record it builds on. The record is PX's **bullet** (\`bullet_wep.wep\`,
-      -- name "bullet"; damage 13 at +0x54, fuse 3000 at +0x20, a type-3 cursor
-      -- record): one slot carries both the click weapon and the round \`shoot\`
-      -- launches, because a manual launch fires the slot's own record
-      -- (REPORT.md 11.8). \`heliWeap.wep\` is no longer used.
-      wep = "weps/bullet_wep.wep",
-      panel_icon = "sprites/helishootico.png", -- PX's own icon (helishootico.png)
-      -- One directory of frameNNN.png per PX sprite, as cut_lab and stress do.
-      sprites = { ART .. "empty", ART .. "aim", ART .. "gun", ART .. "casing", BULLET,
-        trail.BEAM, trail.GLOW },
-      params = { gpu_prefix = "sprites/" }, -- route the sheets into the GPU atlas for a:gfx
-      sounds = { SND .. "hks1.wav", SND .. "hks2.wav", SND .. "hks3.wav", SND .. "loop.wav" },
-      -- Click-only dispatch keeps the strike's cursor and turn handling, exactly
-      -- as the Lightning Strike / Reinforcement (weapons/catalog.lua:46-52,
-      -- :319-337): the worm never fires the record, and the click only picks the
-      -- target. \`on_select.cursor\` overrides the record's own aim mode, so the
-      -- cursor does not depend on the record being a strike. No on_fire, no
-      -- eat_fire -- an eat would also swallow the turn end (REPORT.md 11.7). The
-      -- panel name comes from the component (mod.toml).
-      on_select = { cursor = true },
-      on_click = function(ev) fire(ev.worm, ev.x, ev.y) end,
-    })
-
-    -- PX's homeToPlace (:382-390): for its first frames each bullet turns hard
-    -- onto the point it was aimed at, then flies straight (WA flies it on). PX
-    -- runs it before super, so it is the frame's "pre" phase.
-    --
-    -- PX also draws each bullet itself (redWeapSheet, :364) with WA's own
-    -- sprite left at 0 (:301), turned to its flight (WAT_TrackMovement, :303):
-    -- the Highlander missile-sprite pattern (lib/missile_sprites.lua:112-159)
-    -- hides WA's sprite and follows the missile with a GPU actor.
-    local follow = {} -- missile id -> { actor, seen }
-    local function gone(id)
-      return function(b)
-        local f = follow[id]
-        if f and f.seen then f.seen = false; return end
-        -- The round is gone -- the same test that drops its sprite. Its trail
-        -- stays behind: lib/px_trail.lua sheds it and draws it.
-        trail.drop(id)
-        follow[id] = nil
-        shots[id] = nil
-        b:despawn()
-      end
-    end
-    wa.on.missile_frame(function(m)
-      local s = shots[m.id]
-      if not s then return end
-      if m.phase == "pre" then
-        m.sprite = 0 -- WA draws nothing for it; ours is drawn below
-        if s.frames <= 0 then return end
-        s.frames = s.frames - 1
-        -- PX's homeToPlace (:382-390), aiming flat at the target at PX's own
-        -- 35.0 -- which is exact, because the round has neither gravity nor wind
-        -- (\`missile = { gravity_pct = 0, wind_pct = 0 }\` above, PX's own
-        -- \`GravityFactor = 0\`, :386). A weapon that has to keep gravity aims
-        -- with PX's SolveBallistic instead: TRAIL.md.
-        local dx, dy = s.x - m.x, s.y - m.y
-        local len = math.sqrt(dx * dx + dy * dy)
-        if len > 0 then
-          m.vx, m.vy = dx / len * BULLET_SPEED, dy / len * BULLET_SPEED
-        end
-        return
-      end
-      local f = follow[m.id]
-      if not f then
-        f = { actor = wa.actors.spawn({
-          sprite = BULLET, x = m.x, y = m.y, gravity = false, collide = false,
-          owner = s.owner, on = gone(m.id),
-        }) }
-        follow[m.id] = f
-      end
-      f.seen = true
-      local b = f.actor
-      b.x, b.y, b.vx, b.vy = m.x, m.y, 0, 0
-      b.facing = m.vx < 0 and -1 or 1
-      -- WeapSprite::CalculateAngle, WAT_TrackMovement (rotation 0).
-      local rot = -wa.math.atan(m.vx, m.vy) - math.pi
-      b:gfx({ angle = math.deg(rot) % 360, depth = wa.depth.OBJECTS - 1 })
-    end)
-  end,
-}
-`
-      },
-      {
-        path: 'weapons/bowling_ball.lua',
-        name: 'weapons/bowling_ball.lua',
-        language: 'lua',
-        content: `-- Highlander: Bowling Ball Strike (PX weapon_bowlingball: bbstrike.txt and
--- bowlingball.txt's CBowlingBall).
-local shared = require("lib/shared")
-local fires = shared.fires
-
--- The strike: PX's plane drops three balls 48 pixels apart from 128 above
--- the map, moving 5 a frame the way it flies. Here they drop together, the
--- way WA's strike arrow points: the sign of the shot's x speed (ev.vx), which
--- PX's PxAirstrike reads, from the left unless the arrow keys turned it. As
--- PX's plane drops them early by how far they drift on the way down (its
--- SpeedCompensation), the drop line is set back by the middle ball's own
--- drift down to the click, so it lands on the click. PX's plane is not drawn.
-local STRIKE_BALLS = 3
-local STRIKE_SPACING = 48
-local STRIKE_SPEED = 5
-local STRIKE_Y = -128         -- PX's PlaneAppearYOffset
-
--- PX's CBowlingBall numbers.
-local RADIUS = 16             -- MakeCircleMask(16): the ball's art is 32 across
-local BOUNCE, FRICTION = 0.03, 0.02
-local INERTIA_X, INERTIA_Y = 0.8, 0.4
-local LOW_SPEED = 4.0         -- below this for LOW_FRAMES frames: "low speed"
-local LOW_FRAMES = 100
-local LOW_BOUNCE, LOW_FRICTION = 0.03, 0.03
-local LOW_INERTIA_X, LOW_INERTIA_Y = 0.0, 0.0
-local SLEEP_DISTANCE = 2      -- moved less than this over SLEEP_PERIOD frames: asleep
-local SLEEP_PERIOD = 80
-local FAST = 4.0              -- MinDamageSpeed: faster, it rolls through worms and hurts
-local SPIN_X, SPIN_Y, MAX_SPIN = 0.06, 0.02, 0.6
-local SHEET = "sprites/bowling_ball/ball.png"
-
--- PX's damage (ProcessBallOnOtherCollision): faster than FAST, whatever the
--- ball overlaps takes 5 at that speed up to 60 at 15 and more; crates and oil
--- drums 100. A worm then takes nothing more for 12 frames (PX's
--- DamageRecoverTime). Balls push each other apart (ProcessBallOnBallCollision)
--- by 0.6 * sqrt(speed), of which the pushed ball keeps 0.7 (GunForceMultiplier).
-local MAX_DAMAGE_SPEED = 15.0
-local MIN_DAMAGE, MAX_DAMAGE = 5.0, 60.0
-local OBJECT_DAMAGE = 100
-local DAMAGE_FORCE = 0.7      -- DamageForceMultiplier
-local RECOVER_FRAMES = 12
-local PUSH_SPEED = 4.0        -- MinPushSpeed
-local PUSH_FORCE, PUSH_KEEP = 0.6, 0.7
-local SOUND_CRUSH, SOUND_HIT = 33, 101
--- A ball counts as hitting what it touches: PX traces it with a smaller
--- mask than the 16-pixel circle it hits with, so it overlaps a drum or
--- crate it stops against; ours traces with the circle, which stops it a
--- touch away from them.
-local TOUCH = 2
-
--- PX's Zap(0), the Lightning Strike's "overcharge": the ball wakes and is
--- thrown up, 5 to 10 a frame within 0.1 of straight up, and is electrified
--- for good (PX never counts its ZapTurnsRemaining down): awake and not slow,
--- its friction is negative, so it speeds up along what it rolls on. PX's
--- strike reaches it within its 12-pixel hit circle of the ball's 16.
--- What WA hits the ball with. It is in WA's object layer (\`as_object\`), as
--- PX's ball is in the oil drums' (SetLayerOverride(LAYER_OILDRUM)), so WA's
--- fires, guns and blasts reach it. As PX's Message: any hit wakes it, a
--- blast's push is taken whole (ExplosionForceMultiplier) and any other's,
--- a fire's among them, at 0.7 (GunForceMultiplier).
-local BLAST_FORCE, GUN_FORCE = 1.0, 0.7
-local ZAPPED_FRICTION = -0.05
-local ZAP_REACH = 12
-
--- PX's electrified look (CBowlingBall::Render and UpdateZPlane), PX's own
--- art: its lightning glow, 0.3 to 0.4 of its 128 pixels across, added three
--- times in RGB(80, 110, 128); its 10-frame spark, turning with the ball,
--- played over 50 frames then paused 20 (SparkCycle, 0.02 a frame to 1.4);
--- and while awake a glow left behind every frame, 30 frames fading to
--- black, 0.3 to 0.5 across, drifting up to 0.3 a frame. Drawn where the
--- ball's sprite is: the glows behind the ball (a halo; PX draws them over
--- it, which washes the ball out to white), the spark in front. Our own on
--- top of PX's: the ball itself turns electric blue, darkened (its sprite's
--- tint) and given a blue sheen that follows its shading (sheen.png, the
--- ball in grey, added in front of it).
-local GLOW_SHEET = "sprites/bowling_ball/glow.png"
-local SPARK_SHEET = "sprites/bowling_ball/spark.png"
-local SHEEN_SHEET = "sprites/bowling_ball/sheen.png"
-local ZAPPED_TINT = 0x405980  -- the ball's colours times (0.25, 0.35, 0.5)
-local SHEEN_COLOR = 0xFF3C96FF -- RGB(60, 150, 255), added
-local GLOW_SIZE = 128
-local SPARK_SIZE, SPARK_FRAMES = 60, 10
-local SPARK_SPEED, SPARK_CYCLE = 0.02, 1.4
-local ZAP_R, ZAP_G, ZAP_B = 80, 110, 128
-local TRAIL_LIFE = 30
--- The ball is drawn this far below where its circle is, in pixels: at the
--- circle's own place it looked to float over the ground. In front of the
--- terrain (actors are behind it by default), behind the worms (0xD0000).
-local SPRITE_DROP = 4
-local LIFT = 0.5           -- half a pixel
-local BALL_DEPTH = wa.depth.OBJECTS
-local GLOW_DEPTH, SHEEN_DEPTH, SPARK_DEPTH = BALL_DEPTH + 1, BALL_DEPTH - 1, BALL_DEPTH - 2
--- ball flung that far off the map (it flies on, WA drawing its arrow at the
--- edge) is gone once its next move would leave that range.
-local EDGE = 32000
-
--- What the ball rolls on: PX's DefaultColGroup, and without worms when fast
--- (NoWormsColGroup).
-local SOLID = { "terrain", "worms", "crates", "oil" }
-local SOLID_FAST = { "terrain", "crates", "oil" }
-
-local function trunc(v) return v >= 0 and math.floor(v) or -math.floor(-v) end
-
--- The circles PX's masks give what the ball can hit (as wa.world.trace's).
-local function target_radius(obj)
-  if obj.kind == "worm" then return 6 end
-  if obj.kind == "mine" then return 5 end
-  return 9
-end
-
-local function sleep(b)
-  if b.asleep then return end
-  b.asleep, b.low = true, false
-  b.sleep_x, b.sleep_y = b.x, b.y
-  b.vx, b.vy, b.lvx, b.lvy = 0, 0, 0, 0
-  b.rvx, b.rvy = 0, 0
-end
-
--- PX's Wake: moving again, its timers restarted.
-local function wake(b)
-  if not b.asleep and not b.low then return end
-  b.asleep, b.low = false, false
-  b.low_timer, b.sleep_timer = 200, 200
-  b.rec_x, b.rec_y = b.x, b.y
-end
-
--- PX's UpdateRotation: spin from the ball's real motion, towards it.
-local function spin(b)
-  local rot = math.min(MAX_SPIN, SPIN_X * math.abs(b.rvx) + SPIN_Y * math.abs(b.rvy))
-  if b.rvx < 0 then rot = -rot end
-  b.rot = b.rot + rot
-  while b.rot > math.pi do b.rot = b.rot - 2 * math.pi end
-  while b.rot <= -math.pi do b.rot = b.rot + 2 * math.pi end
-end
-
--- PX's PhysicsThink, a frame: the move traced with the ball's circle, a hit
--- turned into bounce along the surface's normal and friction along it, then
--- PX's inertia (a share of the speed's last change again), the low-speed
--- state and sleep. The ball's place is b.x, b.y; the actor only draws it.
--- Returns the speed the frame started with, which the hits below go by.
-local function think(b)
-  if b.asleep then
-    -- No real speed asleep, as PX's: it stops turning too.
-    b.x, b.y = b.sleep_x, b.sleep_y
-    b.rvx, b.rvy = 0, 0
-    return 0
-  end
-  local speed = math.sqrt(b.rvx * b.rvx + b.rvy * b.rvy)
-  local vx2, vy2 = b.vx, b.vy + wa.world.gravity()
-  local bounce, friction, ix, iy = BOUNCE, FRICTION, INERTIA_X, INERTIA_Y
-  if b.low then
-    bounce, friction, ix, iy = LOW_BOUNCE, LOW_FRICTION, LOW_INERTIA_X, LOW_INERTIA_Y
-  elseif b.zapped then
-    friction = ZAPPED_FRICTION
-  end
-  if vx2 == 0 and vy2 == 0 then vy2 = b.vy + 0.1 end
-  local with = speed > FAST and SOLID_FAST or SOLID
-  local x, y = b.x, b.y
-  local dx, dy = vx2, vy2
-  if math.abs(x + dx) > EDGE or math.abs(y + dy) > EDGE then
-    b.gone = true
-    return 0
-  end
-  local function trace_from(sx, sy, k)
-    -- Eight moves backwards may not fit where one forward does: no trace.
-    if math.abs(sx + k * dx) > EDGE or math.abs(sy + k * dy) > EDGE then return nil end
-    return wa.world.trace({
-      x0 = sx, y0 = sy, x1 = sx + k * dx, y1 = sy + k * dy, radius = RADIUS, with = with,
-    })
-  end
-  local res = trace_from(x, y, 1)
-  if res and res.starts_solid then
-    -- Stuck in something (another ball can push it in): carry on from where
-    -- the path comes free; else, as PX's unblocking, back out along the move
-    -- eight times its length and come forward from there; else sleep where
-    -- it is, as PX does.
-    if not res.left_x then
-      res = trace_from(x, y, -8)
-      if not (res and res.left_x) then
-        sleep(b)
-        return 0
-      end
-    end
-    x, y = res.left_x, res.left_y
-    res = trace_from(x, y, 1)
-  end
-  if res and res.hit then
-    local spt = vx2 * res.tx + vy2 * res.ty
-    local spn = vx2 * res.nx + vy2 * res.ny
-    b.vx = vx2 - spn * res.nx * (bounce + 1) - spt * res.tx * friction
-    b.vy = vy2 - spn * res.ny * (bounce + 1) - spt * res.ty * friction
-    x, y = res.x, res.y
-    -- Rest half a pixel off the surface, as PX's ball does (it stops a
-    -- step short, up to a pixel): touching it, a ball gliding along would
-    -- hit it at once every frame and stand still at speed.
-    local lx, ly = x + res.nx * LIFT, y + res.ny * LIFT
-    local lift = wa.world.trace({ x0 = x, y0 = y, x1 = lx, y1 = ly, radius = RADIUS, with = with })
-    if not (lift and (lift.hit or lift.starts_solid)) then x, y = lx, ly end
-  else
-    b.vx, b.vy = vx2, vy2
-    x, y = x + vx2, y + vy2
-  end
-  b.vx = b.vx + ix * (b.vx - b.lvx)
-  b.vy = b.vy + iy * (b.vy - b.lvy)
-  b.lvx, b.lvy = b.vx, b.vy
-  b.rvx, b.rvy = (x - b.lx), (y - b.ly)
-  b.lx, b.ly = x, y
-  b.x, b.y = x, y
-  -- Slow for long enough: low speed, no inertia, so it settles.
-  if speed < LOW_SPEED then
-    b.low_timer = b.low_timer - 1
-    if b.low_timer <= 0 then b.low, b.low_timer = true, LOW_FRAMES end
-  else
-    b.low, b.low_timer = false, LOW_FRAMES
-  end
-  b.sleep_timer = b.sleep_timer - 1
-  if b.sleep_timer <= 0 then
-    local dx, dy = (x - b.rec_x), (y - b.rec_y)
-    if math.sqrt(dx * dx + dy * dy) < SLEEP_DISTANCE then sleep(b) end
-    b.sleep_timer, b.rec_x, b.rec_y = SLEEP_PERIOD, x, y
-  end
-  return speed
-end
-
-shared.bowling_balls = {} -- actor id -> ball
-
--- Frames counted by the oldest ball still rolling: the worms' 12-frame
--- recovery needs a clock, and only balls hit.
-local clock, clock_ball = 0, nil
-local recover = {} -- worm id -> clock at which it can be hurt again
-
-local function tick(id)
-  if clock_ball == nil or not shared.bowling_balls[clock_ball] then clock_ball = id end
-  if clock_ball == id then clock = clock + 1 end
-end
-
-local function overlaps(b, obj)
-  local dx, dy = (obj.x - b.x), (obj.y - b.y)
-  local r = RADIUS + target_radius(obj) + TOUCH
-  return dx * dx + dy * dy <= r * r
-end
-
--- PX's ProcessBallOnBallCollision: every other ball this one overlaps is
--- pushed away from it, and wakes.
-local function push_balls(id, b, speed)
-  local push = PUSH_FORCE * math.sqrt(speed)
-  for other_id, o in pairs(shared.bowling_balls) do
-    if other_id ~= id then
-      local dx, dy = (o.x - b.x), (o.y - b.y)
-      local d2 = dx * dx + dy * dy
-      if d2 > 0 and d2 <= (2 * RADIUS) * (2 * RADIUS) then
-        local d = math.sqrt(d2)
-        wake(o)
-        o.vx = o.vx + PUSH_KEEP * push * dx / d
-        o.vy = o.vy + PUSH_KEEP * push * dy / d
-      end
-    end
-  end
-end
-
--- A standing worm hit from above, straight down, is crushed (PX's
--- "crushable" states, the ones a worm stands in).
-local CRUSHABLE = { standing = true, firing = true, fired = true, prefiring = true }
-
--- PX's ProcessBallOnOtherCollision: the hit's damage from the ball's speed,
--- and its push from how the ball really moved this frame.
-local function hit_others(a, b, speed)
-  local dmg = MIN_DAMAGE + (MAX_DAMAGE - MIN_DAMAGE)
-    * (math.min(speed, MAX_DAMAGE_SPEED) - FAST) / (MAX_DAMAGE_SPEED - FAST)
-  local function hit(obj)
-    if not overlaps(b, obj) then return end
-    local damage = 0
-    if obj.kind == "worm" then
-      if obj.hp <= 0 or (recover[obj.id] or 0) > clock then return end
-      damage = dmg
-      recover[obj.id] = clock + RECOVER_FRAMES
-    elseif obj.kind == "crate" or obj.kind == "oil" then
-      damage = OBJECT_DAMAGE
-    else
-      damage = dmg
-    end
-    damage = trunc(damage)
-    if damage <= 0 then return end
-    local fx, fy = b.rvx, b.rvy
-    local ax = math.abs(fx)
-    local crushed = obj.kind == "worm" and CRUSHABLE[obj.state] and fy > FAST and ax / fy < 0.2
-    if crushed then
-      fx, fy = 0, 10
-    else
-      fy = fy < 0 and fy - ax or fy - 2 * ax
-      fx, fy = fx * DAMAGE_FORCE, fy * DAMAGE_FORCE
-    end
-    if obj.kind == "worm" then
-      obj:hurt({ amount = damage, vx = fx, vy = fy })
-    else
-      obj:hit(damage, fx, fy)
-    end
-    a:sound(crushed and SOUND_CRUSH or SOUND_HIT)
-  end
-  for _, group in ipairs({ wa.worms, wa.mines, wa.crates, wa.oil }) do
-    for _, obj in ipairs(group.all() or {}) do hit(obj) end
-  end
-end
-
--- The balls by id, in id order: whatever draws from WA's RNG for them does
--- so in the same order on every machine.
-local function balls_in_order()
-  local ids = {}
-  for id in pairs(shared.bowling_balls) do ids[#ids + 1] = id end
-  table.sort(ids)
-  return ids
-end
-
--- PX's Zap: Zap(0) electrifies (mul 1), Zap(1), for a ball already
--- electrified, throws it at 0.8 and changes nothing else.
-local function zap(b, mul)
-  if not b.zapped then b.spark, b.trail, b.seed = 0, {}, b.trail_seed end
-  b.zapped = true
-  wake(b)
-  local ang = (wa.random(0, 2000) - 1000) / 10000
-  local speed = (5 + wa.random(0, 1000) / 200) * (mul or 1)
-  -- sin and cos by their series: |ang| <= 0.1, so exact to 1e-7, and no
-  -- trig in the simulation.
-  local a2 = ang * ang
-  b.vx = (ang - ang * a2 / 6) * speed
-  b.vy = -(1 - a2 / 2 + a2 * a2 / 24) * speed
-end
-
--- The Lightning Strike: every ball within reach of where it hit.
--- PX's Ferret flicks a ball as it flicks a mine (the ball is one): a ball
--- whose circle touches the Ferret's, radius \`reach\` at (x, y), wakes and is
--- thrown at (vx, vy), pixels a frame. Balls in id order.
-shared.kick_bowling_balls = function(x, y, reach, vx, vy)
-  local r = reach + RADIUS
-  for _, id in ipairs(balls_in_order()) do
-    local b = shared.bowling_balls[id]
-    local dx, dy = (b.x - x), (b.y - y)
-    if dx * dx + dy * dy <= r * r then
-      wake(b)
-      b.vx, b.vy = vx, vy
-    end
-  end
-end
-
--- PX's magnet (CMagnet::ApplyForce): a ball in its field gets its push
--- (pixels/frame). A sleeping ball is left
--- alone unless \`waking\` (the magnet moving, discharging or exploding).
-shared.magnet_bowling_balls = function(force, waking)
-  for _, id in ipairs(balls_in_order()) do
-    local b = shared.bowling_balls[id]
-    local dx, dy = force(b.x, b.y)
-    if dx and (waking or not b.asleep) then
-      if waking then wake(b) end
-      b.vx = b.vx + dx
-      b.vy = b.vy + dy
-    end
-  end
-end
-
-shared.zap_bowling_balls = function(x, y)
-  local reach = (ZAP_REACH + RADIUS) * (ZAP_REACH + RADIUS)
-  for _, id in ipairs(balls_in_order()) do
-    local b = shared.bowling_balls[id]
-    local dx, dy = (b.x - x), (b.y - y)
-    if dx * dx + dy * dy <= reach then zap(b) end
-  end
-end
-
--- The Electric Grenade's arc (PX's Tazer, whose targets include the ball):
--- the balls as targets, at the middle of the drawn ball, in id order.
-local function as_target(id, b)
-  return { kind = "ball", id = id, x = b.x, y = b.y + SPRITE_DROP,
-    alliance = b.alliance, moving = b.vx ~= 0 or b.vy ~= 0 }
-end
-
--- The Sentry Laser's disintegration (PX: Sleep, then Free): gone at once,
--- its actor at its next frame.
-shared.remove_bowling_ball = function(id)
-  local b = shared.bowling_balls[id]
-  if not b then return end
-  sleep(b)
-  b.gone = true
-  shared.bowling_balls[id] = nil
-end
-
-shared.bowling_ball_targets = function()
-  local out = {}
-  for _, id in ipairs(balls_in_order()) do out[#out + 1] = as_target(id, shared.bowling_balls[id]) end
-  return out
-end
-
-shared.bowling_ball_target = function(id)
-  local b = shared.bowling_balls[id]
-  return b and as_target(id, b)
-end
-
--- The arc's zap (PX's CTazerDamage::Zap): Zap(0) the first time, Zap(1)
--- once electrified. No damage, no push besides.
-shared.zap_bowling_ball = function(id)
-  local b = shared.bowling_balls[id]
-  if b then zap(b, b.zapped and 0.8 or 1) end
-end
-
--- Where a beam from (x0, y0) along the unit (dx, dy), at most len pixels,
--- first meets a ball's circle (PX's ball is an oil drum to the strike's
--- trace), or nil.
-shared.bowling_ball_on_beam = function(x0, y0, dx, dy, len)
-  local best
-  for _, id in ipairs(balls_in_order()) do
-    local b = shared.bowling_balls[id]
-    local cx, cy = (b.x - x0), (b.y - y0)
-    local along = cx * dx + cy * dy
-    local miss = cx * cx + cy * cy - along * along
-    if miss <= RADIUS * RADIUS then
-      local t = along - math.sqrt(RADIUS * RADIUS - miss)
-      if t > 0 and t < len and (not best or t < best) then best = t end
-    end
-  end
-  if best then return x0 + (best * dx), y0 + (best * dy) end
-end
-
--- The electrified look, a game frame on: the spark's cycle, and the trail
--- left behind, from the ball's own generator (looks only: nothing reads it,
--- and WA's RNG is not drawn).
-local function electrified_frame(b)
-  b.spark = b.spark + SPARK_SPEED
-  if b.spark > SPARK_CYCLE then b.spark = b.spark - SPARK_CYCLE end
-  for i = #b.trail, 1, -1 do
-    local p = b.trail[i]
-    p.age = p.age + 1
-    if p.age >= TRAIL_LIFE then
-      table.remove(b.trail, i)
-    else
-      p.x, p.y = p.x + p.vx, p.y + p.vy
-    end
-  end
-  if not b.asleep then
-    b.seed = (b.seed * 1103515245 + 12345) % 0x80000000
-    local a = b.seed / 0x80000000 * 2 * math.pi
-    b.seed = (b.seed * 1103515245 + 12345) % 0x80000000
-    local v = b.seed / 0x80000000 * 0.3
-    b.trail[#b.trail + 1] = { x = b.x, y = b.y, vx = wa.math.cos(a) * v, vy = wa.math.sin(a) * v, age = 0 }
-  end
-end
-
-local function take_hit(b, hit)
-  wake(b)
-  local k = hit.kind == "blast" and BLAST_FORCE or GUN_FORCE
-  b.vx = b.vx + k * hit.vx
-  b.vy = b.vy + k * hit.vy
-end
-
-local function spawn_ball(owner, x, y, vx, vy)
-  local b = {
-    x = x, y = y, vx = vx, vy = vy, lvx = vx, lvy = vy, rvx = 0, rvy = 0, lx = x, ly = y,
-    rot = 0, low = false, low_timer = 200, sleep_timer = 200, rec_x = x, rec_y = y,
-    asleep = false, alliance = owner and owner.alliance,
-  }
-  local a = wa.actors.spawn({
-    sprite = SHEET, x = x, y = y + SPRITE_DROP, gravity = false, collide = false, owner = owner,
-    as_object = true,
-    on = {
-      hit = function(_, hit) take_hit(b, hit) end,
-      frame = function(a)
-        if b.gone then
-          a:despawn()
-          return
-        end
-        if b.y >= wa.world.water() then
-          shared.bowling_balls[a.id] = nil
-          a:despawn()
-          return
-        end
-        tick(a.id)
-        if b.zapped then electrified_frame(b) end
-        spin(b)
-        -- Before its Lua terrain sweep, using the actual ball centre and
-        -- velocity rather than the display actor's deliberately zero speed.
-        if shared.portals and next(shared.portals.pairs) then
-          local proxy = {
-            id = a.id, kind = "actor", x = b.x, y = b.y,
-            vx = b.vx, vy = b.vy,
-            fits = function(_, x, y)
-              return not wa.world.collides({ x = x, y = y, radius = RADIUS, with = {"terrain"} })
-            end,
-            warp = function(_, spec)
-              b.x, b.y, b.vx, b.vy = spec.x, spec.y, spec.vx, spec.vy
-              wake(b)
-              b.lvx, b.lvy, b.rvx, b.rvy = b.vx, b.vy, b.vx, b.vy
-              a:warp({ x = b.x, y = b.y + SPRITE_DROP, vx = 0, vy = 0 })
-              return true
-            end,
-          }
-          shared.portals:move(proxy)
-        end
-        local speed = think(b)
-        if b.gone then
-          shared.bowling_balls[a.id] = nil
-          a:despawn()
-          return
-        end
-        if speed > PUSH_SPEED then push_balls(a.id, b, speed) end
-        if speed > FAST then hit_others(a, b, speed) end
-        a.x, a.y, a.vx, a.vy = b.x, b.y + SPRITE_DROP, 0, 0
-        a:gfx({ angle = math.deg(b.rot) % 360, depth = BALL_DEPTH, tint = b.zapped and ZAPPED_TINT or 0xFFFFFF })
-      end,
-    },
-  })
-  shared.bowling_balls[a.id] = b
-  b.trail_seed = a.id * 7919 % 0x80000000
-  return a, b
-end
-shared.spawn_bowling_ball = spawn_ball
-
--- How far a ball dropped at y0 moving vx drifts sideways before its centre
--- falls to y1: think's flight through the air, gravity and PX's inertia,
--- frame by frame (no trig, the same on every machine).
-local function drift(y0, y1, vx)
-  local g = wa.world.gravity()
-  if g <= 0 then return 0 end
-  local x, y, vy, lvy = 0, y0, 0, 0
-  for _ = 1, 3000 do
-    if y >= y1 then break end
-    local vy2 = vy + g
-    x, y = x + vx, y + vy2
-    vy = vy2 + INERTIA_Y * (vy2 - lvy)
-    lvy = vy
-  end
-  return x
-end
-
-fires.bowling_strike = function(ev)
-  local dir = (ev.vx or 0) < 0 and -1 or 1
-  local y0 = STRIKE_Y
-  local back = drift(y0, ev.y - RADIUS, STRIKE_SPEED * dir)
-  for i = 1, STRIKE_BALLS do
-    local offset = (i - (STRIKE_BALLS + 1) / 2) * STRIKE_SPACING
-    spawn_ball(ev.worm, ev.x - back + offset, y0, STRIKE_SPEED * dir, 0)
-  end
-end
-
-if wa.on.draw and wa.draw.quad then
-  -- Resolve the pack namespace once, rather than on every submission.
-  local glow_sheet = wa.sprites.key(GLOW_SHEET)
-  local spark_sheet = wa.sprites.key(SPARK_SHEET)
-  local sheen_sheet = wa.sprites.key(SHEEN_SHEET)
-  -- One spec refilled for every quad (the engine copies it).
-  local QUAD = { points = { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } } }
-  local function quad(sheet, frame, color, depth, x, y, half, c, s)
-    QUAD.sprite, QUAD.frame, QUAD.blend, QUAD.color, QUAD.depth = sheet, frame, "add", color, depth
-    local p = QUAD.points
-    if not c then
-      -- Unrotated: the corners are half either way.
-      p[1][1], p[1][2] = x - half, y - half
-      p[2][1], p[2][2] = x + half, y - half
-      p[3][1], p[3][2] = x + half, y + half
-      p[4][1], p[4][2] = x - half, y + half
-    else
-      p[1][1], p[1][2] = x + ((-c + s) * half), y + ((-s - c) * half)
-      p[2][1], p[2][2] = x + (( c + s) * half), y + (( s - c) * half)
-      p[3][1], p[3][2] = x + (( c - s) * half), y + (( s + c) * half)
-      p[4][1], p[4][2] = x + ((-c - s) * half), y + ((-s + c) * half)
-    end
-    wa.draw.quad(QUAD)
-  end
-  local function zap_color(k)
-    return 0xFF000000 | (math.floor(ZAP_R * k) << 16) | (math.floor(ZAP_G * k) << 8) | math.floor(ZAP_B * k)
-  end
-  local FULL = zap_color(1)
-  local DRAW_IDS = {}
-  wa.on.draw(function()
-    local n = 0
-    for id in pairs(shared.bowling_balls) do n = n + 1; DRAW_IDS[n] = id end
-    for i = #DRAW_IDS, n + 1, -1 do DRAW_IDS[i] = nil end
-    table.sort(DRAW_IDS)
-    for _, id in ipairs(DRAW_IDS) do
-      local b = shared.bowling_balls[id]
-      if b.zapped then
-        local drop = SPRITE_DROP
-        for _, t in ipairs(b.trail) do
-          local k = t.age / TRAIL_LIFE
-          quad(glow_sheet, 0, zap_color(1 - k), GLOW_DEPTH, t.x, t.y + drop, (0.3 + 0.2 * k) * GLOW_SIZE / 2)
-        end
-        local x, y = b.x, b.y + drop
-        local glow = (0.3 + 0.1 * wa.draw.random()) * GLOW_SIZE / 2
-        for _ = 1, 3 do quad(glow_sheet, 0, FULL, GLOW_DEPTH, x, y, glow) end
-        local c, s = wa.math.cos(b.rot), wa.math.sin(b.rot)
-        quad(sheen_sheet, 0, SHEEN_COLOR, SHEEN_DEPTH, x, y, SPARK_SIZE / 2, c, s)
-        if b.spark <= 1 then
-          local frame = math.min(SPARK_FRAMES - 1, math.floor(b.spark * SPARK_FRAMES))
-          quad(spark_sheet, frame, 0xFFFFFFFF, SPARK_DEPTH, x, y, SPARK_SIZE / 2, c, s)
-        end
-      end
-    end
-  end)
-end
-
--- Live adapter identities for the portal return-cache cleanup.
-shared.portal_bowling_balls = function()
-  local out = {}
-  for _, id in ipairs(balls_in_order()) do out[#out + 1] = { id = id } end
-  return out
-end
-`
-      },
-      {
-        path: 'weapons/bunker_buster.lua',
-        name: 'weapons/bunker_buster.lua',
-        language: 'lua',
-        content: `-- Bunker Buster / Super Bunker Buster -- the component's entry point.
---
--- Both components in mod.toml point at this file; the module reads \`ctx.id\` to
--- tell them apart. \`require\` runs where \`wa\` does not exist yet, so the module
--- is pure data at load and does its \`wa\` work inside install (the same rule
--- lib/px_trail.lua follows).
-local bunker = require("lib/px_bunker")
-
-return {
-  defaults = {
-    ammo = { round_start = -1 }, -- infinite, so it can be tested at once
-    delay = 0,
-  },
-  install = function(ctx) bunker.install(ctx) end,
-}
-`
-      },
-      {
-        path: 'weapons/catalog.lua',
-        name: 'weapons/catalog.lua',
-        language: 'lua',
-        content: `-- Highlander: the claimed weapons and their art. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-local PX_POSTURE = shared.PX_POSTURE
-
--- Filled in by the Double Bazooka's and Nuke Rocket's sections further down.
--- Weapons' on_fire, filled in by their sections below (jump, laser); one
--- table, the file being at Lua's 200 locals for one chunk.
-local fires = {}
--- Ported weapons. Each takes its scheme record, cut from the .pxs with
--- tools/px_scheme_weps.py: how it fires, and its PX name. Anything else in an
--- entry goes to wa.weapons.replace as it is.
---
--- WA's own weapons, as PX tuned them for this scheme. One moved off its own
--- stock slot borrows its own stock icon.
-local PORTED = {
-  { -- PX's Skip Go/Surrender: stock Skip Go, or stock Surrender with Ctrl.
-    weapon = "skip_go", name = "Skip Go/Surrender",
-    panel_icon = "sprites/skip_go/icon.png",
-    stock_fire_choice = { held = "ctrl", alternate = "stock.surrender" },
-  },
-  { weapon = "dynamite" },
-  { weapon = "blow_torch" },                                   -- BlowTorch
-  { weapon = "flame_thrower" },
-  { weapon = "girder_pack" },                                  -- 3 Girder Pack
-  { weapon = "fast_walk" },
-  { weapon = "crate_spy" },
-  { weapon = "crate_shower" },
-  { weapon = "magic_bullet", panel_icon = "cluster_bomb" },    -- Cluster Bomb
-  { weapon = "invisibility", panel_icon = "teleport" },        -- Teleport
-  { weapon = "damage_x2", panel_icon = "skunk" },              -- Skunk
-  { weapon = "double_turn_time", panel_icon = "mole_bomb" },   -- Mole Bomb
-  { weapon = "ming_vase" },                                    -- Priceless Ming Vase
-}
-
--- PX weapons that need only PX's art: its icons, copied byte for byte so
--- replays share them, and its strips split into frame folders with
--- tools/px_split_strip.py. Where PX draws the worm's hold at run time with
--- its sprite builder (p_sprite_builder), so does the engine from PX_HOLDS.
-local PX_ART = {
-  { -- Ice Arrow: WA's own ArrowEntity supplies its flight and bow impact.
-    -- The Highlander script freezes only a worm hit by this slot's arrow.
-    weapon = "armageddon", wep = "weps/armageddon.wep",
-    panel_icon = "sprites/ice_arrow/icon.png",
-  },
-  { -- Reinforcement: PX's new worm for the team (weapons/reinforcement.lua),
-    -- on Nuclear Test's slot. Click-only, as the Super Tele.
-    weapon = "nuclear_test", wep = "weps/nuclear_test.wep",
-    panel_icon = "sprites/reinforcement/icon.png",
-    on_select = { cursor = true },
-    on_click = function(ev) fires.reinforcement(ev) end,
-  },
-  { -- Portal Gun: custom bolts and per-team pairs, on Scales of Justice.
-    weapon = "scales_of_justice", wep = "weps/scales_of_justice.wep",
-    panel_icon = "sprites/portal_gun/icon.png",
-    -- The native shot remains usable while Lua accounts for pairs. PX's
-    -- CanFire/state hacks are replaced by keeping the turn (claims.lua's
-    -- KEEPS_TURN) and firing jumping or falling (airborne, on_fire's
-    -- fire.airborne).
-    fires = { subtype = 3 }, -- the bazooka's hold
-    airborne = true,
-    worm_sprites = {
-      weaponlnk = "sprites/portal_gun/portal_gun_normal",
-      weaponlnku = "sprites/portal_gun/portal_gun_up",
-      weaponlnkd = "sprites/portal_gun/portal_gun_down",
-      wthrow = "sprites/portal_gun/portal_gun_link_normal",
-      wthrowu = "sprites/portal_gun/portal_gun_link_up",
-      wthrowd = "sprites/portal_gun/portal_gun_link_down",
-    },
-    sprites = {
-      "sprites/portal_gun/portal_ball", "sprites/portal_gun/portal_orange.png",
-      "sprites/portal_gun/portal_blue.png", "sprites/portal_gun/portal_glow.png",
-      "sprites/portal_gun/portal_gun_glow.png",
-      "sprites/portal_gun/lightning_glow.png", "sprites/portal_gun/portal_black_mask",
-    },
-    sounds = { "sounds/portal_gun_shoot.wav", "sounds/portal_gun_hit.wav", "sounds/portal_gun_failhit.wav",
-      "sounds/portal_active.wav", "sounds/portal_inactive.wav", "sounds/portal_teleport.wav" },
-    params = { gpu_prefix = "sprites/portal_gun/" },
-    on_fire = function(fire) fires.portal_gun(fire) end,
-  },
-  { -- Electromagnet: PX's placed, persistent field on the Baseball Bat slot.
-    weapon = "baseball_bat", wep = "weps/baseball_bat.wep",
-    -- PX's red icon is attract mode; ours, recoloured to the blue magnet's
-    -- colours, repel (the HUD hook in electromagnet.lua shows the mode).
-    panel_icon = "sprites/electromagnet/ico_magnet.png",
-    panel_icons = { "sprites/electromagnet/ico_magnet_blue.png" },
-    -- WA takes it out and puts it away with the Dynamite's draw (334-336);
-    -- PX swaps in the magnet's (CSpriteAnim::SetAnimEx): blue repelling,
-    -- red once + switched the worm to attracting (the engine reads + as the
-    -- module does, and plays the take-out again in the new colour).
-    worm_sprites = {
-      wdynlnk = "sprites/electromagnet/wmag2lnk",
-      wdynlnku = "sprites/electromagnet/wmag2lnku",
-      wdynlnkd = "sprites/electromagnet/wmag2lnkd",
-    },
-    worm_sprites_toggle = { key = "plus_key", worm_sprites = {
-      wdynlnk = "sprites/electromagnet/wmaglnk",
-      wdynlnku = "sprites/electromagnet/wmaglnku",
-      wdynlnkd = "sprites/electromagnet/wmaglnkd",
-    } },
-    sprites = {
-      "sprites/electromagnet/magnet.png", "sprites/electromagnet/magnet2.png",
-      "sprites/electromagnet/magnet_damaged.png", "sprites/electromagnet/magnet2_damaged.png",
-      "sprites/electromagnet/ring_in.png", "sprites/electromagnet/ring_out.png",
-      "sprites/electromagnet/magnetsparks",
-    },
-    params = { gpu_prefix = "sprites/electromagnet/" },
-    on_fire = function(fire) fires.electromagnet(fire) end,
-  },
-  { -- Sentry Gun: PX's turret (weapons/sentry_gun.lua, lib/turret.lua) on
-    -- the Kamikaze slot, placed as WA places a mine: its timing, ammo and
-    -- retreat, with the turret as a Lua body instead of a mine.
-    weapon = "kamikaze", copy_from = "stock.mine", name = "Sentry Gun",
-    panel_icon = "sprites/sentry_gun/icon.png",
-    is_weapon = true,
-    -- PX's take-out and placing, grey; the housing in them coloured per team
-    -- at draw time (one sheet and its housing for six colours).
-    worm_sprites = {
-      weaponlnk = "sprites/sentry_gun/equip", weaponlnku = "sprites/sentry_gun/equipu",
-      weaponlnkd = "sprites/sentry_gun/equipd",
-      wthrow = "sprites/sentry_gun/unequip", wthrowu = "sprites/sentry_gun/unequipu",
-      wthrowd = "sprites/sentry_gun/unequipd",
-    },
-    worm_sprites_team_tint = {
-      worm_sprites = {
-        weaponlnk = "sprites/sentry_gun/equip_housing", weaponlnku = "sprites/sentry_gun/equipu_housing",
-        weaponlnkd = "sprites/sentry_gun/equipd_housing",
-        wthrow = "sprites/sentry_gun/unequip_housing", wthrowu = "sprites/sentry_gun/unequipu_housing",
-        wthrowd = "sprites/sentry_gun/unequipd_housing",
-      },
-      colours = { 0xFF6447, 0x4764FF, 0x47FF64, 0xE6E647, 0xE647E6, 0x47E6E6 },
-    },
-    sprites = {
-      "sprites/sentry_gun/impact.png", "sprites/sentry_gun/casing", "sprites/sentry_gun/turret_base", "sprites/sentry_gun/turret_mask.png",
-      "sprites/sentry_gun/turret_gun", "sprites/sentry_gun/turret_flare", "sprites/sentry_gun/turret_light.png",
-    },
-    sounds = {
-      "sounds/sentry_gun/sentryplace.wav", "sounds/sentry_gun/sentrybeeps2.wav",
-      "sounds/sentry_gun/sentryfireloop.wav", "sounds/sentry_gun/sentryfireend.wav",
-      "sounds/sentry_gun/sentryservostart.wav", "sounds/sentry_gun/sentryservoloop.wav",
-      "sounds/sentry_gun/sentryservoend.wav",
-    },
-    params = {
-      sprite_columns = 1,
-      -- The take-out and placing play frame by frame, not as aim sheets.
-      worm_sprites_animate = true,
-      -- The turret between terrain (0x180000) and soil (0x1B0000): the
-      -- real landscape can occlude its feet. The worm's sheets stay in front.
-      depth = wa.depth.BEHIND_TERRAIN,
-      depth_prefix = "sprites/sentry_gun/turret_",
-      gpu_prefix = "sprites/sentry_gun/turret_",
-    },
-    on_fire = function(fire) fires.sentry_gun(fire) end,
-  },
-  { -- Sentry Laser: PX's projectile-defence turret (weapons/sentry_laser.lua,
-    -- lib/turret.lua) on the Dragon Ball slot, placed as the Sentry Gun.
-    weapon = "dragon_ball", copy_from = "stock.mine", name = "Sentry Laser",
-    panel_icon = "sprites/sentry_laser/icon.png",
-    is_weapon = true,
-    worm_sprites = {
-      weaponlnk = "sprites/sentry_laser/equip", weaponlnku = "sprites/sentry_laser/equipu",
-      weaponlnkd = "sprites/sentry_laser/equipd",
-      wthrow = "sprites/sentry_laser/unequip", wthrowu = "sprites/sentry_laser/unequipu",
-      wthrowd = "sprites/sentry_laser/unequipd",
-    },
-    -- The body coloured per team, as on the planted turret; its barrel stays grey.
-    worm_sprites_team_tint = {
-      worm_sprites = {
-        weaponlnk = "sprites/sentry_laser/equip_housing", weaponlnku = "sprites/sentry_laser/equipu_housing",
-        weaponlnkd = "sprites/sentry_laser/equipd_housing",
-        wthrow = "sprites/sentry_laser/unequip_housing", wthrowu = "sprites/sentry_laser/unequipu_housing",
-        wthrowd = "sprites/sentry_laser/unequipd_housing",
-      },
-      colours = { 0xFF6447, 0x4764FF, 0x47FF64, 0xE6E647, 0xE647E6, 0x47E6E6 },
-    },
-    sprites = {
-      "sprites/sentry_laser/turret_base", "sprites/sentry_laser/turret_mask.png", "sprites/sentry_laser/turret_body",
-      "sprites/sentry_laser/turret_barrel", "sprites/sentry_laser/turret_light.png",
-    },
-    sounds = {
-      "sounds/sentry_laser/sentrylaserplace.wav", "sounds/sentry_laser/sentrylaserbeep.wav",
-      "sounds/sentry_laser/sentrylaserstart.wav", "sounds/sentry_laser/sentrylaserloop.wav",
-      "sounds/sentry_laser/sentrylaserend.wav", "sounds/sentry_laser/sentrylaserdisin.wav",
-    },
-    params = {
-      sprite_columns = 1,
-      worm_sprites_animate = true,
-      depth = wa.depth.BEHIND_TERRAIN,
-      depth_prefix = "sprites/sentry_laser/turret_",
-      gpu_prefix = "sprites/sentry_laser/turret_",
-    },
-    on_fire = function(fire) fires.sentry_laser(fire) end,
-  },
-  { -- Kamikaze Rocket: PX's steered Kamikaze (weapons/kamikaze_rocket.lua) on
-    -- the Suicide Bomber slot. Its record is WA's Kamikaze's, so WA flies,
-    -- digs and hits as its own Kamikaze; the pack steers it.
-    weapon = "suicide_bomber", wep = "weps/suicide_bomber.wep",
-    panel_icon = "sprites/kamikaze_rocket/icon.png",
-    -- The Kamikaze's take-out (its last frame the hold) and launch, PX's.
-    worm_sprites = {
-      wkamlnk = "sprites/kamikaze_rocket/take_out", wkamlnku = "sprites/kamikaze_rocket/take_out",
-      wkamlnkd = "sprites/kamikaze_rocket/take_out", wkamjmp = "sprites/kamikaze_rocket/launch",
-    },
-    sprites = { "sprites/kamikaze_rocket/fly" },
-    params = { gpu_prefix = "sprites/kamikaze_rocket/" },
-  },
-  { -- Weapon Crate: a weapon crate dropped in front of the worm
-    -- (weapons/weapon_crate.lua) on the Freeze slot, placed as WA places a
-    -- mine (PX's record), the crate instead of the mine.
-    weapon = "freeze", wep = "weps/freeze.wep",
-    panel_icon = "sprites/weapon_crate/icon.png",
-    -- PX's take-out (picking the crate up) and its hold.
-    worm_sprites = {
-      weaponlnk = "sprites/weapon_crate/take_out", weaponlnku = "sprites/weapon_crate/take_outu",
-      weaponlnkd = "sprites/weapon_crate/take_outd",
-      wthrow = "sprites/weapon_crate/put_away", wthrowu = "sprites/weapon_crate/put_awayu",
-      wthrowd = "sprites/weapon_crate/put_awayd",
-    },
-    params = { worm_sprites_animate = true },
-    on_fire = function(fire) fires.weapon_crate(fire) end,
-  },
-  { -- Super Tele: the PX record is a type-3 cursor weapon on teleport's slot.
-    weapon = "teleport",
-    wep = "weps/teleport.wep",
-    panel_icon = "sprites/super_tele/icon.png",
-    on_select = { cursor = true },
-    on_click = function(ev) fires.super_tele_click(ev) end,
-  },
-  { -- Javelin: stock flight, direct thrust or a permanent terrain stamp.
-    weapon = "prod", wep = "weps/prod.wep",
-    panel_icon = "sprites/javelin/icon.png",
-    sprite = "missile", worm_sprites = PX_POSTURE,
-    sprites = { "sprites/javelin/hold", "sprites/javelin/flight", "sprites/javelin/stamp" },
-    sounds = { "sounds/javelin_impact.wav" },
-    params = { gpu_prefix = "sprites/javelin/" },
-    on_explode = function(ev) fires.javelin(ev) end,
-  },
-  { -- Laser Gun: a 5 s beam in place of the uzi's bullet (its section below).
-    weapon = "uzi",
-    wep = "weps/uzi.wep",
-    panel_icon = "sprites/laser_gun/ico_lasergun.png",
-    worm_sprites = {
-      weaponlnk = "sprites/laser_gun/aim", weaponlnku = "sprites/laser_gun/aimu",
-      weaponlnkd = "sprites/laser_gun/aimd",
-      wthrow = "sprites/laser_gun/draw", wthrowu = "sprites/laser_gun/drawu",
-      wthrowd = "sprites/laser_gun/drawd",
-    },
-    sprites = { "sprites/laser_gun/laser_beam.png", "sprites/laser_gun/laser_glow.png" },
-    sounds = {
-      "sounds/laser_gun/laser_start.wav", "sounds/laser_gun/laser_loop.wav",
-      "sounds/laser_gun/laser_end.wav",
-    },
-    params = { gpu_prefix = "sprites/laser_gun/" },
-    on_fire = function(fire) fires.laser(fire) end,
-  },
-  { -- Electric Grenade: stock flight and explosion, then PX's chaining arc.
-    -- PX's record leaves the flight sprite 0 and PX draws the grenade at run
-    -- time (electric_grenade_anim, PX_WEAP_SPRITES below). A grenade-type
-    -- slot picks the worm's throw sheet from its flight sprite, and 0 has
-    -- none, so the worm vanished: here the stock grenade, hidden in flight,
-    -- as for the Sticky Bomb. The arc's sheets come with the Lightning
-    -- Strike's (its entry below), this prefix being the hold's.
-    weapon = "earthquake",
-    wep = "weps/earthquake.wep",
-    panel_icon = "sprites/electric_grenade/icon.png",
-    sprite = "grenade",
-    worm_sprites = PX_POSTURE,
-    sprites = { "sprites/px_hold/electric_grenade.png" },
-    sounds = { "sounds/lightning/tazer_loop.wav" },
-    params = { gpu_prefix = "sprites/px_hold/" },
-    on_explode = function(ev) shared.electric_grenade_explode(ev) end,
-  },
-  { -- Valyrian Fire (rafa\`\`2's valyrianfire_s): a Petrol Bomb with PX's
-    -- bottle in the hand and spinning in flight (PX_WEAP_SPRITES), thrown
-    -- 15 pixels further out. PX's record leaves the flight sprite 0, as the
-    -- Electric Grenade's: here the stock bottle, for the worm's throw sheet,
-    -- hidden in flight.
-    weapon = "petrol_bomb",
-    wep = "weps/petrol_bomb.wep",
-    panel_icon = "sprites/valyrian_fire/icon.png",
-    sprite = "petrolbm",
-    worm_sprites = PX_POSTURE,
-    sprites = { "sprites/px_hold/valyrian_fire.png" },
-    params = { gpu_prefix = "sprites/px_hold/" },
-    on_fire = function(fire) fires.valyrian_fire(fire) end,
-    on_explode = function(ev) fires.valyrian_burst(ev) end,
-  },
-  { -- Bowling Ball Strike: PX's three rolling balls (weapons/bowling_ball.lua),
-    -- not WA's sheep. Click-only, as the Lightning Strike: the engine ends
-    -- WA's prefire after the click.
-    weapon = "sheep_strike",
-    wep = "weps/sheep_strike.wep",
-    panel_icon = "sprites/bowling_ball/strike_icon.png",
-    sprites = { "sprites/bowling_ball/ball.png", "sprites/bowling_ball/glow.png", "sprites/bowling_ball/spark.png",
-      "sprites/bowling_ball/sheen.png" },
-    params = { gpu_prefix = "sprites/bowling_ball/" },
-    on_select = { cursor = true },
-    on_click = function(ev) fires.bowling_strike(ev) end,
-  },
-  { -- Ferret: PX's terrain-walking ferret (weapons/ferret.lua), thrown in
-    -- place of WA's Salvation Army.
-    weapon = "salvation_army",
-    wep = "weps/salvation_army.wep",
-    panel_icon = "sprites/ferret/icon.png",
-    worm_sprites = PX_POSTURE,
-    sprites = { "sprites/ferret/walk" },
-    sounds = { "sounds/ferret/walk.wav" },
-    params = { gpu_prefix = "sprites/ferret/" },
-    on_fire = function(fire) fires.ferret(fire) end,
-  },
-  { -- Crate Strike: PX's three parachute crates (weapons/crate_strike.lua),
-    -- not WA's donkey. Click-only, as the Lightning Strike.
-    weapon = "donkey",
-    wep = "weps/donkey.wep",
-    panel_icon = "sprites/crate_strike/icon.png",
-    on_select = { cursor = true },
-    on_click = function(ev) fires.crate_strike(ev) end,
-  },
-  { -- Lightning Strike: the PX strike is an effect, not WA's napalm plane.
-    weapon = "napalm_strike",
-    wep = "weps/napalm_strike.wep",
-    panel_icon = "sprites/lightning/icon.png",
-    -- With the Electric Grenade's arc and zap sheets: both weapons' effects
-    -- are GPU sheets under this prefix.
-    sprites = {
-      "sprites/lightning/beam.png", "sprites/lightning/glow.png", "sprites/lightning/cloud.png",
-      "sprites/electric_grenade/explosion", "sprites/electric_grenade/tazed1",
-      "sprites/electric_grenade/tazed2",
-    },
-    sounds = { "sounds/lightning/thunder.wav", "sounds/lightning/hit.wav" },
-    params = { gpu_prefix = "sprites/" },
-    -- Click-only dispatch keeps the strike's cursor and turn handling.
-    on_select = { cursor = true },
-    -- The engine ends WA's prefire after a click-only fire. (A closure:
-    -- lightning_click is defined further down.)
-    on_click = function(ev) shared.lightning_click(ev) end,
-  },
-  { -- Double Bazooka: a second shell carries on from where the first
-    -- explodes (its section below). Held as a plain bazooka: the pack's
-    -- record has launcher 3 (wbaz) at +0x34 where the scheme's has 7, the
-    -- homing missile's recoloured wbaz2 (Weapon__hold_sheet, 0x51C060).
-    weapon = "bazooka",
-    panel_icon = "sprites/double_bazooka/double_bazooka_ico.png",
-    on_explode = function(ev) shared.double_bazooka_explode(ev) end,
-  },
-  { -- Nuke Rocket: a rocket fuses on the ground, then a nuke climbs out of
-    -- it (its section below). PX draws both upright (a type 5 WeapSprite,
-    -- mirrored flying left), as WA draws a flight sprite.
-    weapon = "mine",
-    panel_icon = "sprites/nuke_rocket/nuke_rocket_ico.png",
-    sprite = "sprites/nuke_rocket/nuke_rocket_bullet.png",
-    on_explode = function(ev) shared.nuke_rocket_explode(ev) end,
-    -- The engine draws its PX sprite-builder hold from PX_HOLDS:
-    -- the record's own sprite is PX-only, which left WA no sheet to draw
-    -- the worm with.
-    worm_sprites = PX_POSTURE,
-    sprites = {
-      "sprites/px_hold/nuke_rocket",
-    },
-    sounds = { "sounds/nuke_rocket_launch.wav" },
-    params = { gpu_prefix = "sprites/px_hold/" },
-  },
-  { -- Burning Sheep Launcher
-    weapon = "sheep_launcher",
-    panel_icon = "sprites/launchers/burning_sheep_launcher_ico.png",
-  },
-  { -- Cow Launcher
-    weapon = "mad_cow",
-    panel_icon = "sprites/launchers/cow_launcher_ico.png",
-  },
-  { -- Old Woman Launcher: WA's animal launched from a clear muzzle point.
-    weapon = "old_woman",
-    panel_icon = "sprites/launchers/old_woman_launcher_ico.png",
-  },
-  { -- Pigeon Strike
-    weapon = "mail_strike",
-    panel_icon = "sprites/pigeon_strike/ico_pigeonst.png",
-  },
-  { -- Windy Cluster: the stock cluster bomb's body, PX's bits.
-    weapon = "cluster_bomb",
-    panel_icon = "sprites/windy_cluster/ico_windyc.png",
-    cluster = { sprite = "sprites/windy_cluster/cluster" },
-  },
-  { -- Super Gravedigger, and the worm holding and taking it out.
-    weapon = "banana_bomb",
-    panel_icon = "sprites/super_gravedigger/sgrave_ico.png",
-    sprite = "sprites/super_gravedigger/flight",
-    cluster = { sprite = "sprites/super_gravedigger/cluster" },
-    worm_sprites = {
-      weaponlnk = "sprites/super_gravedigger/aim",
-      weaponlnku = "sprites/super_gravedigger/aimu",
-      weaponlnkd = "sprites/super_gravedigger/aimd",
-      wthrow = "sprites/super_gravedigger/draw",
-      wthrowu = "sprites/super_gravedigger/drawu",
-      wthrowd = "sprites/super_gravedigger/drawd",
-    },
-  },
-  -- The next three have trails PX draws by overriding stock sprites its
-  -- records point at: the Salvation Army's wsv* frames, free here because
-  -- the Ferret holds that slot. sprite_overrides does the same, for the
-  -- whole match. The trail art is PX's sprite_curtis_<id> libraries'.
-  { -- S.M.A.R.T Bomb: its bits home, and draw their own sprite doing so.
-    weapon = "mortar",
-    panel_icon = "sprites/smart_bomb/smart_ico.png",
-    sprite = "sprites/smart_bomb/flight",
-    cluster = {
-      sprite = "sprites/smart_bomb/cluster",
-      homing_sprite = "sprites/smart_bomb/cluster_homing",
-    },
-    sprite_overrides = { wsvbd = "sprites/smart_bomb/trail" },          -- 250
-    worm_sprites = {
-      weaponlnk = "sprites/smart_bomb/aim",
-      weaponlnku = "sprites/smart_bomb/aimu",
-      weaponlnkd = "sprites/smart_bomb/aimd",
-      wthrow = "sprites/smart_bomb/draw",
-      wthrowu = "sprites/smart_bomb/drawu",
-      wthrowd = "sprites/smart_bomb/drawd",
-    },
-  },
-  { -- Blaster Worm
-    weapon = "homing_pigeon",
-    panel_icon = "sprites/blaster_worm/bworm_ico.png",
-    sprite = "sprites/blaster_worm/flight",
-    cluster = { sprite = "sprites/blaster_worm/cluster" },
-    sprite_overrides = { wsvbu = "sprites/blaster_worm/cluster_trail" }, -- 249
-    worm_sprites = {
-      weaponlnk = "sprites/blaster_worm/aim",
-      weaponlnku = "sprites/blaster_worm/aimu",
-      weaponlnkd = "sprites/blaster_worm/aimd",
-      wthrow = "sprites/blaster_worm/draw",
-      wthrowu = "sprites/blaster_worm/drawu",
-      wthrowd = "sprites/blaster_worm/drawd",
-    },
-  },
-  { -- Thumper Nade
-    weapon = "battle_axe",
-    panel_icon = "sprites/thumper_nade/thumpern_ico.png",
-    sprite = "sprites/thumper_nade/flight",
-    cluster = { sprite = "sprites/thumper_nade/cluster" },
-    sprite_overrides = {
-      wsvg = "sprites/thumper_nade/trail",                                -- 251
-      wsvgu = "sprites/thumper_nade/cluster_trail",                       -- 252
-    },
-    worm_sprites = {
-      weaponlnk = "sprites/thumper_nade/aim",
-      weaponlnku = "sprites/thumper_nade/aimu",
-      weaponlnkd = "sprites/thumper_nade/aimd",
-      wthrow = "sprites/thumper_nade/draw",
-      wthrowu = "sprites/thumper_nade/drawu",
-      wthrowd = "sprites/thumper_nade/drawd",
-    },
-  },
-  -- Strikes keep their bomb's art 0x14 further along than a projectile
-  -- does; \`sprite\` and \`cluster.sprite\` follow it there.
-  { -- Thumper Nade Strike: Thumper Nades from the sky, with the Thumper
-    -- Nade's own trails (the overrides above).
-    weapon = "carpet_bomb",
-    panel_icon = "sprites/thumper_nade/thumpernst_ico.png",
-    sprite = "sprites/thumper_nade/flight",
-    cluster = { sprite = "sprites/thumper_nade/cluster" },
-  },
-  { -- Mortar Strike: stock mortar shells, PX's trails and bits.
-    weapon = "air_strike",
-    panel_icon = "sprites/mortar_strike/ico_mortarst.png",
-    cluster = { sprite = "sprites/mortar_strike/cluster" },
-    sprite_overrides = {
-      wsvclnk = "sprites/mortar_strike/trail",                             -- 466
-      wsvc = "sprites/mortar_strike/cluster_trail",                        -- 260
-    },
-  },
-  { -- Gravler: a mole bomb whose records point its dive and dig frames at
-    -- the Salvation Army's wsvr*/wsvb, which PX's script overrides.
-    weapon = "mole_bomb",
-    panel_icon = "sprites/gravler/gravler_ico.png",
-    sprite_overrides = {
-      wsvr = "sprites/gravler/gravlerdive",                                -- 245
-      wsvru = "sprites/gravler/gravlerdiga",                               -- 246
-      wsvrd = "sprites/gravler/gravlerdigb",                               -- 247
-      wsvb = "sprites/gravler/gravlerdigc",                                -- 248
-    },
-    worm_sprites = {
-      weaponlnk = "sprites/gravler/aim",
-      weaponlnku = "sprites/gravler/aimu",
-      weaponlnkd = "sprites/gravler/aimd",
-      wthrow = "sprites/gravler/draw",
-      wthrowu = "sprites/gravler/drawu",
-      wthrowd = "sprites/gravler/drawd",
-    },
-  },
-  { -- Gravler Strike: its record points at the same four frames, and it
-    -- overrides them too, so it draws its gravlers without the Gravler
-    -- placed (WA would draw the Salvation Army's own). With both placed, the
-    -- second claim of a frame is skipped: the same art either way.
-    weapon = "mole_squadron",
-    panel_icon = "sprites/gravler/gravlerst_ico.png",
-    sprite_overrides = {
-      wsvr = "sprites/gravler/gravlerdive",                                -- 245
-      wsvru = "sprites/gravler/gravlerdiga",                               -- 246
-      wsvrd = "sprites/gravler/gravlerdigb",                               -- 247
-      wsvb = "sprites/gravler/gravlerdigc",                                -- 248
-    },
-  },
-  { -- Ghost Sheep: the Aqua Sheep's own sprites, overridden.
-    weapon = "aqua_sheep",
-    panel_icon = "sprites/ghost_sheep/ghost_sheep_ico.png",
-    sprite_overrides = {
-      aquashp1 = "sprites/ghost_sheep/ghstshp1",                           -- 156
-      aquashp2 = "sprites/ghost_sheep/ghstshp2",                           -- 157
-    },
-  },
-  { -- Pogo Sheep. Its bits' trail is the Blaster Worm's (249, above).
-    weapon = "sheep",
-    panel_icon = "sprites/pogo_sheep/psheep_ico.png",
-    sprite = "sprites/pogo_sheep/flight",
-    cluster = { sprite = "sprites/pogo_sheep/cluster" },
-  },
-  { -- Banana Express: stock banana bombs from PX's banana plane. PX's
-    -- record names its plane 704, an id PX adds past WA's sprites; \`plane\`
-    -- gives the strike the sheet instead.
-    weapon = "mb_bomb",
-    panel_icon = "sprites/banana_express/banana_express_ico.png",
-    plane = "sprites/banana_express/plane",
-  },
-  { -- Real Shotgun: PX's FireFinal fires the shotgun five times per shot,
-    -- five pellets in one frame, each spread by WA's own hitscan cone.
-    weapon = "shotgun",
-    panel_icon = "sprites/real_shotgun/real_shotgun_ico.png",
-    fire_repeat = 5,
-  },
-  { -- Hellish Hand-Grenade: the hellish_grenade example's art on the scheme's
-    -- record, which leaves the flight sprite to the slot.
-    weapon = "holy_grenade",
-    panel_icon = "sprites/hellish/hhh_ico.png",
-    sprite = "sprites/hellish/grenade",
-    worm_sprites = {
-      weaponlnk = "sprites/hellish/aim",
-      weaponlnku = "sprites/hellish/aimu",
-      weaponlnkd = "sprites/hellish/aimd",
-      wthrow = "sprites/hellish/draw",
-      wthrowu = "sprites/hellish/drawu",
-      wthrowd = "sprites/hellish/drawd",
-    },
-  },
-  { -- Remote Roller
-    weapon = "skunk",
-    panel_icon = "sprites/remote_roller/rroller_ico.png",
-    sprite = "sprites/remote_roller/flight",
-    worm_sprites = {
-      weaponlnk = "sprites/remote_roller/aim",
-      weaponlnku = "sprites/remote_roller/aimu",
-      weaponlnkd = "sprites/remote_roller/aimd",
-      wthrow = "sprites/remote_roller/draw",
-      wthrowu = "sprites/remote_roller/drawu",
-      wthrowd = "sprites/remote_roller/drawd",
-    },
-  },
-  { -- Igniter: PX sets the missile's own sprite to 0 and draws its bullet at
-    -- run time, animated and turned to its flight (PX_WEAP_SPRITES below).
-    -- WA still draws its homing missile's rocket under it for now.
-    weapon = "homing_missile",
-    panel_icon = "sprites/igniter/igniter_ico.png",
-    worm_sprites = PX_POSTURE,
-    sprites = {
-      "sprites/px_hold/igniter", "sprites/igniter/flight",
-    },
-    params = { gpu_prefix = "sprites/" },
-  },
-  { -- Chilli Bomb: five more Chillis burst out of it, which burst into fire
-    -- (its section below). PX's record has sprite 0 and PX draws the chilli
-    -- at run time, turned to its flight (PX_WEAP_SPRITES below). A thrown
-    -- weapon's worm posture is picked by its sprite, so the record keeps the
-    -- banana, and each missile's own copy is set to 0 in flight instead.
-    weapon = "super_banana",
-    panel_icon = "sprites/chilli_bomb/chilli_ico.png",
-    sprite = "banana",
-    on_explode = function(ev) shared.chilli_bomb_explode(ev) end,
-    worm_sprites = PX_POSTURE,
-    sprites = { "sprites/px_hold/chilli_bomb" },
-    params = { gpu_prefix = "sprites/px_hold/" },
-  },
-  { -- Sticky Bomb: PX's record leaves the bomb's sprite 0 and PX's script
-    -- draws the bomb at run time. Here the bomb is the stock grenade sprite
-    -- again -- a grenade-type slot picks the worm's throw sheet from it, and
-    -- 0 has none -- which the override draws as PX's bomb. The bits too.
-    weapon = "grenade",
-    panel_icon = "sprites/sticky_bomb/sbico.png",
-    sprite = "grenade",
-    cluster = { sprite = "sprites/sticky_bomb/bomb" },
-    -- Stuck, the bits draw with the frames at +0x178..+0x184, which the
-    -- record points at the Salvation Army's 467; PX overrides that too.
-    sprite_overrides = {
-      grenade = "sprites/sticky_bomb/bomb",                                -- 50
-      wsvclnku = "sprites/sticky_bomb/bomb",                               -- 467
-    },
-    worm_sprites = PX_POSTURE,
-    sprites = { "sprites/px_hold/sticky_bomb" },
-    params = { gpu_prefix = "sprites/px_hold/" },
-  },
-  { -- Fire Jump: a fire punch, then a jump and a glide (below).
-    weapon = "fire_punch",
-    panel_icon = "sprites/fire_jump/fire_jump_ico.png",
-  },
-  { -- Super Drill: WA's drill, cutting a second hole each frame (below).
-    weapon = "pneumatic_drill",
-    panel_icon = "sprites/super_drill/ico_superdrill.png",
-  },
-  { -- Shadow-Bolt: the record leaves the bolt's sprite 0, and PX draws the
-    -- bolt at run time, animated and turned to its flight (PX_WEAP_SPRITES
-    -- below), with its trail on stock 453 (sprite_curtis_453).
-    weapon = "longbow",
-    panel_icon = "sprites/shadow_bolt/ico_shadowb.png",
-    worm_sprites = PX_POSTURE,
-    sprite_overrides = { [453] = "sprites/shadow_bolt/trail" },
-    sprites = { "sprites/px_hold/shadow_bolt", "sprites/shadow_bolt/bolt" },
-    params = { gpu_prefix = "sprites/" },
-  },
-  { -- Hot Air Balloon: WA's parachute, carried up by PX's script (below).
-    weapon = "bungee",
-    panel_icon = "sprites/balloon/balloon_icon.png",
-    sprites = { "sprites/balloon/balloon", "sprites/balloon/basket" },
-    -- A pack WAV plays only once an entry registers it.
-    sounds = {
-      "sounds/balloon/inflate1.wav", "sounds/balloon/inflate2.wav", "sounds/balloon/inflate3.wav",
-      "sounds/balloon/pop1.wav", "sounds/balloon/pop2.wav", "sounds/balloon/pop3.wav",
-      "sounds/balloon/pop4.wav",
-    },
-    params = { gpu_prefix = "sprites/balloon/" },
-  },
-  { -- Hang-Glider: WA's parachute, flown as PX's glider (below).
-    weapon = "parachute",
-    panel_icon = "sprites/hang_glider/ico_glider.png",
-    sprites = { "sprites/hang_glider/glider", "sprites/hang_glider/pack" },
-    sounds = { "sounds/hang_glider/hangopen.wav", "sounds/hang_glider/hangclose.wav" },
-    params = { gpu_prefix = "sprites/hang_glider/" },
-  },
-  { -- Swim Suit: on the laser sight's slot; worn, the worm swims (below).
-    weapon = "laser_sight",
-    panel_icon = "sprites/swim_suit/ico_swimsuit.png",
-    sprites = { "sprites/swim_suit/swim", "sprites/swim_suit/float", "sprites/swim_suit/ring" },
-    sounds = { "sounds/swim_suit/putting_on_ssuit.wav" },
-    params = { gpu_prefix = "sprites/swim_suit/" },
-  },
-  { -- Jump: on the ninja rope's slot; the worm leaves with the shot (below).
-    weapon = "ninja_rope",
-    panel_icon = "sprites/jump/jumpic.png",
-    worm_sprites = {
-      weaponlnk = "sprites/jump/aim", weaponlnku = "sprites/jump/aimu",
-      weaponlnkd = "sprites/jump/aimd",
-    },
-    on_fire = function(fire) fires.jump(fire) end,
-  },
-  { -- Wind Changer: on the surrender's slot; sets the wind (below).
-    weapon = "surrender",
-    panel_icon = "sprites/wind_changer/ico_windchanger.png",
-    sounds = {
-      "sounds/wind_changer/breeze.wav", "sounds/wind_changer/calm_wind.wav",
-      "sounds/wind_changer/strong_wind.wav",
-    },
-  },
-  { -- Gravity Control: on low gravity's slot; sets the gravity (below).
-    weapon = "low_gravity",
-    panel_icon = "sprites/gravity_control/gravity_control_ico.png",
-    sounds = { "sounds/gravity_control/activate.wav", "sounds/gravity_control/error.wav" },
-  },
-  { -- Helicopter: WA's jet pack, flown by PX's script (below).
-    weapon = "jet_pack",
-    panel_icon = "sprites/helicopter/heli_ico.png",
-    sprites = { "sprites/helicopter/flying", "sprites/helicopter/jumpin" },
-    sounds = {
-      "sounds/helicopter/helicopterloop.wav",
-      "sounds/helicopter/1.wav", "sounds/helicopter/2.wav", "sounds/helicopter/3.wav",
-      "sounds/helicopter/4.wav",
-      "sounds/helicopter/oops1.wav", "sounds/helicopter/oops2.wav", "sounds/helicopter/huh.wav",
-      "sounds/helicopter/poop.wav", "sounds/helicopter/idiot.wav",
-    },
-    params = { gpu_prefix = "sprites/helicopter/" },
-  },
-  { -- Sniper Rifle: the hold drawn at run time, PX's laser sight while aiming
-    -- and its own shot (below). Firing, the worm takes the snipefire poses
-    -- the scheme's record names (lit by the muzzle), not WA's handgun, and
-    -- the hold and laser stay up over them (PX_HOLDS).
-    weapon = "handgun",
-    panel_icon = "sprites/sniper_rifle/srico.png",
-    worm_sprites = {
-      weaponlnk = PX_POSTURE.weaponlnk, weaponlnku = PX_POSTURE.weaponlnku,
-      weaponlnkd = PX_POSTURE.weaponlnkd,
-      wthrow = PX_POSTURE.wthrow, wthrowu = PX_POSTURE.wthrowu, wthrowd = PX_POSTURE.wthrowd,
-      weaponfire = "sprites/sniper_rifle/fire", weaponfireu = "sprites/sniper_rifle/fireu",
-      weaponfired = "sprites/sniper_rifle/fired",
-    },
-    sprites = {
-      "sprites/px_hold/sniper_rifle", "sprites/sniper_rifle/laser", "sprites/sniper_rifle/flash",
-    },
-    sounds = { "sounds/sniper_firing.wav" },
-    params = { gpu_prefix = "sprites/" },
-  },
-  { -- Burst Rifle: the worm aiming it, taking it out and firing it.
-    weapon = "minigun",
-    panel_icon = "sprites/burst_rifle/ico_burstr.png",
-    worm_sprites = {
-      weaponlnk = "sprites/burst_rifle/aim",
-      weaponlnku = "sprites/burst_rifle/aimu",
-      weaponlnkd = "sprites/burst_rifle/aimd",
-      wthrow = "sprites/burst_rifle/draw",
-      wthrowu = "sprites/burst_rifle/drawu",
-      wthrowd = "sprites/burst_rifle/drawd",
-      weaponfire = "sprites/burst_rifle/fire",
-      weaponfireu = "sprites/burst_rifle/fireu",
-      weaponfired = "sprites/burst_rifle/fired",
-    },
-  },
-}
-
-shared.PORTED = PORTED
-shared.PX_ART = PX_ART
-shared.fires = fires
-`
-      },
-      {
-        path: 'weapons/chilli_bomb.lua',
-        name: 'weapons/chilli_bomb.lua',
-        language: 'lua',
-        content: `-- Highlander: Chilli Bomb. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-
--- ------------------------------------------------------------- Chilli Bomb
-do
---
--- PX's pyro_grenades_script (PyroMan), on WA's super banana. When a Chilli
--- Bomb explodes, five more Chillis burst out of it, straight up with a
--- random spread (PX's ShotClustlets): real WA missiles of the same slot,
--- each with damage 30, an 8 s fuse, no countdown, the fire key setting it
--- off, and a burst of fire where it ends. The five do not burst again: a
--- missile PX's script makes has no weapon of its own (weap), so its
--- ExplodeAt skips the Chilli's branch.
---
--- Not ported: PX's particle trail and the sparks while aiming
--- (pxparticles), and the smoke trail's power of 20 on the five. PX also
--- writes the five's changes into the weapon's own launch data, so every
--- later Chilli Bomb flies with them; the port changes the five only.
-
-local CHILLI_CHILD = { count = 5, damage = 30, fuse = 8000 }
-
-local chilli_child = {}   -- missile id -> true: one of the five, which ends it
-local chilli_pending = {} -- where the five burst out, once the blast is over
-local chilli_shooter      -- the worm that threw it (PX's ClWT / ClWN)
-
-shared.chilli_bomb_explode = function(ev)
-  local id = ev.missile
-  if not id then
-    return
-  end
-  if chilli_child[id] then
-    chilli_child[id] = nil
-    return
-  end
-  chilli_pending[#chilli_pending + 1] = { x = ev.x, y = ev.y }
-end
-
-wa.on.worm_message(function(worm, msg)
-  if msg == wa.msg.FIRE_WEAPON and worm.weapon == "px.chilli_bomb" then
-    chilli_shooter = worm
-  elseif msg == wa.msg.FRAME_FINISH and #chilli_pending > 0 then
-    -- After the blast, as the Double Bazooka's second shell.
-    local owner = chilli_shooter or worm
-    for _, p in ipairs(chilli_pending) do
-      for _ = 1, CHILLI_CHILD.count do
-        -- RandomFloat(3, -3), then RandomFloat(-7, -10).
-        local vx = wa.random(-196608, 196608) / 65536
-        local vy = wa.random(-655360, -458752) / 65536
-        local id = wa.weapons.launch({
-          weapon = "px.chilli_bomb", owner = owner, x = p.x, y = p.y, vx = vx, vy = vy,
-          missile = {
-            explosion = { power = CHILLI_CHILD.damage }, fuse = CHILLI_CHILD.fuse, countdown = 0,
-            explode_on_space = true, burst = "fire",
-            sprite = 0, -- PX leaves them WA's sprite 0; the chilli is drawn instead
-          },
-        })
-        chilli_child[id] = true
-      end
-    end
-    chilli_pending = {}
-  end
-end, { msgs = { wa.msg.FIRE_WEAPON, wa.msg.FRAME_FINISH } })
-end
-`
-      },
-      {
-        path: 'weapons/claims.lua',
-        name: 'weapons/claims.lua',
-        language: 'lua',
-        content: `-- Highlander: the slot claims. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-local PORTED = shared.PORTED
-local PX_ART = shared.PX_ART
-local PX_HOLDS = shared.PX_HOLDS
-local WEP_NAME = shared.WEP_NAME
-local WEP_FIELDS = shared.WEP_FIELDS
-local fires = shared.fires
-
--- WA's muzzle can be inside a wall when a worm fires from beside it. A stock
--- Old Woman constructed there explodes before her first frame. Dispatch the
--- shot to Lua so she can be launched from a clear point the worm can see,
--- keeping WA's own Old Woman movement and five-second fuse.
-local OLD_WOMAN_LAUNCHER = {
-  fires = {
-    subtype = 3, -- bazooka aim sheet, not the Sheep Launcher hold
-    type = 1,
-    method = 3, -- CreateWeaponProjectile, intercepted by on_fire
-  },
-}
-
--- Our own changes over the generated record fields (tools/embed_weps.py),
--- kept here so WEP_FIELDS can be generated again.
-local FIXES = {
-  -- S.M.A.R.T Bomb: homing bits leave the bomb's red trail circles (stock 250,
-  -- drawn as sprites/smart_bomb/trail), not WA's green gas cloud (608) the
-  -- record named.
-  mortar = { clusters = { bit = { homing = { trail = { sprite = 250 } } } } },
-  -- Skunk: Space lets the gas out, as WA's own Skunk; PX's record left the
-  -- flag at the Double Damage's (off), so the walker never told the team it
-  -- could be set off, and its shot never ended. The walker it bursts into
-  -- (its one cluster) has its own flag, off too: Space sets it off.
-  damage_x2 = { missile = { explode_on_space = true }, clusters = { bit = { explode_on_space = true } } },
-  -- Helicopter: its fuel is its record's, PX's FuelAmount (its script's 100,
-  -- not the record's 255, which the script always replaced).
-  jet_pack = { jet_pack = { fuel = 100 } },
-}
-
--- \`t\` laid over \`into\`, nested tables field by field: a new table, neither
--- of the two changed (WEP_FIELDS' tables are shared by every match).
-local function merged(into, t)
-  local out = {}
-  for k, v in pairs(into or {}) do out[k] = v end
-  for k, v in pairs(t) do
-    if type(v) == "table" and type(out[k]) == "table" then
-      out[k] = merged(out[k], v)
-    else
-      out[k] = v
-    end
-  end
-  return out
-end
-
--- Whether a weapon ends the turn is a profile's setting ("Ends the turn":
--- the Highlander profile turns it off, so a worm can fire its whole hand).
--- PX's records have it off on almost every weapon; each claim puts back the
--- weapon's own instead: it ends the turn, as WA's do, except these, which
--- never do (WA's rope, bungee, parachute, jet pack and the like, and the
--- Portal Gun, so both portals go down in one turn).
-local KEEPS_TURN = {
-  ninja_rope = true, bungee = true, parachute = true, select_worm = true, jet_pack = true,
-  low_gravity = true, fast_walk = true, laser_sight = true, crate_spy = true, crate_shower = true,
-  scales_of_justice = true,
-}
-
--- The weapons Highlander claimed this match, by home slot. Code that acts on
--- a weapon it looks up by slot (a missile's sprite, a held weapon's sight)
--- asks first: as a component bundle only the placed weapons claim, and
--- another scheme may put WA's own weapon, or another bundle's, on the rest.
-local owned = {}
-shared.owns = function(home)
-  return home ~= nil and owned[home] == true
-end
-
--- One weapon's claim of the slot the profile placed it on (\`w.weapon\` is its
--- home slot, the pack's key for it, whose stock record it builds on).
-local function claim(w)
-  owned[w.weapon] = true
-  -- copy_from + name + the record's fields (stock base); was weps/<slot>.wep
-  local spec = w.wep and { wep = w.wep } or { copy_from = "stock." .. w.weapon, name = WEP_NAME[w.weapon] }
-  if w.weapon == "old_woman" then
-    spec = merged(spec, OLD_WOMAN_LAUNCHER)
-    spec.on_fire = function(fire) fires.old_woman(fire) end
-  elseif not w.wep and WEP_FIELDS[w.weapon] then
-    spec = merged(spec, WEP_FIELDS[w.weapon])
-  end
-  if FIXES[w.weapon] then
-    spec = merged(spec, FIXES[w.weapon])
-    -- A field named here takes the place of the generated raw byte under it.
-    if spec.jet_pack and spec.jet_pack.fuel ~= nil and spec.raw then
-      spec.raw = merged(spec.raw, {})
-      spec.raw[0x038] = nil
-    end
-  end
-  for key, value in pairs(w) do
-    spec[key] = value
-  end
-  spec.handling = merged(spec.handling, { ends_turn = not KEEPS_TURN[w.weapon] })
-  -- No slot: a weapon component claims the one it was placed on.
-  spec.weapon = nil
-  spec.hold = PX_HOLDS[w.weapon]
-  wa.weapons.replace(spec)
-end
-
--- A weapon component claims only the slot it was placed on: the weapon with
--- home slot \`home\`.
-shared.claim = function(home)
-  for _, list in ipairs({ PORTED, PX_ART }) do
-    for _, w in ipairs(list) do
-      if w.weapon == home then
-        claim(w)
-        return true
-      end
-    end
-  end
-  return false
-end
-
-do
-  -- reddaz's launch point search, playtested by him. A point is clear when
-  -- it and 8 points on a 3-pixel circle around it are free of land, and the
-  -- worm can see it (nothing between them, so never the far side of a thin
-  -- wall the muzzle poked through). The muzzle is tried first, then rings
-  -- every 4 pixels out to 40, at finer angles the wider the ring; failing
-  -- all, she starts at the worm.
-  local CLEAR = 3
-  local REACH = 40
-  local RING = 4
-
-  local function clear(x, y)
-    if wa.land.solid(x, y) then return false end
-    for i = 0, 7 do
-      local a = (i / 8) * 2 * math.pi
-      if wa.land.solid(x + (CLEAR * wa.math.cos(a)), y + (CLEAR * wa.math.sin(a))) then
-        return false
-      end
-    end
-    return true
-  end
-
-  local function launch_point(x, y, w)
-    local r = 0
-    while r <= REACH do
-      local step = (r == 0) and 360 or math.max(15, math.floor(360 / (r / 2)))
-      local deg = 0
-      while deg < 360 do
-        local a = deg * math.pi / 180
-        local tx, ty = x + (r * wa.math.cos(a)), y + (r * wa.math.sin(a))
-        if clear(tx, ty) then
-          local hit = wa.land.trace(tx, ty, w.x, w.y)
-          if not hit or not hit.hit then return tx, ty end
-        end
-        deg = deg + step
-      end
-      r = r + RING
-    end
-    return w.x, w.y
-  end
-
-  fires.old_woman = function(fire)
-    local w = fire.worm
-    local x, y = launch_point(fire.x, fire.y, w)
-    wa.weapons.launch({ weapon = "px.old_woman_launcher", owner = w,
-      x = x, y = y, vx = fire.vx, vy = fire.vy, missile = { fuse = 5000 } })
-  end
-end
-`
-      },
-      {
-        path: 'weapons/crate_strike.lua',
-        name: 'weapons/crate_strike.lua',
-        language: 'lua',
-        content: `-- Highlander: Crate Strike (PX utility_all_crates: allcrates_script.txt).
-local shared = require("lib/shared")
-local fires = shared.fires
-
--- PX drops three crates on parachutes from 50 pixels above the map: at the
--- click's x, 50 to its left and 50 to its right. Each is a weapon, utility
--- or health crate, drawn in that order from WA's RNG, as PX's RandomInt(1,
--- 3); WA picks what is inside (PX's WCT_RANDOM). A health crate gives 20 to
--- 40, 40 to 60 or 60 to 80, by its place.
-local KINDS = { "weapon", "utility", "health" }
-local DROPS = {
-  { dx = 0, lo = 20, hi = 40 },
-  { dx = -50, lo = 40, hi = 60 },
-  { dx = 50, lo = 60, hi = 80 },
-}
-
-fires.crate_strike = function(ev)
-  local x = ev.x
-  for _, d in ipairs(DROPS) do
-    local kind = KINDS[wa.random(1, 3)]
-    local health = wa.random(d.lo, d.hi)
-    local crate = { x = (x + d.dx), y = ev.sky, kind = kind, health = health, drop = "chute" }
-    -- A match whose crates hold no weapon (or no utility) refuses that
-    -- kind; a health crate drops in its place.
-    if not pcall(wa.crates.spawn, crate) then
-      crate.kind = "health"
-      wa.crates.spawn(crate)
-    end
-  end
-end
-`
-      },
-      {
-        path: 'weapons/defaults.lua',
-        name: 'weapons/defaults.lua',
-        language: 'lua',
-        content: `-- Highlander's weapons' data, by id, before a profile's settings: what each
--- weapon needs that its record (built on its home's) doesn't say. A
--- weapon's slot past WA's 70 gives it nothing WA ties to an id, so what it
--- had from its home's id is said here.
-return {
-  -- PX's Hot Air Balloon and Hang-Glider don't let the worm drill: the
-  -- drill's record would, from WA's parachute.
-  ["px.super_drill"] = { mid_air = false },
-  -- WA places its girders only for ids 34 and 36: the cursor shows the
-  -- girder, a click places one where WA allows.
-  ["px.3_girder_pack"] = { placement = "girder_pack" },
-  -- PX's record gives the Super Tele the scheme's retreat; on WA's
-  -- Teleport id the turn ended at once, as WA's own Teleport's does, and
-  -- the cursor showed the worm where it would land.
-  ["px.super_tele"] = { after_use = "end", cursor_sprite = "wbrth1" },
-  -- The S.M.A.R.T Bomb, on WA's Mortar id, was kept short of straight up.
-  ["px.s_m_a_r_t_bomb"] = { aims_straight_up = false },
-}
-`
-      },
-      {
-        path: 'weapons/double_bazooka.lua',
-        name: 'weapons/double_bazooka.lua',
-        language: 'lua',
-        content: `-- Highlander: Double Bazooka. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-
--- ---------------------------------------------------------- Double Bazooka
-do
---
--- PX's double_bazooka_script. A Double Bazooka shell does not end at the
--- first thing it hits: WA's explosion goes off, a 50-pixel hole is cut
--- (GG->land->MakeHole(50), WA's landscape "apply explosion", as
--- wa.land.cut), and a second shell carries on from there at the first one's
--- speed, a real WA missile of the same slot (new CMissile with the weapon's
--- launch data), so WA flies it with wind and its smoke trail. PX changes
--- three things for it: damage 40, sprite 54 and a 5 s fuse. The port takes
--- the damage and fuse; 54 is a cluster bit (clustlet) in WA 3.8.1, so the
--- second shell keeps the record's bazooka shell (48, missile), as the first
--- does. Its own explosion ends it.
---
--- Not ported: PX's particle trail on top of WA's (pxparticles), and a plain
--- 50/35 blast PX makes when a second shell explodes before its first frame.
-
-local DB_SECOND = { damage = 40, fuse = 5000 }
-local DB_HOLE = 50
-
-local db_speed = {}   -- missile id -> { vx, vy } at its last frame
-local db_second = {}  -- missile id -> true: a second shell, which ends it
-local db_pending = {} -- second shells to launch once the blast is over
-local db_shooter      -- the worm that fired it (PX's ClWT / ClWN)
-
-wa.on.missile_frame(function(m)
-  if m.weapon == "px.double_bazooka" and m.phase == "post" then
-    db_speed[m.id] = { m.vx, m.vy }
-  end
-end)
-
-shared.double_bazooka_explode = function(ev)
-  local id = ev.missile
-  if not id then
-    return
-  end
-  local speed = db_speed[id]
-  db_speed[id] = nil
-  if db_second[id] then
-    db_second[id] = nil
-    return
-  end
-  if not speed then
-    return
-  end
-  wa.land.cut({ x = ev.x, y = ev.y, shape = "circle", radius = DB_HOLE })
-  -- Launched after the blast, as PX's comes after super: WA's explosion
-  -- would otherwise push it.
-  db_pending[#db_pending + 1] = { x = ev.x, y = ev.y, vx = speed[1], vy = speed[2] }
-end
-
-wa.on.worm_message(function(worm, msg)
-  if msg == wa.msg.FIRE_WEAPON and worm.weapon == "px.double_bazooka" then
-    db_shooter = worm
-  elseif msg == wa.msg.FRAME_FINISH and #db_pending > 0 then
-    -- The first worm's frame after the blast; every worm gets one.
-    local owner = db_shooter or worm
-    for _, p in ipairs(db_pending) do
-      local id = wa.weapons.launch({
-        weapon = "px.double_bazooka", owner = owner, x = p.x, y = p.y, vx = p.vx, vy = p.vy,
-        missile = { explosion = { power = DB_SECOND.damage }, fuse = DB_SECOND.fuse },
-      })
-      db_second[id] = true
-    end
-    db_pending = {}
-  end
-end, { msgs = { wa.msg.FIRE_WEAPON, wa.msg.FRAME_FINISH } })
-end
-`
-      },
-      {
-        path: 'weapons/electrical.lua',
-        name: 'weapons/electrical.lua',
-        language: 'lua',
-        content: `-- Highlander: the electrical weapons. Split from rules.lua by tools/split_highlander.py.
--- Squares by multiplication: \`^\` calls the C runtime's pow, whose last bit
--- may differ between machines.
-local function sq(v) return v * v end
-
-local shared = require("lib/shared")
-local turret = require("lib/turret")
-local current_worm = shared.current_worm
-local held = shared.held
--- Highlander's rules (scheme/state.lua) and the Lightning Strike share it; the
--- strike also works without the rules, as a weapon of another scheme.
-shared.revived_by_lightning = shared.revived_by_lightning or {}
-local revived_by_lightning = shared.revived_by_lightning
-
--- --------------------------------------------------------- electrical weapons
-do
--- PX's lightningstrike.txt and tazer.txt share these target classes and beam
--- textures. Only gameplay advances in the actor brains. Drawing below may run
--- at any frame rate and consumes only wa.draw.random(), never WA's sim RNG.
-local ELECTRIC_DEPTH = wa.depth.BEHIND_TERRAIN -- behind WA terrain, in the GPU occlusion mask
-local BEAM = "sprites/lightning/beam.png"
-local GLOW = "sprites/lightning/glow.png"
-local CLOUD = "sprites/lightning/cloud.png" -- a puff made for the pack, in place of WA's cloudl
-local CLOUD_DEPTH = ELECTRIC_DEPTH - 0x1000  -- in front of the beam's top, behind the terrain
-local GRENADE_BURST = "sprites/electric_grenade/explosion"
-local strikes, arcs, tazed = {}, {}, {}
-
-local function effect_actor(x, y, owner, frame)
-  return wa.actors.spawn({
-    sprite = GLOW, visible = false, gravity = false, collide = false,
-    owner = owner, x = x, y = y, on = frame,
-  })
-end
-
-local function electrical_targets(graves)
-  local out = {}
-  for _, group in ipairs({ wa.worms, wa.mines, wa.crates, wa.oil }) do
-    for _, obj in ipairs(group.all()) do out[#out + 1] = obj end
-  end
-  if graves and wa.graves then
-    for _, obj in ipairs(wa.graves.all()) do out[#out + 1] = obj end
-  end
-  return out
-end
-
-local function target_radius(obj)
-  if obj.kind == "worm" then return 6 end
-  if obj.kind == "grave" then return 8 end
-  if obj.kind == "mine" then return 5 end
-  return 9
-end
-
--- A ray against terrain and the objects PX's collision mask names. Projection
--- and the chosen endpoint both use world pixels.
--- Equal-distance objects retain the engine's entity traversal order.
-local function electrical_trace(x0, y0, dx, dy)
-  local far = 10000
-  if wa.world.electrical_trace then
-    return wa.world.electrical_trace(x0, y0,
-      (x0 + dx * far), (y0 + dy * far))
-  end
-  local land = wa.land.trace(x0, y0,
-    (x0 + dx * far), (y0 + dy * far))
-  local best = land and math.sqrt(sq(land.x - x0) + sq(land.y - y0)) or far
-  local hit = land and { x = land.x, y = land.y, obj = nil } or nil
-  for _, obj in ipairs(electrical_targets(true)) do
-    local ox, oy = (obj.x - x0), (obj.y - y0)
-    local along = ox * dx + oy * dy
-    local across = math.abs(ox * dy - oy * dx)
-    if along > 0 and along < best and across <= target_radius(obj) then
-      best = along
-      hit = { x = obj.x, y = obj.y, obj = obj }
-    end
-  end
-  return hit
-end
-
-local function strike_hit(s)
-  if shared.zap_bowling_balls then shared.zap_bowling_balls(s.ex, s.ey) end
-  if not s.hit then return end
-  turret.capture_hit(s.sentry, s.ex, s.ey, s.alliance)
-  local radius2 = sq(6)
-  local targets = wa.world.electrical_nearby
-    and wa.world.electrical_nearby(s.ex, s.ey, 24, true) or electrical_targets(true)
-  for _, obj in ipairs(targets) do
-    local dx, dy = obj.x - s.ex, obj.y - s.ey
-    local r = (target_radius(obj) + 6)
-    if dx * dx + dy * dy <= math.max(radius2, r * r) then
-      if obj.kind == "worm" then
-        if not revived_by_lightning[obj.id] then obj:heal(25) end
-      elseif obj.kind == "grave" then
-        if obj.worm_id ~= 0 then
-          local id = obj.worm_id
-          local worm = obj:revive(id, 10)
-          if worm then
-            revived_by_lightning[worm.id] = true
-            if shared.restore_lightning_inventory then
-              shared.restore_lightning_inventory(worm)
-            end
-          else
-            -- Refused: a living worm holds its place (a Reinforcement takes a
-            -- dead worm's), as when the team has eight. Reinforcement's error
-            -- sound, from the grave: the strike's thrower may be gone by now.
-            wa.sound.play(obj, "sounds/gravity_control/error.wav")
-          end
-        end
-      elseif obj.kind == "mine" then
-        obj:arm(obj.fuse < 0 and wa.random(1000, 5000) or obj.fuse)
-      elseif obj.kind == "crate" or obj.kind == "oil" then
-        obj:hit(100, 0, 0)
-      end
-    end
-  end
-end
-
--- PX's cloud: every second frame of the strike's life a puff of WA's large
--- cloud, tinted a dark bluish grey, is thrown out from the top of the beam
--- and slowed by the air; a core puff (100 frames, 1.2x to 0.6x) until the
--- strike is spent, a surrounding one (140 frames, 1x to nothing) until the
--- strike is gone. Each fades in from nothing. Also PX's sparks: while the
--- beam holds, a glow thrown from where it hit, falling. Both are advanced
--- here, once per game frame, from the strike's own generator, and only drawn
--- below; nothing else reads them.
-local function strike_rand(s)
-  s.seed = (s.seed * 1103515245 + 12345) % 0x80000000
-  return s.seed / 0x80000000
-end
-
-local function strike_puff(s, life, drag, s0, s1)
-  local xvel = strike_rand(s) * 2 - 1
-  local yvel = 1 - xvel * xvel
-  s.cloud[#s.cloud + 1] = { x = s.sx, y = s.sy, vx = 16 * xvel,
-    vy = (strike_rand(s) * 9 - 8) * yvel, drag = drag, age = 0, life = life, s0 = s0, s1 = s1 }
-end
-
-local function strike_particles(s)
-  if s.tail > 0 then
-    s.cloud_timer = s.cloud_timer - 1
-    if s.cloud_timer <= 0 then
-      if s.life > 0 then strike_puff(s, 100, 0.3, 1.2, 0.6) end
-      strike_puff(s, 140, 0.15, 1.0, 0.01)
-      s.cloud_timer = 2
-    end
-    if s.delay == 0 and s.life > 0 and s.hit then
-      local a = strike_rand(s) * 2 * math.pi
-      local v = (1 + strike_rand(s) * 2)
-      s.sparks[#s.sparks + 1] = { x = s.ex, y = s.ey, vx = wa.math.cos(a) * v, vy = wa.math.sin(a) * v, age = 0 }
-    end
-  end
-  for i = #s.cloud, 1, -1 do
-    local p = s.cloud[i]
-    p.age = p.age + 1
-    if p.age >= p.life then
-      table.remove(s.cloud, i)
-    else
-      p.x, p.y = p.x + p.vx, p.y + p.vy
-      p.vx, p.vy = p.vx * (1 - p.drag), p.vy * (1 - p.drag)
-    end
-  end
-  for i = #s.sparks, 1, -1 do
-    local p = s.sparks[i]
-    p.age = p.age + 1
-    if p.age >= 50 then
-      table.remove(s.sparks, i)
-    else
-      p.x, p.y, p.vy = p.x + p.vx, p.y + p.vy, p.vy + 1 / 8
-    end
-  end
-end
-
-shared.lightning_click = function(ev)
-  -- PX's direction: from the left unless the shot's x speed, which WA's
-  -- arrow keys set, is negative (lightningstrike.txt: SpX < 0 -> -DirX).
-  local dirx = 0.5 * ((ev.vx or 0) < 0 and -1 or 1)
-  local diry = math.sqrt(3) / 2
-  local sy = -270
-  local sx = (ev.x - (ev.y - sy) * dirx / diry)
-  local hit = electrical_trace(sx, sy, dirx, diry)
-  local ex, ey = hit and hit.x or sx + (300 * dirx),
-    hit and hit.y or sy + (300 * diry)
-  -- A bowling ball on the way stops the beam, as PX's does.
-  local bx, by = nil, nil
-  if shared.bowling_ball_on_beam then
-    local reach = math.sqrt(sq(ex - sx) + sq(ey - sy))
-    bx, by = shared.bowling_ball_on_beam(sx, sy, dirx, diry, reach)
-  end
-  if bx then ex, ey, hit = bx, by, { x = bx, y = by } end
-  -- With no stock hit, scripted sentries can still stop the full ray.
-  local reach = hit and math.sqrt(sq(ex - sx) + sq(ey - sy)) or 10000
-  local tx, ty, sentry = turret.on_beam(sx, sy, dirx, diry, reach)
-  if tx then ex, ey, hit = tx, ty, { x = tx, y = ty } end
-  local distance = math.sqrt(sq(ex - sx) + sq(ey - sy))
-  if hit and distance > 300 then
-    sx, sy = ex - (300 * dirx), ey - (300 * diry)
-  end
-  local s = { sx = sx, sy = sy, ex = ex, ey = ey, hit = hit, dirx = dirx, diry = diry,
-    delay = 150, life = 16, tail = 60, owner = ev.worm, alliance = ev.worm.alliance,
-    sentry = sentry, ticks = 0,
-    seed = (ex // 1 * 7919 + ey // 1) % 0x80000000, cloud_timer = 0, cloud = {}, sparks = {} }
-  strikes[#strikes + 1] = s
-  wa.sound.play(ev.worm, "sounds/lightning/thunder.wav")
-  effect_actor(ex, ey, ev.worm, function(a)
-    s.ticks = s.ticks + 1
-    strike_particles(s)
-    if s.delay > 0 then
-      s.delay = s.delay - 1
-      if s.delay == 0 then wa.sound.play(a, "sounds/lightning/hit.wav") end
-    elseif s.life > 0 then
-      s.life = s.life - 1
-      if s.life == 0 then strike_hit(s) end
-    elseif s.tail > 0 then
-      s.tail = s.tail - 1
-    elseif #s.cloud == 0 and #s.sparks == 0 then
-      for i, held in ipairs(strikes) do
-        if held == s then table.remove(strikes, i); break end
-      end
-      a:despawn()
-    end
-  end)
-end
-
-local function target_key(obj)
-  return obj.kind .. ":" .. obj.id
-end
-
-local function find_target(key)
-  local ball = key:match("^ball:(%d+)$")
-  if ball then
-    return shared.bowling_ball_target and shared.bowling_ball_target(tonumber(ball))
-  end
-  for _, obj in ipairs(electrical_targets(false)) do
-    if target_key(obj) == key then return obj end
-  end
-end
-
-local function closest_target(arc)
-  local best, distance = nil, sq(200)
-  local targets = wa.world.electrical_nearby
-    and wa.world.electrical_nearby(arc.x, arc.y, 200, false) or electrical_targets(false)
-  local function consider(obj)
-    local key = target_key(obj)
-    if not arc.ignore[key] and (obj.kind ~= "worm" or obj.hp > 0) then
-      local dx, dy = obj.x - arc.x, obj.y - arc.y
-      local d = dx * dx + dy * dy
-      if d < distance then best, distance = obj, d end
-    end
-  end
-  for _, obj in ipairs(targets) do consider(obj) end
-  -- PX's Tazer takes Bowling Balls too.
-  if shared.bowling_ball_targets then
-    for _, obj in ipairs(shared.bowling_ball_targets()) do consider(obj) end
-  end
-  return best, distance
-end
-
-local function release_taze(key)
-  local hold = tazed[key]
-  if not hold then return end
-  hold.count = hold.count - 1
-  if hold.count > 0 then return end
-  -- The worm the hold took, not a fresh lookup: an earlier zap may have
-  -- killed it, and the worm lists leave dead worms out. Left held, a dead
-  -- worm never comes to rest, so WA never runs its death and the turn,
-  -- frozen by the hold, never ends.
-  local worm = hold.worm
-  -- Knocked flying meanwhile, the engine has already let it go.
-  if worm.taken then worm:release(0, 0) end
-  worm.body_visible = true
-  tazed[key] = nil
-end
-
--- The worm that last fired the Electric Grenade, as PX keeps it at the
--- fire: the grenade's arc never zaps its thrower. The explosion's own
--- worm (ev.worm) need not be the thrower.
-local thrower
-
--- A tazed worm is the pack's (worm:take): the engine eats its moves and
--- jumps; it cannot start a shot either.
-wa.on.worm_message(function(worm, msg)
-  if msg ~= wa.msg.FIRE_WEAPON then return end
-  if tazed[target_key(worm)] then return "eat" end
-  if worm.weapon == "px.electric_grenade" then thrower = worm end
-end, { msgs = { wa.msg.FIRE_WEAPON } })
-
-local function zap_target(arc, pending)
-  local obj = find_target(pending.key)
-  release_taze(pending.key)
-  if not obj then return end
-  if obj.kind == "worm" then
-    obj:hurt(24)
-    obj.vx, obj.vy = pending.side * 1.2, -4
-  elseif obj.kind == "mine" then
-    obj:arm(400)
-  elseif obj.kind == "crate" or obj.kind == "oil" then
-    obj:hit(12, pending.side * 1.2, -4)
-  elseif obj.kind == "ball" then
-    shared.zap_bowling_ball(obj.id)
-  end
-end
-
--- The arc keeps every point it passed, from the grenade to where it ends,
--- links included: the whole chain stays drawn until the arc dies.
--- wa.draw.ribbon draws at most 256.
-local ARC_MAX_POINTS = 256
-local function add_point(arc)
-  arc.points[#arc.points + 1] = { arc.x, arc.y }
-  if #arc.points > ARC_MAX_POINTS then table.remove(arc.points, 1) end
-end
-
-local function progress_arc(arc)
-  arc.explosion = arc.explosion + 1
-  for i = #arc.pending, 1, -1 do
-    local p = arc.pending[i]
-    p.time = p.time - 1
-    if p.time <= 0 then
-      zap_target(arc, p)
-      table.remove(arc.pending, i)
-    end
-  end
-  if arc.pause > 0 then arc.pause = arc.pause - 1; return end
-  if arc.life <= 0 then
-    if #arc.points > 0 then table.remove(arc.points, 1) end
-    return
-  end
-  arc.life = arc.life - 1
-  local target, distance = closest_target(arc)
-  if target then
-    local dx, dy = target.x - arc.x, target.y - arc.y
-    local d = math.sqrt(distance)
-    if d <= 10 then
-      local key = target_key(target)
-      arc.ignore[key] = true
-      arc.pending[#arc.pending + 1] = { key = key, side = dx < 0 and -1 or 1, time = 24 }
-      if target.kind == "worm" then
-        if tazed[key] then
-          tazed[key].count = tazed[key].count + 1
-        else
-          tazed[key] = { x = target.x, y = target.y, count = 1, worm = target,
-            sheet = wa.random(1, 2) == 1 and "sprites/electric_grenade/tazed1" or "sprites/electric_grenade/tazed2" }
-        end
-        target.body_visible = false
-        -- Held where it stands, the turn stopped, until the zap.
-        target:take{ turn = "freeze" }
-      end
-      arc.x, arc.y = target.x, target.y
-      arc.life = 20
-      arc.pause = 14
-      add_point(arc)
-      return
-    end
-    local pull = math.min(1, math.sqrt(10 / d))
-    arc.dx = arc.dx + ((dx / d) - arc.dx) * pull
-    arc.dy = arc.dy + ((dy / d) - arc.dy) * pull
-  else
-    arc.dx = arc.dx + wa.random(-100, 100) / 100
-    arc.dy = arc.dy + wa.random(-100, 100) / 100
-  end
-  local norm = math.sqrt(arc.dx * arc.dx + arc.dy * arc.dy)
-  if norm < 0.01 then arc.dx, arc.dy = 0, -1 else arc.dx, arc.dy = arc.dx / norm, arc.dy / norm end
-  local nx, ny = arc.x + arc.dx * 20, arc.y + arc.dy * 20
-  local land = wa.land.trace(arc.x, arc.y, nx, ny)
-  if land then
-    if land.starts_solid then arc.life = 0; return end
-    -- Follow the tangent that moves closer to the target, as PX's arc does.
-    local tx, ty = land.tx or 1, land.ty or 0
-    if target then
-      local a = sq(target.x - (land.x + tx * 10)) + sq(target.y - (land.y + ty * 10))
-      local b = sq(target.x - (land.x - tx * 10)) + sq(target.y - (land.y - ty * 10))
-      if b < a then tx, ty = -tx, -ty end
-    end
-    arc.dx, arc.dy = tx, ty
-    arc.x, arc.y = land.x + (land.nx or 0) * 10 + tx * 10,
-      land.y + (land.ny or -1) * 10 + ty * 10
-  else
-    arc.x, arc.y = arc.x + arc.dx * 10, arc.y + arc.dy * 10
-  end
-  add_point(arc)
-end
-
-shared.electric_grenade_explode = function(ev)
-  local arc = { x = ev.x, y = ev.y, dx = 0, dy = -1, life = 16, pause = 0,
-    points = { { ev.x, ev.y } }, ignore = {}, pending = {}, explosion = 0,
-    burst_x = ev.x, burst_y = ev.y, sound_age = 0 }
-  if thrower then arc.ignore[target_key(thrower)] = true end
-  if ev.worm then arc.ignore[target_key(ev.worm)] = true end
-  arcs[#arcs + 1] = arc
-  -- An explosion without a worm would leave the driver owned by the exploding
-  -- grenade: the turn's worm owns it then, as every other effect's.
-  local driver = effect_actor(ev.x, ev.y, ev.worm or current_worm(), function(a)
-    arc.sound_age = arc.sound_age + 1
-    if arc.life > 0 and arc.sound_age % 46 == 0 then
-      wa.sound.play(a, "sounds/lightning/tazer_loop.wav")
-    end
-    progress_arc(arc)
-    if arc.life <= 0 and #arc.points == 0 and #arc.pending == 0 then
-      for i, held in ipairs(arcs) do
-        if held == arc then table.remove(arcs, i); break end
-      end
-      a:despawn()
-    end
-  end)
-  wa.sound.play(driver, "sounds/lightning/tazer_loop.wav")
-end
-
-if wa.on.draw and wa.draw.ribbon then
-  -- Resolve the pack namespace once for the many glow/beam submissions.
-  local beam_sprite = wa.sprites.key(BEAM)
-  local glow_sprite = wa.sprites.key(GLOW)
-  local cloud_sprite = wa.sprites.key(CLOUD)
-  local burst_sprite = wa.sprites.key(GRENADE_BURST)
-  local function colour(a, r, g, b)
-    return (math.floor(a) << 24) | (r << 16) | (g << 8) | b
-  end
-  -- wa.draw.quad and wa.draw.ribbon copy their table before returning, so
-  -- one spec is refilled for every quad and every ribbon. A frame with
-  -- dozens of arcs draws about a thousand glows: new tables for each made
-  -- enough garbage to run Lua's GC inside the draw on most frames.
-  local QUAD = { points = { {0, 0}, {0, 0}, {0, 0}, {0, 0} } }
-  -- An axis-aligned square of half size hw by hh around x, y.
-  local function square(sprite, frame, blend, color, depth, x, y, hw, hh)
-    QUAD.sprite, QUAD.frame, QUAD.blend, QUAD.color, QUAD.depth = sprite, frame, blend, color, depth
-    local p = QUAD.points
-    p[1][1], p[1][2] = x - hw, y - hh
-    p[2][1], p[2][2] = x + hw, y - hh
-    p[3][1], p[3][2] = x + hw, y + hh
-    p[4][1], p[4][2] = x - hw, y + hh
-    wa.draw.quad(QUAD)
-  end
-  local function glow(x, y, size, color)
-    local h = size / 2
-    square(glow_sprite, 0, "add", color, ELECTRIC_DEPTH, x, y, h, h)
-  end
-  -- One ribbon's points, refilled: point(i, ...) sets the i-th, ribbon(n)
-  -- draws the first n.
-  local RIBBON = { sprite = beam_sprite, blend = "add", depth = ELECTRIC_DEPTH, points = {} }
-  -- Keep shortened ribbons' point tables: the next arc may be longer again.
-  local POINTS = {}
-  local function point(i, x, y, width, u, color)
-    local p = POINTS[i]
-    if not p then p = {}; POINTS[i] = p end
-    RIBBON.points[i] = p
-    p.x, p.y, p.width, p.u, p.color = x, y, width, u, color
-  end
-  local function ribbon(n)
-    local pts = RIBBON.points
-    for i = #pts, n + 1, -1 do pts[i] = nil end
-    wa.draw.ribbon(RIBBON)
-  end
-  -- PX's lightningstrike RenderLightning. Its shape is fractal noise, made
-  -- afresh each game frame while the beam holds: each point is the middle of
-  -- its two neighbours plus a random nudge, halving the span each pass. A
-  -- look, so from wa.draw.random, never WA's generator.
-  local LR, LG, LB = 120, 140, 255
-  local function lerp(t, a, b) return a + (b - a) * t end
-  local function noise_span(noise, off, divs, scale, first, last)
-    for i = 0, divs - 1 do noise[off + i] = 0 end
-    noise[off], noise[off + divs - 1] = first, last
-    local k = divs
-    local l = k >> 1
-    while l > 0 do
-      for i = l, divs - 1 - l, k do
-        noise[off + i] = (noise[off + i - l] + noise[off + i + l]) * 0.5 + (wa.draw.random() * 2 - 1) * scale
-      end
-      k = l
-      l = k >> 1
-    end
-  end
-  -- The main beam's 9 points, and 6 branches of 9 at random points on it.
-  local function new_shape(s)
-    s.noise, s.attach = s.noise or {}, s.attach or {}
-    for i = 1, 8 do s.attach[i] = nil end
-    noise_span(s.noise, 0, 9, 1.0, 0, 0)
-    for _ = 1, 6 do s.attach[1 + math.floor(wa.draw.random() * 8)] = true end
-    for i = 0, 5 do
-      local off = 2 + wa.draw.random() * 4
-      if wa.draw.random() < 0.5 then off = -off end
-      noise_span(s.noise, 9 + 9 * i, 9, 0.5, 0, off)
-    end
-    s.ground = 0.5 + wa.draw.random() * 0.3
-    s.shape_tick = s.ticks
-  end
-  -- PX's RenderBeam: one textured strip through the noise, \`width\` (a half
-  -- width, as PX's) tapering to \`endwidth\`, and a glow at every point fading
-  -- towards the end.
-  local function beam(noise, off, divs, width, endwidth, scale, x1, y1, x2, y2, glowalpha)
-    if divs < 2 then return end
-    local dx, dy = (x2 - x1), (y2 - y1)
-    local dd = math.sqrt(dx * dx + dy * dy)
-    if dd <= 0 then return end
-    dx, dy = dx / dd, dy / dd
-    local d = divs - 1
-    for i = 0, divs - 1 do
-      local f = i / d
-      local n = noise[off + i] or 0
-      local x = lerp(f, x1, x2) + scale * dy * n
-      local y = lerp(f, y1, y2) - scale * dx * n
-      point(i + 1, x, y, 2 * lerp(f, width, endwidth), f, colour(255, LR, LG, LB))
-      local a = 255 * glowalpha * (1 - f)
-      if a >= 1 then glow(x, y, 64, colour(a, LR, LG, LB)) end
-    end
-    ribbon(divs)
-  end
-  local function draw_strike(s)
-    -- The cloud, dark and alpha-blended over the sky.
-    for _, p in ipairs(s.cloud) do
-      local t = p.age / p.life
-      local size = lerp(t, p.s0, p.s1)
-      square(cloud_sprite, 0, "alpha", colour(255 * t, 45, 40, 60), CLOUD_DEPTH, p.x, p.y, 64 * size, 40 * size)
-    end
-    for _, p in ipairs(s.sparks) do
-      local t = p.age / 50
-      glow(p.x, p.y, 13 * (1 - t) + 1, colour(255, LR, LG, LB))
-    end
-    if s.life <= 0 or s.delay >= 8 then return end
-    if not s.noise or (s.delay == 0 and s.shape_tick ~= s.ticks) then new_shape(s) end
-    -- Before it lands the beam grows down from the cloud over 8 frames.
-    local divs, ex, ey = 9, s.ex, s.ey
-    if s.delay > 0 then
-      local fr = (8 - s.delay) / 8
-      divs = math.floor(9 * fr)
-      ex, ey = lerp(fr, s.sx, s.ex), lerp(fr, s.sy, s.ey)
-    end
-    beam(s.noise, 0, divs, 35, 3, 15, s.sx, s.sy, ex, ey, 1.0)
-    local sub, d = 0, divs - 1
-    for i = 0, divs - 1 do
-      if s.attach[i] and d > 0 then
-        local f = i / d
-        local x = lerp(f, s.sx, ex) + 10 * s.diry * s.noise[i]
-        local y = lerp(f, s.sy, ey) - 10 * s.dirx * s.noise[i]
-        beam(s.noise, 9 + 9 * sub, 9, lerp(f, 10, 1), 0.1, 15 * (1 - f), x, y,
-          x + s.dirx * 100 * (1 - f), y + s.diry * 100 * (1 - f), 0.5 * (1 - f))
-        sub = sub + 1
-      end
-    end
-    glow(s.sx + 10 * s.dirx, s.sy + 10 * s.diry, 230, colour(255, LR, LG, LB))
-    if s.delay == 0 and s.hit then glow(s.ex, s.ey, 128 * s.ground, colour(255, LR, LG, LB)) end
-  end
-  wa.on.draw(function()
-    for _, s in ipairs(strikes) do
-      draw_strike(s)
-    end
-    for _, arc in ipairs(arcs) do
-      if arc.explosion < 10 then
-        local h = 75
-        square(burst_sprite, arc.explosion, "add", 0x551E14EB, ELECTRIC_DEPTH, arc.burst_x, arc.burst_y, h, h)
-      end
-      if #arc.points >= 2 then
-        -- PX's CTazerShot: one strip through the arc's points, thickest in
-        -- the middle (9, a half width, as PX's), wobbling up to 10 px across
-        -- its path by fractal noise made afresh each game frame, a glow at
-        -- every point and a big one at the tip; all fading as the arc dies.
-        if arc.shape_tick ~= arc.sound_age then
-          -- One noise value per point; PX's fractal noise needs a power of
-          -- two plus one values.
-          local divs = 33
-          while divs < #arc.points do divs = 2 * divs - 1 end
-          arc.noise = arc.noise or {}
-          noise_span(arc.noise, 0, divs, 1.0, 0, 0)
-          arc.shape_tick = arc.sound_age
-        end
-        local num = #arc.points - 1
-        local fade = math.min(1, arc.life / 6)
-        for i = 0, num do
-          local t = i / num
-          local x, y = arc.points[i + 1][1], arc.points[i + 1][2]
-          if i > 0 and i < num then
-            local px, py = arc.points[i][1], arc.points[i][2]
-            local nx, ny = (y - py), (px - x)
-            local d = math.sqrt(nx * nx + ny * ny)
-            if d > 0 then
-              local n = 10 * (arc.noise[i - 1] or 0) / d
-              x, y = x + n * nx, y + n * ny
-            end
-          end
-          local f = math.min(1, 4 * t * (1 - t) + 0.1)
-          local f2 = f * fade
-          local c = colour(255, math.floor(80 * f2), math.floor(100 * f2), math.floor(255 * f2))
-          point(i + 1, x, y, 2 * 9 * f, t, c)
-          glow(x, y, i == num - 1 and 115 or 38, c)
-        end
-        ribbon(num + 1)
-      end
-    end
-    -- PX's CTazerDamage glow on a linked Bowling Ball until it is zapped.
-    for _, arc in ipairs(arcs) do
-      for _, p in ipairs(arc.pending) do
-        if p.key:sub(1, 5) == "ball:" then
-          local ball = find_target(p.key)
-          if ball then glow(ball.x, ball.y, 128 * (0.4 + 0.3 * wa.draw.random()), colour(255, 80, 100, 255)) end
-        end
-      end
-    end
-    for key, hold in pairs(tazed) do
-      local worm = find_target(key)
-      if worm then
-        local x, y = worm.x, worm.y
-        local h = 30
-        square(hold.sheet, math.floor(wa.draw.random() * 4), "alpha", 0xFFFFFFFF, ELECTRIC_DEPTH, x, y, h, h)
-        -- PX's tazed worm: a glow 0.4 to 0.7 of the sheet, flickering.
-        glow(x, y, 128 * (0.4 + 0.3 * wa.draw.random()), colour(255, 80, 100, 255))
-      end
-    end
-  end)
-end
-end
-`
-      },
-      {
-        path: 'weapons/electromagnet.lua',
-        name: 'weapons/electromagnet.lua',
-        language: 'lua',
-        content: `-- Highlander's Electromagnet, on the Baseball Bat slot (PX weapon_magnet:
--- magnet.txt's CMagnet). Placed, it stays: for four of its owner's turns
--- its field pushes (repel) or pulls (attract) WA's own mines and missiles
--- and the Bowling Balls, and it triggers the mines it catches. The objects
--- it moves stay WA's, so their own flight, collisions and fuses run. It is
--- an object in the oil-drum layer: blasts, guns and fires hit it, and at
--- 0 health it explodes.
--- Squares by multiplication: \`^\` calls the C runtime's pow, whose last bit
--- may differ between machines.
-local function sq(v) return v * v end
-
-local shared = require("lib/shared")
-local RANGE2 = 170 * 170           -- MaxRange
-local SYNC2 = RANGE2 // 4          -- MaxSyncRange: MaxRange * 0.25
-local FORCE, COEFFICIENT = 12, 14000
-local ATTRACT_OFFSET, REPEL_OFFSET = 10 * 10, 5 * 5
-local TURNS, HEALTH, LOW_HEALTH = 4, 80, 30
-local BOOM = { id = 100, damage = 50, below = false } -- ExplosionBlast, ExplosionDamage
-local BALL_SHARE = 0.25            -- a Bowling Ball gets a quarter of the force
--- Not PX's: PX explodes the missiles still in a field 300 frames after the
--- turn ended, so none circles a magnet for ever. With no way to burst a
--- stock missile from Lua, the field lets go of them instead, and each ends
--- on its own fuse or impact. It lets go of the mines then too: a dud mine
--- (the scheme's) never goes off, and held against a magnet it never comes
--- to rest either, so WA would wait for it and the turn would never end.
-local RELEASE_AFTER = 300
--- The grenades that go off only once they stop slow down in a field (PX
--- damps its Hellish Hand-Grenade there by 0.985 a frame).
-local DAMPED = { ["px.hellish_hand_grenade"] = true }
-local DAMPING = 0.985
--- Its body: PX's magnet is a mine (CMine) and moves as one. Here it is a
--- circle traced against the land (the art is 26 pixels across), bouncing
--- a little and rubbing along what it lands on until it rests.
-local RADIUS = 8
-local BOUNCE, FRICTION = 0.3, 0.3
-local REST = (1 / 8)                -- slower on contact than 1/8 pixel a frame: at rest
-local SINK = (1 / 2)                -- in the water it sinks half a pixel a frame
-local SUNK = 200                -- and is gone this far below the surface
-local BODY = "sprites/electromagnet/"
-local magnets = {}
-local polarity = {} -- worm id -> +1 repel, -1 attract (PX's MagnetPolarity)
-local plus_held = {} -- worm id -> the synchronized + key last frame
-
-local function trunc(x) return x >= 0 and math.floor(x) or -math.floor(-x) end
-
--- PX's CalculateMagneticForce at (x, y), pixels: the push in pixels/frame,
--- or nil out of range or discharged. Distances in pixels, as PX's.
-local function force(m, x, y, scale)
-  if m.turns <= 0 or not m.alive then return nil end
-  local dx, dy = (x - m.x), (y - m.y)
-  local r2 = dx * dx + dy * dy + (m.pol < 0 and ATTRACT_OFFSET or REPEL_OFFSET)
-  if r2 > RANGE2 then return nil end
-  local strength = math.min(FORCE, COEFFICIENT / r2) * (scale or 1) * m.pol
-  local r = math.sqrt(r2)
-  return (dx / r * strength), (dy / r * strength)
-end
-
--- PX's TriggerMine: a random-fuse mine gets 1 to 5 seconds; an attracting
--- magnet sets it close to the longest fuse among the mines it already holds,
--- so they go off together. Then the mine is armed.
-local function trigger_mine(m, mine, mines)
-  local fuse = mine.fuse
-  if fuse < 0 then
-    fuse = wa.random(1000, 4999)
-    if m.pol < 0 then
-      local longest = 1000
-      for _, other in ipairs(mines) do
-        if other.id ~= mine.id then
-          local dx, dy = (other.x - m.x), (other.y - m.y)
-          if dx * dx + dy * dy < SYNC2 then longest = math.max(longest, other.fuse) end
-        end
-      end
-      if longest > 1000 then fuse = longest + wa.random(-200, 199) end
-    end
-  end
-  mine:arm(fuse)
-end
-
--- PX's DoMagneticField: \`scale\` 1 pushes, 0 only triggers mines and wakes
--- balls (a discharging or exploding magnet). A moving magnet wakes what it
--- reaches, as PX's.
-local function field(m, scale, wake)
-  wake = wake or m.vx ~= 0 or m.vy ~= 0
-  if not (m.ended_at and m.age - m.ended_at > RELEASE_AFTER) then
-    local mines = wa.mines.all()
-    for _, mine in ipairs(mines) do
-      local dx, dy = force(m, mine.x, mine.y, scale)
-      if dx then
-        trigger_mine(m, mine, mines)
-        if dx ~= 0 or dy ~= 0 then mine:impulse(dx, dy) end
-      end
-    end
-    for _, missile in ipairs(wa.missiles.all()) do
-      local dx, dy = force(m, missile.x, missile.y, scale)
-      if dx and (dx ~= 0 or dy ~= 0) then missile:impulse(dx, dy) end
-    end
-  end
-  if shared.magnet_bowling_balls then
-    shared.magnet_bowling_balls(function(x, y) return force(m, x, y, scale * BALL_SHARE) end, wake)
-  end
-end
-
-local function sprite(m)
-  local name = m.pol < 0 and "magnet" or "magnet2"
-  if m.health <= LOW_HEALTH then name = name .. "_damaged" end
-  return BODY .. name .. ".png"
-end
-
-local function remove(m)
-  m.alive = false
-  for i, other in ipairs(magnets) do
-    if other == m then table.remove(magnets, i); break end
-  end
-end
-
-local function discharge(m)
-  if m.turns <= 0 then return end
-  field(m, 0, true)
-  m.turns = 0
-end
-
--- Where a body inside the land may go, nearest first: in rings a pixel
--- apart, out to UNSTICK_REACH, below and to the sides before above, as
--- gravity would take it. Placed under a ceiling, the magnet's circle
--- overlaps the rock above the worm: it belongs in the tunnel below, not on
--- top of the rock.
-local UNSTICK_REACH = 24
-local UNSTICK = {}
-for d = 1, UNSTICK_REACH do
-  for _, v in ipairs({ { 0, 1 }, { -1, 1 }, { 1, 1 }, { -1, 0 }, { 1, 0 }, { -1, -1 }, { 1, -1 }, { 0, -1 } }) do
-    UNSTICK[#UNSTICK + 1] = { v[1] * d, v[2] * d }
-  end
-end
-
--- The nearest place out of the land, or nil: then it stays put, as PX's
--- magnet (a mine) does, rather than tunnel through the land.
-local function unstick(m)
-  for _, o in ipairs(UNSTICK) do
-    local x, y = m.x + o[1], m.y + o[2]
-    if not wa.world.collides({ x = x, y = y, radius = RADIUS, with = { "terrain" } }) then
-      return x, y
+-- WA keeps ammo in separate physical rows (\`worm.ammo_group\`), which need not
+-- match a team's visible coalition colour (\`worm.alliance\`).
+-- Going through one worm of each team reaches every row without relying on
+-- that mapping -- a row two allied teams share is simply written twice.
+local function clear_pooled()
+  local seen = {}
+  for _, w in ipairs(worms()) do
+    if not seen[w.team] then
+      seen[w.team] = true
+      set_all(w, POOLED, 0)
     end
   end
 end
 
--- One frame of the body: gravity, then the move traced against the land.
-local function move(m)
-  local vx, vy = m.vx, m.vy + wa.world.gravity()
-  local function trace()
-    return wa.world.trace({ x0 = m.x, y0 = m.y, x1 = m.x + vx, y1 = m.y + vy, radius = RADIUS })
-  end
-  local res = trace()
-  if res and res.starts_solid then
-    -- Inside the land (placed under a ceiling, or the land moved): out
-    -- where the path comes free, else at the nearest free place.
-    if res.left_x then
-      m.x, m.y = res.left_x, res.left_y
-    else
-      local x, y = unstick(m)
-      m.vx, m.vy = 0, 0
-      if x then m.x, m.y = x, y end
-      return
-    end
-    res = trace()
-  end
-  if res and res.hit then
-    local spn = vx * res.nx + vy * res.ny
-    local spt = vx * res.tx + vy * res.ty
-    vx = vx - spn * res.nx * (1 + BOUNCE) - spt * res.tx * FRICTION
-    vy = vy - spn * res.ny * (1 + BOUNCE) - spt * res.ty * FRICTION
-    if math.abs(vx) < REST and math.abs(vy) < REST then vx, vy = 0, 0 end
-    m.x, m.y = res.x, res.y
-  else
-    m.x, m.y = m.x + vx, m.y + vy
-  end
-  m.vx, m.vy = vx, vy
-end
-
-local function frame(m, a)
-  m.age = m.age + 1
-  if m.y >= wa.world.water() then
-    -- In the water: it stops working and sinks out of sight.
-    discharge(m)
-    m.vx, m.vy, m.y = 0, 0, m.y + SINK
-    if m.y >= wa.world.water() + SUNK then
-      remove(m)
-      a:despawn()
-      return
-    end
-  else
-    move(m)
-  end
-  a.x, a.y, a.vx, a.vy = m.x, m.y, 0, 0
-  if m.health <= 0 then
-    field(m, 0, true)
-    remove(m)
-    a.y = m.y - 20
-    a:explode(BOOM)
-    a:despawn()
-    return
-  end
-  if m.turns > 0 then
-    field(m, 1)
-    m.spark = (m.spark + 0.02) % 1.4
-  end
-  -- PX's UpdateRotation: spun by its speed, at most half a radian a frame.
-  local speed = math.sqrt(sq(m.vx) + sq(m.vy))
-  m.angle = m.angle + (m.vx < 0 and -1 or 1) * math.min(0.5, 0.04 * speed)
-  local s = sprite(m)
-  if s ~= m.sprite then a:look(s); m.sprite = s end
-  a:gfx({ angle = math.deg(m.angle + math.pi) % 360, depth = wa.depth.OBJECTS })
-end
-
--- PX's TakeExplosionDamage (less the further off: dmg * (1 - (d * d) / (4 (dmg * dmg))))
--- and TakeDamage (type 10, the Battle Axe's, takes that share of its health).
-local function hit(m, a, event)
-  local damage = math.max(0, event.damage or 0)
-  if event.kind == "blast" and damage > 0 then
-    local dx, dy = (a.x - (event.x or a.x)), (a.y - (event.y or a.y))
-    damage = trunc((1 - (dx * dx + dy * dy) / (damage * damage * 4)) * damage)
-  elseif event.hit_kind == 10 then
-    damage = trunc(m.health * damage / 100)
-  end
-  if damage > 0 then m.health = m.health - damage end
-  m.vx = m.vx + (event.vx or 0)
-  m.vy = m.vy + (event.vy or 0)
+local function start_turn(worm)
+  clear_pooled()
+  active_id = worm.id
+  set_all(worm, hands[worm.id] or {}, 1)
 end
-
--- CWorm::FireFinal's Electromagnet: dropped where it is fired (at the
--- worm), nudged the way the worm faces (0.3) and up (0.15), in the worm's
--- mode. A script firing it (wa.weapons.fire, the stress test) may choose
--- the mode with \`polarity\` (1 repel, -1 attract).
-shared.fires.electromagnet = function(fire)
-  local worm = fire.worm
-  local pol = (fire.polarity == 1 or fire.polarity == -1) and fire.polarity or polarity[worm.id] or 1
-  local m = { pol = pol, turns = TURNS, health = HEALTH, age = 0, angle = 0, spark = 0, alive = true,
-    x = fire.x or worm.x, y = fire.y or worm.y,
-    vx = worm.vx + (worm.facing < 0 and -1 or 1) * 0.3,
-    vy = worm.vy - 0.15 }
-  local a = wa.actors.spawn({
-    sprite = BODY .. (pol < 0 and "magnet.png" or "magnet2.png"),
-    x = m.x, y = m.y, gravity = false, collide = false, owner = worm,
-    as_object = true, on = {
-      frame = function(actor) frame(m, actor) end,
-      hit = function(actor, event) hit(m, actor, event) end,
-    },
-  })
-  m.a, m.team = a, worm.team
-  m.sprite = sprite(m)
-  magnets[#magnets + 1] = m
-end
-
--- PX's OnTurnBegin: each start of its owner's team's turn uses one up; the
--- last wakes and triggers what is in range.
-wa.on.turn_start(function(event)
-  local team = event.worm and event.worm.team
-  for _, m in ipairs(magnets) do
-    m.ended_at = nil
-    if m.alive and m.team == team and m.turns > 0 then
-      if m.turns == 1 then discharge(m) else m.turns = m.turns - 1 end
-    end
-  end
-end)
-
-wa.on.turn_end(function()
-  for _, m in ipairs(magnets) do m.ended_at = m.age end
-end)
-
--- The Hellish Hand-Grenade slows down in a live field.
-wa.on.missile_frame(function(missile)
-  if missile.phase ~= "pre" or not DAMPED[missile.weapon] then return end
-  for _, m in ipairs(magnets) do
-    if force(m, missile.x, missile.y) then
-      missile.vx, missile.vy = missile.vx * DAMPING, missile.vy * DAMPING
-      return
-    end
-  end
-end)
 
--- PX switches with WA's bounce keys; here the synchronized + key toggles
--- the turn's worm between repel and attract, kept per worm. The engine
--- flips the worm's red/blue magnet by the same rule (worm_sprites_toggle in
--- the claim), so the two stay in step.
-wa.on.worm_message(function(worm)
+-- PX checks every worm on every frame for "0 hp and not yet marked dead".
+local function check_death(worm)
   local id = worm.id
-  local pressed = worm.turn and worm.weapon == "px.electromagnet" and wa.world.keys().plus_key or false
-  if pressed and not plus_held[id] then polarity[id] = -(polarity[id] or 1) end
-  plus_held[id] = pressed
-end, { msgs = { wa.msg.FRAME_FINISH } })
-
--- The panel's icon shows the turn worm's mode, as the magnet it drops will
--- be: red attracting (icon 0, PX's), blue repelling (icon 1). Only the
--- panel changes, so this runs in the HUD hook, every frame; showing the
--- icon already shown does nothing.
-local icon_shown = true
-local function show_mode_icon(worm)
-  if not (icon_shown and wa.weapons.panel_icon and shared.owns("baseball_bat")) then return end
-  local attract = worm and (polarity[worm.id] or 1) < 0
-  local ok, err = pcall(wa.weapons.panel_icon, "px.electromagnet", attract and 0 or 1)
-  if not ok then
-    icon_shown = false -- no icons of ours on the slot: say so once, then leave it
-    wa.log("electromagnet: mode icon: " .. tostring(err))
-  end
-end
-
-if wa.on.hud then
-  wa.on.hud(function()
-    local worm = shared.current_worm()
-    show_mode_icon(worm)
-    if worm and worm.weapon == "px.electromagnet" then
-      wa.hud.line((polarity[worm.id] or 1) < 0 and "Electromagnet: ATTRACT mode (+ to repel)"
-        or "Electromagnet: REPEL mode (+ to attract)")
-    end
-  end)
-end
-
-if wa.on.draw and wa.draw.quad then
-  -- Refill one spec; the engine copies it before the next submission.
-  local QUAD = { blend = "add", points = { {0, 0}, {0, 0}, {0, 0}, {0, 0} } }
-  local RING_IN, RING_OUT, SPARKS = BODY .. "ring_in.png", BODY .. "ring_out.png", BODY .. "magnetsparks"
-  local function square(sprite, frame, color, depth, x, y, h, angle)
-    QUAD.sprite, QUAD.frame, QUAD.color, QUAD.depth = sprite, frame, color, depth
-    local c, s = wa.math.cos(angle) * h, wa.math.sin(angle) * h
-    local p = QUAD.points
-    p[1][1], p[1][2] = x - c + s, y - s - c
-    p[2][1], p[2][2] = x + c + s, y + s - c
-    p[3][1], p[3][2] = x + c - s, y + s + c
-    p[4][1], p[4][2] = x - c - s, y - s + c
-    wa.draw.quad(QUAD)
-  end
-  wa.on.draw(function()
-    for _, m in ipairs(magnets) do
-      if m.alive and m.turns > 0 then
-        local x, y = m.x, m.y
-        local ring = m.pol < 0 and RING_IN or RING_OUT
-        -- PX starts a ring every 65 frames, 5 to 120 pixels, 0.8 a frame:
-        -- outwards repelling, inwards attracting, fading as it grows.
-        for phase = 0, 2 do
-          local t = (m.age - phase * 65) % 195
-          local radius = m.pol < 0 and 120 - 0.8 * t or 5 + 0.8 * t
-          if radius >= 5 and radius <= 120 then
-            local alpha = math.max(0, math.min(255, math.floor((120 - radius) * 255 / 120)))
-            square(ring, nil, (alpha << 24) | 0xFFFFFF, wa.depth.OBJECTS + 1, x, y, radius, 0)
-          end
-        end
-        if m.spark <= 1 then
-          square(SPARKS, math.min(9, math.floor(m.spark * 10)), nil, wa.depth.OBJECTS - 1, x, y, 13, m.angle)
-        end
-      end
-    end
-  end)
-end
-
-shared.magnet_force = force -- for the Highlander mock
-`
-      },
-      {
-        path: 'weapons/ferret.lua',
-        name: 'weapons/ferret.lua',
-        language: 'lua',
-        content: `-- Highlander: Ferret (PX weapon_ferrets: ferret_s.txt, rafa\`\`2's CFerret).
-local shared = require("lib/shared")
-local fires = shared.fires
-
--- Thrown, a Ferret falls until the land is 3 pixels under it, then follows
--- the terrain's outline and never falls off it: PX's square contour tracing,
--- 3-pixel steps, up to 12 traced a frame and 2 walked. It explodes on a worm
--- (the turn's worm is spared for its first 60 frames), on an oil drum, at the
--- water, or when its trace finds no land 4 steps running. It flicks mines
--- and Bowling Balls up (PX's ball is a mine) and walks on. At most 10 walk:
--- a new one makes the oldest vanish. PX's IsMoving says no, so WA doesn't
--- wait for a Ferret, and Ferrets walk on through later turns.
-local STEP = 3           -- frt_maxdist
-local MAX_FAILS = 4         -- frt_maxfails
-local MAX_OPS = 12          -- frt_maxoper
-local GRACE = 60            -- frt_framesdam
-local TURN_EVERY = 6        -- frt_pixrotat: steps between turns of the sprite
-local MAX_ALIVE = 10        -- frt_maxfrtalw
--- Not PX's: a Ferret goes off by itself 15 seconds after it was placed,
--- if nothing set it off before (750 of WA's 50 frames a second).
-local FUSE = 15 * 50
--- It touches the land with WA's missile shape, the Skunk's (shape =
--- "missile", a:fits). PX draws its 64-pixel frame centred with the feet 16
--- below the centre: the body is drawn this far from the traced point, away
--- from the land, so the feet meet it.
-local LIFT = 13
--- What it runs into is its body: 8 pixels about the body's centre.
-local BODY = 8
-local SCALE = 0.95          -- frt_sprscale
-local DEPTH = wa.depth.OBJECTS       -- in front of the terrain, as the Bowling Ball
-local WALK = "sprites/ferret/walk"
-local FRAMES = 10
-local SOUND = "sounds/ferret/walk.wav"
--- The scheme record's explosion (ExplodeAt): damage 100, blast 50.
-local BOOM = { damage = 100, id = 50 }
--- A worm it runs into is thrown first (SpX = TurnSide, SpY = -5), a mine or a
--- ball flicked (SpX = TurnSide, SpY = -7).
-local WORM_UP, MINE_UP = -5, -7
-
-local UP, RIGHT, DOWN, LEFT = 1, 2, 4, 8
--- frt_moveto: from where it looks, a turn left or right is a step and a new
--- direction to look in.
-local MOVES = {
-  [DOWN] = { [LEFT] = { 1, 0, RIGHT }, [RIGHT] = { -1, 0, LEFT } },
-  [UP] = { [LEFT] = { -1, 0, LEFT }, [RIGHT] = { 1, 0, RIGHT } },
-  [LEFT] = { [LEFT] = { 0, 1, DOWN }, [RIGHT] = { 0, -1, UP } },
-  [RIGHT] = { [LEFT] = { 0, -1, UP }, [RIGHT] = { 0, 1, DOWN } },
-}
-
-local alive = {} -- the Ferrets walking, oldest first
--- WA places a Ferret at its worm, where its circle overlaps the ground:
--- traced from inside the land, it would turn on the spot for ever. It rises
--- until its circle is clear of the land, at most this far, and walks from
--- the surface.
-local MAX_RISE = 64
-
-local function land_at(f, x, y)
-  return not f.a:fits(x, y)
-end
-
-local function rise_clear(f)
-  for _ = 1, MAX_RISE do
-    if not land_at(f, f.x, f.y) then return end
-    f.y = f.y - 1
-  end
-end
-
-local function move(f, dir)
-  local m = MOVES[f.looking][dir]
-  f.ax, f.ay, f.looking = f.ax + m[1] * STEP, f.ay + m[2] * STEP, m[3]
-end
-
--- frt_square_tracing: from the last outline point, turn towards the land
--- while there is land, away from it while there is none, adding each new
--- land point to the outline to walk.
-local function trace(f)
-  f.ax, f.ay = f.px, f.py
-  f.looking = f.looking_bk
-  while true do
-    if f.ops <= 0 then
-      f.tracing, f.walking, f.fails, f.ops = false, true, 0, MAX_OPS
-      return
-    end
-    if f.fails >= MAX_FAILS then
-      f.tracing, f.walking, f.boom, f.fails, f.why = false, false, true, 0, "a dead end"
-      return
-    end
-    if land_at(f, f.ax, f.ay) then
-      f.fails = 0
-      if f.ax ~= f.px or f.ay ~= f.py then
-        f.looking_bk = f.looking
-        f.px, f.py = f.ax, f.ay
-        f.outline[#f.outline + 1] = { f.ax, f.ay }
-      end
-      move(f, f.side < 0 and RIGHT or LEFT)
-    else
-      f.fails = f.fails + 1
-      move(f, f.side < 0 and LEFT or RIGHT)
-    end
-    f.ops = f.ops - 1
-  end
-end
-
--- Its body's centre, LIFT from the traced point along the land's normal.
-local function body(f, x, y)
-  return x + (f.ux * LIFT), y + (f.uy * LIFT)
-end
-
--- frt_checkinteract, at a point of its way: what its body touches.
-local function interact(f, x, y)
-  x, y = body(f, x, y)
-  local _, obj = wa.world.collides({ x = x, y = y, radius = BODY, with = { "worms", "mines", "oil" } })
-  if obj then
-    if obj.kind == "worm" then
-      local current = shared.current_worm()
-      if f.grace > 0 and current and current.id == obj.id then return end
-      obj.vx, obj.vy = f.side, WORM_UP
-      f.boom, f.walking, f.tracing, f.why = true, false, false, "a worm"
-    elseif obj.kind == "oil" then
-      f.boom, f.walking, f.tracing, f.why = true, false, false, "an oil drum"
-    elseif obj.kind == "mine" then
-      obj.vx, obj.vy = f.side, MINE_UP
-    end
-  end
-  if shared.kick_bowling_balls then
-    shared.kick_bowling_balls(x, y, BODY, f.side, MINE_UP)
-  end
-end
-
--- frt_calc_rotation: every few steps, the Ferret turns to the way walked
--- since its last turn, its up the land's normal (from the steps, one square
--- root: the same on every machine; the angle is only drawn).
-local function turn(f, x, y)
-  f.steps = f.steps + 1
-  if f.steps % TURN_EVERY ~= 0 then return end
-  local dx, dy = (x - f.rx), (y - f.ry)
-  local len = math.sqrt(dx * dx + dy * dy)
-  if len > 0 then
-    f.ux, f.uy = f.side * dy / len, -f.side * dx / len
-  end
-  f.angle = wa.math.atan(dx, -dy) - math.pi / 2 * f.side
-  f.rx, f.ry = x, y
-end
-
--- frt_perform_trace: one step along the outline; at its end, trace on.
-local function walk(f)
-  if f.boom then return false end
-  local p = f.outline[f.next]
-  if not p then
-    f.walking, f.tracing = false, true
-    f.outline, f.next = {}, 1
-    f.x, f.y = f.lx, f.ly
-    return false
-  end
-  f.next = f.next + 1
-  f.x, f.y = p[1], p[2]
-  interact(f, f.x, f.y)
-  turn(f, f.x, f.y)
-  f.lx, f.ly = f.x, f.y
-  return true
-end
-
--- Before it lands, it falls (or flies as thrown), a pixel at a time, and
--- stops where its shape would touch the land.
-local function fly(f)
-  f.vy = f.vy + wa.world.gravity()
-  local n = math.min(64, math.max(math.abs(f.vx), math.abs(f.vy)) // 1 + 1)
-  local sx, sy = f.vx / n, f.vy / n
-  for _ = 1, n do
-    if land_at(f, f.x + sx, f.y + sy) then
-      f.vx, f.vy = 0, 0
-      return
-    end
-    f.x, f.y = f.x + sx, f.y + sy
-  end
-end
-
--- frt_firstcollision: land 3 pixels under it plants it, and its outline
--- starts there.
-local function try_plant(f, a)
-  local x, y = f.x, f.y + STEP
-  if land_at(f, x, y) then
-    f.planted, f.tracing = true, true
-    f.px, f.py, f.ax, f.ay, f.lx, f.ly, f.rx, f.ry = x, y, x, y, x, y, x, y
-    wa.sound.play(a, SOUND)
-  end
-  interact(f, f.x, f.y)
-end
-
-local function forget(f)
-  for i, other in ipairs(alive) do
-    if other == f then table.remove(alive, i); return end
-  end
-end
-
-local function explode(f, a)
-  wa.log(string.format("Ferret explodes on %s at (%d, %d), %d frames after it was placed",
-    f.why or "?", f.x // 1, f.y // 1, f.age))
-  f.dead = true
-  forget(f)
-  a:explode(BOOM)
-  if a.id ~= 0 then a:despawn() end
-end
-
-local function frame(f, a)
-  if f.dead then return end
-  f.age = f.age + 1
-  if f.gone then
-    f.dead = true
-    a:despawn()
+  if dead[id] or worm.hp > 0 then
     return
   end
-  if not f.planted then
-    fly(f)
-    try_plant(f, a)
-  end
-  if f.y >= wa.world.water() - STEP then f.boom, f.why = true, f.why or "the water" end
-  if f.age >= FUSE then f.boom, f.why = true, f.why or "its 15 s fuse" end
-  if f.boom then
-    explode(f, a)
+  dead[id] = true
+  local mine = hands[id] or {}
+
+  if active_id == id then
+    -- Died on its own turn: nothing to hand on, just take its weapons away.
+    set_all(worm, mine, 0)
+    wa.log(string.format("highlander: worm %d died on its own turn", id))
     return
   end
-  if f.tracing then trace(f) end
-  if f.walking and walk(f) then walk(f) end
-  if f.boom then
-    explode(f, a)
+
+  -- Otherwise the worm whose turn it is gets everything -- whoever or
+  -- whatever did the killing, friend or foe, exactly as in PX.
+  if active_id == nil or dead[active_id] then
     return
   end
-  f.grace = f.grace - 1
-  local bx, by = f.x, f.y
-  if f.planted then bx, by = body(f, f.x, f.y) end
-  a.x, a.y, a.vx, a.vy = bx, by, 0, 0
-  a:frame((f.steps // 2) % FRAMES)
-  a:gfx({ angle = math.deg(f.angle) % 360, depth = DEPTH, scale = SCALE })
-end
-
-fires.ferret = function(fire)
-  local worm = fire.worm
-  -- PX lets at most 10 walk: the oldest goes, without a bang.
-  while #alive >= MAX_ALIVE do
-    local oldest = table.remove(alive, 1)
-    oldest.gone = true
+  local stealer = find(active_id)
+  if not stealer then
+    return
   end
-  local f = {
-    x = fire.x, y = fire.y, vx = fire.vx, vy = fire.vy, ux = 0, uy = -1,
-    side = (worm.facing or 1) < 0 and -1 or 1,
-    looking = DOWN, looking_bk = DOWN, ops = MAX_OPS, fails = 0,
-    outline = {}, next = 1, steps = 0, angle = 0, grace = GRACE, age = 0,
-    planted = false, tracing = false, walking = false, boom = false,
-  }
-  alive[#alive + 1] = f
-  local a = wa.actors.spawn({
-    sprite = WALK, x = f.x, y = f.y, gravity = false, collide = false, owner = worm,
-    shape = "missile", on = function(actor) frame(f, actor) end,
-  })
-  f.a = a
-  rise_clear(f)
-  a.facing = f.side
-  a:frame(0)
-end
-
-shared.ferrets = alive
-`
-      },
-      {
-        path: 'weapons/fire_jump.lua',
-        name: 'weapons/fire_jump.lua',
-        language: 'lua',
-        content: `-- Highlander: Fire Jump. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-local drills = shared.drills
-local follow_drill = shared.follow_drill
-
--- Fire Jump (PX Fire_Jump_script): WA's fire punch, whose speed then follows
--- PX's timeline, counted in frames from the punch -- up at once, forward
--- after half a second, a little higher at one second, and from 80 frames a
--- fall cut back to 4 pixels a frame whenever it passes 5, until 210. PX
--- speeds are pixels per frame; WA's are 16.16. See
--- docs/px-reverse-engineering.md.
---
--- PX counts from FireFinal, which WA calls only once the punch's wind-up has
--- played, not when fire is pressed. FireFinal starts the punch at -6 pixels
--- a frame; the worm stood still until then. So the count starts on the
--- first frame after fire is pressed that the worm is rising.
---
--- WA keeps the worm in its punch state until it has stopped, so the punch
--- itself cuts the way up and burns worms on it, all jump long: PX adds no cut.
-local jumps = {}   -- worm id -> frames since the punch
-local winding = {} -- worm id -> frames since fire was pressed
--- A wind-up never takes this long; give up rather than fire late.
-local WIND_UP_MAX = 100
-
-local function fire_jump(worm, t)
-  if t == 1 then
-    worm.vy = -9
-  elseif t == 30 then
-    worm.vx = worm.facing * 4
-  elseif t == 60 then
-    worm.vy = worm.vy - 1
+  local theirs = hands[active_id]
+  for _, name in ipairs(mine) do
+    theirs[#theirs + 1] = name
   end
-  if t > 80 and t < 210 and worm.vy > 5 then
-    worm.vy = 4
-  end
+  -- Usable at once, this turn, not from the stealer's next turn.
+  set_all(stealer, mine, 1)
+  wa.log(string.format(
+    "highlander: worm %d took %s from worm %d", active_id, describe(mine), id
+  ))
 end
 
 wa.on.worm_message(function(worm, msg)
-  if msg == wa.msg.FIRE_WEAPON then
-    if worm.weapon == "px.super_drill" and not drills[worm.id]
-        and worm:ammo("px.super_drill") ~= 0 then
-      local id = worm.id
-      drills[id] = wa.actors.spawn({
-        sprite = false, x = worm.x, y = worm.y,
-        gravity = false, collide = false, owner = worm,
-        on = follow_drill(worm, id),
-      })
-    elseif worm.weapon == "px.fire_jump" and worm:ammo("px.fire_jump") ~= 0 then
-      winding[worm.id] = 0
-    elseif worm.weapon == "px.sniper_rifle" and worm:ammo("px.sniper_rifle") ~= 0 then
-      -- The Sniper Rifle's own shot, over WA's (PX's snipfiring).
-      wa.sound.play(worm, "sounds/sniper_firing.wav")
-    end
-    -- Neither eats the shot: WA's drill and fire punch still run.
-    return
+  if hands[worm.id] == nil then
+    deal(worm)
   end
-  if msg == wa.msg.FRAME_FINISH and winding[worm.id] then
-    if worm.vy < 0 then
-      winding[worm.id], jumps[worm.id] = nil, 0
-    else
-      local w = winding[worm.id] + 1
-      winding[worm.id] = w < WIND_UP_MAX and w or nil
-    end
-  end
-  if msg == wa.msg.FRAME_FINISH and jumps[worm.id] then
-    local t = jumps[worm.id] + 1
-    fire_jump(worm, t)
-    jumps[worm.id] = t < 211 and t or nil
-  end
-end, { msgs = { wa.msg.FIRE_WEAPON, wa.msg.FRAME_FINISH } })
-`
-      },
-      {
-        path: 'weapons/hang_glider.lua',
-        name: 'weapons/hang_glider.lua',
-        language: 'lua',
-        content: `-- Highlander: Hang-Glider. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-local STOPPERS = shared.STOPPERS
-local balloons = shared.balloons
-local trunc = shared.trunc
-
--- ------------------------------------------------------------- Hang-Glider
-do
-  --
-  -- PX's paratest (utility_hangglider_render). A worm that opens WA's
-  -- parachute with the Hang-Glider flies PX's glider instead: the pack takes
-  -- it (worm:take) and moves it with the glider's physics: gravity at 0.75,
-  -- the wind blowing along the wing's up side (x3), the speed across the wing
-  -- damped, and the nose turning towards the flight path. Up and down turn the
-  -- nose, faster the faster it flies; left and right nudge it. Just before it
-  -- would run into something (PX's WS_AFTERROPE), on the jump key, in water,
-  -- or when the turn ends, it gives the worm back to WA, falling on with the
-  -- glider's speed; WA lands it. While it glides, the worm's body is hidden
-  -- behind the glider art, which carries the worm; brought down onto land,
-  -- the glider's own pack-away plays once WA has the worm standing (PX swaps
-  -- sheet 289, wparbak, for it).
-  --
-  -- PX's speeds and angles are pixels per frame and radians; WA's gravity,
-  -- wind and worm speeds use pixel units.
-
-  local GLIDER_GRAVITY = 0.75           -- GliderGravityFactor
-  local GLIDER_WIND = 3.0               -- GliderWindFactor
-  local GLIDER_FRICTION = 0.25          -- GliderFriction
-  local GLIDER_TURN = 0.06              -- GliderMaxAngularVelocity
-  local GLIDER_TURN_SPEED = 20.0        -- GliderMaxTurningSpeed
-  local GLIDER_ANIM = 0.04              -- GliderAnimSpeed
-  local GLIDER_LERP = 0.03              -- GliderRotationLerp
-  local GLIDER_PUSH = 0.02              -- GliderMoveAcceleration
-  local GLIDER_MAX_ANGLE = 1.5          -- about 86 degrees either way
-  local GLIDER_DEPTH = wa.depth.FRONT          -- in front of worms and terrain
-  -- wgldbak: 6 frames, loaded at 24 frames a second; WA runs 50.
-  local GLIDER_PACK_FRAMES, GLIDER_PACK_FPS = 6, 24
-  -- How long after coming down onto land WA may take to stand the worm up for
-  -- the pack-away (frames).
-  local GLIDER_PACK_WAIT = 50
-  -- WA's fall damage begins at 8 pixels/frame of downward impact speed. Its
-  -- fixed-point formula includes one 16.16 unit of bias.
-  local GLIDER_SAFE_LANDING_SPEED = 8 - 1 / 65536
-  local GLIDER_PI = 3.141593
-
-  local gliders = {} -- worm id -> { enabled, deployed, x, y, ang, target, cycle, sx, sy, art, pack, pack_t, landing }
-
-  local function glider_of(worm)
-    local g = gliders[worm.id]
-    if not g then
-      g = { enabled = false, deployed = false, ang = 0, target = 0, cycle = 0, sx = 0, sy = 0 }
-      gliders[worm.id] = g
-    end
-    return g
-  end
-
-  -- utils' NormalizeAngle and LerpAngle.
-  local function normalize_angle(a)
-    while a > GLIDER_PI do a = a - 6.283186 end
-    while a <= -GLIDER_PI do a = a + 6.283186 end
-    return a
-  end
-
-  local function lerp_angle(c, a, b)
-    a = normalize_angle(a)
-    b = a + normalize_angle(b - a)
-    return normalize_angle(a + (b - a) * c)
-  end
-
-  local function glider_art(worm, x, y, sheet)
-    return wa.actors.spawn({
-      sprite = sheet, x = x, y = y, gravity = false,
-      collide = false, owner = worm, on = function() end,
-    })
-  end
-
-  local function glider_drop_art(worm, g)
-    if g.art then g.art:despawn(); g.art = nil end
-    if g.pack then g.pack:despawn(); g.pack = nil end
-    g.pack_x, g.pack_y = nil, nil
-    worm.body_visible = true
-  end
-
-  local function glider_begin_pack(worm, g)
-    g.landing = nil
-    if g.art then g.art:despawn(); g.art = nil end
-    g.pack, g.pack_t = glider_art(worm, worm.x, worm.y, "sprites/hang_glider/pack"), 0
-    g.pack_x, g.pack_y = worm.x, worm.y
-    g.pack.facing = -worm.facing
-    g.pack:frame(0)
-    g.pack:gfx({ depth = GLIDER_DEPTH })
-    worm.body_visible = false
-  end
-
-  -- TraceMask from (x, y) to where it is heading: anything the worm would
-  -- touch there by WA's own test of its shape (worm:fits, every 2 pixels),
-  -- and anything else in the way by the Sniper Rifle's estimate of its mask.
-  local function glider_blocked(worm, x, y, sx, sy)
-    local x1, y1 = x + (1.1 * sx), y + (1.1 * sy)
-    local n = math.max(1, math.ceil(math.sqrt(sx * sx + sy * sy) * 1.1 / 2))
-    for i = 1, n do
-      if not worm:fits(x + (x1 - x) * i / n, y + (y1 - y) * i / n) then
-        return true
-      end
-    end
-    local len = math.sqrt(sx * sx + sy * sy) * 1.1
-    if len == 0 then
-      return false
-    end
-    local dx, dy = sx * 1.1 / len, sy * 1.1 / len
-    for _, s in ipairs(STOPPERS) do
-      local list, r = s[1], s[2]
-      if list and list.all then
-        for _, o in ipairs(list.all()) do
-          if o.id ~= worm.id then
-            local ox, oy = (o.x - x), (o.y - y)
-            local t = ox * dx + oy * dy
-            if t > 0 and t < len and math.abs(ox * dy - oy * dx) < r then
-              return true
-            end
-          end
-        end
-      end
-    end
-    return false
-  end
-
-  -- CWormGlider::Move: up and down turn the nose, left and right push.
-  local function glider_keys(worm, g)
-    local k = worm.keys
-    local speed = math.sqrt(g.sx * g.sx + g.sy * g.sy) / GLIDER_TURN_SPEED
-    if k.up then
-      g.ang = math.max(g.ang - GLIDER_TURN * math.min(speed, 1), -GLIDER_MAX_ANGLE)
-    end
-    if k.down then
-      g.ang = math.min(g.ang + GLIDER_TURN * math.max(math.min(speed, 1), 0.5), GLIDER_MAX_ANGLE)
-    end
-    if k.left then g.sx = g.sx - GLIDER_PUSH end
-    if k.right then g.sx = g.sx + GLIDER_PUSH end
-  end
-
-  -- CWormGlider::Think's physics, once deployed: the new speed.
-  local function glider_think(worm, g)
-    local f = worm.facing
-    local ang = f < 0 and g.ang or GLIDER_PI - g.ang
-    local fwd_x, fwd_y = -wa.math.cos(ang), wa.math.sin(ang)
-    local up_x, up_y
-    if f < 0 then up_x, up_y = -fwd_y, fwd_x else up_x, up_y = fwd_y, -fwd_x end
-    local sx, sy = g.sx, g.sy
-    sy = sy + wa.world.gravity() * GLIDER_GRAVITY
-    local wind = up_x * wa.world.wind() * GLIDER_WIND
-    sx, sy = sx + wind * up_x, sy + wind * up_y
-    local up_vel = sx * up_x + sy * up_y
-    sx, sy = sx - up_x * up_vel * GLIDER_FRICTION, sy - up_y * up_vel * GLIDER_FRICTION
-    -- The nose turns towards the flight path, never straight up or down.
-    local target = f < 0 and wa.math.atan(sy, -sx) or wa.math.atan(sy, sx)
-    target = normalize_angle(target)
-    g.target = math.max(-GLIDER_MAX_ANGLE, math.min(GLIDER_MAX_ANGLE, target))
-    g.ang = lerp_angle(GLIDER_LERP, g.ang, g.target)
-    g.cycle = math.min(g.cycle + GLIDER_ANIM, 1)
-    g.sx, g.sy = sx, sy
-  end
-
-  -- How many frames after a crash the worm is watched: WA may stand it up
-  -- where it hit, as it does a balloon popped against a ceiling.
-  local GLIDER_UNSTAND = 3
-
-  -- The glide ends: the worm back to WA, falling on with the glider's speed.
-  -- \`landing\`: a gentle landing, so the pack-away plays once WA has the worm
-  -- standing. A hard landing gives WA the glider's full speed in its
-  -- falling state and lets WA decide whether it causes fall damage and loss
-  -- of control. Suppress automatic parachute firing only until WA handles
-  -- this impact; otherwise it immediately reopens and slows the worm.
-  -- Only a collision
-  -- elsewhere needs the short guard against WA standing it up in mid-air.
-  local function glider_close(worm, g, landing, hard_landing)
-    g.deployed = false
-    -- A gentle landing can spend several frames falling under WA's control
-    -- before WA stands the worm up. Keep the wing over its body until the
-    -- pack-away takes its place, so it never flashes empty-handed. Only
-    -- looks: if it fails, the worm still goes back to WA below.
-    local looks, err = pcall(function()
-      if landing then
-        g.art = g.art or glider_art(worm, worm.x, worm.y, "sprites/hang_glider/glider")
-        worm.body_visible = false
-      else
-        glider_drop_art(worm, g)
-      end
-      wa.sound.play(worm, "sounds/hang_glider/hangclose.wav")
-    end)
-    if not looks then
-      wa.log("hang glider: closing without its art: " .. tostring(err))
-    end
-    g.landing = landing and GLIDER_PACK_WAIT or nil
-    g.unstand = not (landing or hard_landing) and GLIDER_UNSTAND or nil
-    if worm.taken then
-      local vx, vy = g.sx, g.sy
-      if hard_landing then
-        worm:release(vx, vy, { suppress_auto_parachute = true })
-      else
-        worm:release(vx, vy)
-      end
-    end
-  end
-
-  local function glider_frame(worm)
-    local state = worm.state
-    local b = balloons[worm.id]
-    local equipped = b and b.equipped_weapon
-    if b and b.active then
-      local g = gliders[worm.id]
-      if g then g.enabled = false end
-      return
-    end
-    -- A glider may have auto-opened and cleared its selected slot before its
-    -- first frame. The slot equipped before opening is authoritative.
-    local g = gliders[worm.id]
-    if not g then
-      if (state == "parachuting" and equipped ~= "px.hang_glider")
-          or (state ~= "parachuting" and worm.weapon ~= "px.hang_glider") then
-        return
-      end
-      g = glider_of(worm)
-    end
-    if g.deployed then
-      -- The engine let go: the turn ended, or WA knocked the worm flying.
-      if not worm.taken then
-        glider_close(worm, g, false)
-        return
-      end
-      glider_keys(worm, g)
-      glider_think(worm, g)
-      if glider_blocked(worm, g.x, g.y, g.sx, g.sy) then
-        -- Onto land below it: WA handles the impact with the glider's full
-        -- speed. Only a fall below its damage threshold gets the pack-away.
-        local below = g.sy > 0 and not worm:fits(g.x, g.y + (1.1 * g.sy + 4))
-        local hard_landing = below and g.sy >= GLIDER_SAFE_LANDING_SPEED
-        glider_close(worm, g, below and not hard_landing, hard_landing)
-        return
-      end
-      local x, y = g.x + g.sx, g.y + g.sy
-      if y >= wa.world.water() then
-        glider_close(worm, g, false)
-        return
-      end
-      g.x, g.y = x, y
-      worm:carry(x, y)
-      -- CWormGlider::Render, in the worm's place.
-      local f = worm.facing
-      g.art = g.art or glider_art(worm, x, y, "sprites/hang_glider/glider")
-      local a = g.art
-      a.x, a.y, a.vx, a.vy, a.facing = x, y, 0, 0, -f
-      a:frame(math.min(math.floor(g.cycle * 10), 9))
-      a:gfx({ angle = math.deg(f * g.ang) % 360, depth = GLIDER_DEPTH })
-      worm.body_visible = false
-      return
-    end
-    if state ~= "parachuting" then
-      -- Which parachute the worm opens next: PX checks the weapon only while
-      -- the worm is not already under one.
-      g.enabled = worm.weapon == "px.hang_glider"
-      if g.unstand then
-        if state == "standing" then
-          worm:release(0, 0)
-          g.unstand = nil
-        else
-          g.unstand = g.unstand > 1 and g.unstand - 1 or nil
-        end
-      end
-      -- A land contact starts the pack-away in that frame. Standing is a
-      -- fallback if WA did not report a contact; it may arrive 12 frames later.
-      if g.landing then
-        if state == "standing" and worm.y < wa.world.water() then
-          glider_begin_pack(worm, g)
-        elseif worm.y >= wa.world.water() or state == "tumbling" then
-          g.landing = nil
-          glider_drop_art(worm, g)
-        else
-          g.landing = g.landing > 1 and g.landing - 1 or nil
-          if g.landing and g.art then
-            g.art.x, g.art.y, g.art.vx, g.art.vy = worm.x, worm.y, 0, 0
-            g.art.facing = -worm.facing
-            worm.body_visible = false
-          else
-            glider_drop_art(worm, g)
-          end
-        end
-      end
-      if g.pack then
-        local frame = g.pack_t * GLIDER_PACK_FPS // 50
-        local keys = worm.keys or {}
-        local moving = keys.left or keys.right or state == "walking"
-          or state == "jump_prepare" or state == "jumping"
-          or math.abs(worm.x - g.pack_x) > 1
-        local landing_state = state == "standing" or state == "sliding"
-          or state == "jump_falling" or state == "falling"
-        if frame >= GLIDER_PACK_FRAMES or moving or not landing_state
-            or worm.y >= wa.world.water() then
-          glider_drop_art(worm, g)
-        else
-          g.pack.x, g.pack.y, g.pack.vx, g.pack.vy = worm.x, worm.y, 0, 0
-          g.pack.facing = -worm.facing -- its art faces left, as WA's worms do
-          g.pack:frame(frame)
-          g.pack:gfx({ depth = GLIDER_DEPTH })
-          worm.body_visible = false
-          g.pack_t = g.pack_t + 1
-        end
-      end
-      -- Its speed carries over into the glide.
-      g.sx, g.sy = worm.vx, worm.vy
-      return
-    end
-    g.enabled = equipped == "px.hang_glider"
-    if not g.enabled or g.deployed or state ~= "parachuting" then
-      return -- a plain parachute, or the balloon
-    end
-    -- WA has opened its parachute: the pack takes the worm and glides.
-    g.deployed, g.ang, g.target, g.cycle, g.landing, g.unstand = true, 0, 0, 0, nil, nil
-    g.x, g.y = worm.x, worm.y
-    if g.pack then g.pack:despawn(); g.pack = nil end
-    -- On the glider the worm fires what WA lets it fire mid-air.
-    worm:take{ turn = "run", fire = true }
-    wa.sound.play(worm, "sounds/hang_glider/hangopen.wav")
-    return glider_frame(worm)
-  end
-
-  if wa.world.gravity and wa.world.wind then
-    if wa.on.contact then
-      wa.on.contact(function(worm, other)
-        local g = gliders[worm.id]
-        if g and g.landing and other.kind == "land" and worm.y < wa.world.water() then
-          local keys = worm.keys or {}
-          if keys.left or keys.right then
-            g.landing = nil
-            glider_drop_art(worm, g)
-          else
-            glider_begin_pack(worm, g)
-          end
-        end
-      end)
-    end
-    wa.on.worm_message(function(worm, msg)
-      if msg == wa.msg.FRAME_FINISH then
-        glider_frame(worm)
-        return
-      end
-      local g = gliders[worm.id]
-      if g and g.pack and (msg == wa.msg.JUMP or msg == wa.msg.JUMP_UP) then
-        glider_drop_art(worm, g)
-        return
-      end
-      if not (g and g.deployed) then
-        return
-      end
-      if msg == wa.msg.JUMP then
-        -- The jump key closes WA's parachute: here it lets go of the glider.
-        glider_close(worm, g, false)
-        return "eat"
-      end
-    end, { msgs = { wa.msg.FRAME_FINISH, wa.msg.JUMP, wa.msg.JUMP_UP } })
-  end
-end
-`
-      },
-      {
-        path: 'weapons/helicopter.lua',
-        name: 'weapons/helicopter.lua',
-        language: 'lua',
-        content: `-- Highlander: Helicopter. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-
--- -------------------------------------------------------------- Helicopter
--- Shared with later sections; the rest of this section is local to it.
-local trunc
-do
---
--- PX's helicopter_user_script, on WA's jet pack. While the jet pack runs,
--- the script flies the worm itself from the worm's own move keys. The engine
--- consumes them after this callback, so WA neither thrusts nor burns fuel.
--- Speed builds while a key is held and dies away when it is not; fuel burns
--- with it (not during retreat), and a crash -- an explosion sized by the fuel
--- left and the speed -- when the fuel runs out, the worm reaches water, the
--- turn ends, or it hits something other than a mine faster than a pixel a
--- frame, the ground included: landing slower than that is PX's smooth
--- landing. The worm's body is hidden behind the helicopter, and behind PX's
--- climb-in animation while WA winds the jet pack up; its labels, the fuel
--- counter among them, stay, as with PX's RenderWorm override.
---
--- Speeds and factors use Lua floats; the engine rounds writes to WA fields.
-
--- Its fuel, PX's FuelAmount, is its record's (\`jet_pack.fuel\`, in
--- claims.lua's FIXES): WA gives it the worm when the jet pack starts.
-local HELI_REALISTIC = true      -- gravity and wind act on it, at 0.2
-local HELI_EXPLODE_ON_TURN_END = true
-local HELI_DEPTH = wa.depth.FRONT       -- in front of worms and terrain
-
-local helis = {} -- worm id -> { flying, launch, jumpin, jump_phase, frame, ticks, body, climb }
-
-function trunc(v)
-  return v >= 0 and math.floor(v) or math.ceil(v)
-end
-
-local function heli_of(worm)
-  local h = helis[worm.id]
-  if not h then
-    h = { flying = false, launch = false, jumpin = false, jump_phase = 0, frame = 0, ticks = 0 }
-    helis[worm.id] = h
-  end
-  return h
-end
-
-local function heli_actor(worm, sheet)
-  return wa.actors.spawn({
-    sprite = sheet, x = worm.x, y = worm.y, gravity = false,
-    collide = false, owner = worm, on = function() end,
-  })
-end
-
-local function heli_drop_art(h, worm)
-  if h.body then h.body:despawn(); h.body = nil end
-  if h.climb then h.climb:despawn(); h.climb = nil end
-  worm.body_visible = true
-end
-
-local HELI_OOPS = {
-  [2] = "sounds/helicopter/oops1.wav", [4] = "sounds/helicopter/oops2.wav",
-  [6] = "sounds/helicopter/huh.wav", [8] = "sounds/helicopter/poop.wav",
-  [10] = "sounds/helicopter/idiot.wav",
-}
-
--- DisableHeli: blow up, sized by the fuel left and the speed, and land.
-local function heli_crash(worm, h, sx, sy)
-  if not h.flying then
-    return
-  end
-  local speed = (math.abs(sy) + math.abs(sx)) / 2
-  local size = trunc((worm.fuel - 75) / 10 * speed)
-  if size < 10 then size = 10 end
-  -- The worm's own explosion: a spawn needs an owner, and outside a brain
-  -- (from wa.on.contact) there is none to inherit.
-  wa.actors.spawn({
-    sprite = false, x = worm.x, y = worm.y, gravity = false, collide = false,
-    owner = worm, explode = { damage = size * 2, id = size, now = true },
-  })
-  worm.gravity = 1
-  worm.wind = 0
-  local oops = HELI_OOPS[wa.random(1, 10)]
-  if oops then wa.sound.play(worm, oops) end
-  h.flying = false
-  heli_drop_art(h, worm)
-end
-
--- One of PX's key responses, towards \`dir\` (-1 up or left, 1 down or
--- right): a kick that fades as the speed that way reaches 10 pixels a frame.
--- PX: if (SpY > -1) SpY -= 0.2; if (SpY > -4) SpY -= 0.4; ... for up.
-local function push(v, dir)
-  local s = -dir * v
-  if s > -1 then s = s - 0.2 end
-  if s > -4 then s = s - 0.4 end
-  if s > -8 then s = s - 0.15 end
-  if s > -10 then s = s - 0.05 end
-  return -dir * s
-end
-
-local function heli_frame(worm)
-  local h = helis[worm.id]
-  local state = worm.state
-  -- WS_FIRED: WA winding up the Helicopter; PX shows its climb-in. This is
-  -- also where it is armed: once it fires, WA may already have cleared the
-  -- worm's selection (its last shot of the Helicopter), and PX decides at
-  -- FireFinal, from the weapon actually fired.
-  if worm.weapon == "px.helicopter" and state == "prefiring" and not (h and h.flying) then
-    h = heli_of(worm)
-    h.jumpin, h.armed = true, true
-    h.jump_phase = h.jump_phase + 0.047
-  end
-  -- FireFinal: the jet pack it wound up has started.
-  if h and h.armed and state == "jetpacking" and not h.flying then
-    worm.gravity = HELI_REALISTIC and 0.2 or 0
-    worm:jetpack_steer(true)
-    h.flying, h.launch, h.ticks, h.armed = true, true, 0, false
-  elseif h and h.armed and not worm.turn then
-    h.armed = false -- the turn ended before it fired
-  end
-  if not h then
-    return
-  end
-  if h.flying then
-    if state ~= "jetpacking" then
-      -- WA owns the landing and its resulting state. Only remove our art
-      -- and physics overrides when WA has ended the jet pack.
-      worm:jetpack_steer(false)
-      worm.gravity, worm.wind = 1, 0
-      h.flying = false
-      heli_drop_art(h, worm)
-      return
-    end
-    local vx, vy = worm.vx, worm.vy
-    -- Rotor and radio, while it moves.
-    if vx ~= 0 or vy ~= 0 then
-      if h.ticks % 47 == 0 then wa.sound.play(worm, "sounds/helicopter/helicopterloop.wav") end
-      local radio = wa.random(1, 200)
-      if radio % 20 == 0 and radio <= 80 then
-        wa.sound.play(worm, "sounds/helicopter/" .. (radio // 20) .. ".wav")
-      end
-    end
-    h.ticks = h.ticks + 1
-    if worm.y >= wa.world.water() then
-      heli_crash(worm, h, vx, vy)
-      return
-    end
-    if h.launch then
-      h.jump_phase, h.jumpin, h.launch = 0, false, false
-      if HELI_REALISTIC then worm.wind = 0.2 end
-    end
-    local k = worm.keys
-    local up, down, left, right = k.up, k.down, k.left, k.right
-    if not up and not down then vy = vy / 1.105 end
-    if not left and not right then vx = vx / 1.105 end
-    if up and down then vy = vy / 1.095 end
-    if left and right then vx = vx / 1.095 end
-    -- Diagonals: PX's lines damp each pair twice.
-    for _, d in ipairs({ { up, right }, { up, left }, { down, right }, { down, left } }) do
-      if d[1] and d[2] then
-        vx, vy = vx * 0.99 * 0.99, vy * 0.99 * 0.99
-      end
-    end
-    h.frame = (h.frame + 1) % 3
-    local fuel = worm.fuel
-    local burn = wa.world.retreat() == 0
-    if burn then fuel = fuel - 0.020 end
-    local shift = wa.world.keys().shift
-    if up then
-      if burn then fuel = fuel - 0.2 end
-      vy = push(vy, -1)
-    end
-    if down then
-      if burn then fuel = fuel - 0.020 end
-      vy = push(vy, 1)
-    end
-    if left then
-      if burn then fuel = fuel - 0.1 end
-      if not shift then worm.facing = -1 end
-      vx = push(vx, -1)
-    end
-    if right then
-      if burn then fuel = fuel - 0.1 end
-      if not shift then worm.facing = 1 end
-      vx = push(vx, 1)
-    end
-    worm.vx, worm.vy, worm.fuel = vx, vy, fuel
-    if worm.fuel <= 0.1 then
-      heli_crash(worm, h, worm.vx, worm.vy)
-      return
-    end
-    if HELI_EXPLODE_ON_TURN_END and not worm.turn then
-      heli_crash(worm, h, worm.vx, worm.vy)
-      return
-    end
-  end
-  -- What PX draws in the worm's place.
-  local f = worm.facing
-  if h.flying then
-    if h.climb then h.climb:despawn(); h.climb = nil end
-    h.body = h.body or heli_actor(worm, "sprites/helicopter/flying")
-    local a = h.body
-    a.x, a.y, a.vx, a.vy, a.facing = worm.x, worm.y, 0, 0, f
-    a:frame(h.frame)
-    a:gfx({ angle = math.deg(wa.math.sin(worm.vx / 24)) % 360, depth = HELI_DEPTH })
-    worm.body_visible = false
-  elseif h.jumpin and state == "prefiring" then
-    h.climb = h.climb or heli_actor(worm, "sprites/helicopter/jumpin")
-    local a = h.climb
-    a.x = worm.x + (f > 0 and -11.5 or 12.5)
-    a.y, a.vx, a.vy, a.facing = worm.y + 1, 0, 0, f
-    a:frame(math.min(math.floor(h.jump_phase * 23), 22))
-    a:gfx({ depth = HELI_DEPTH })
-    worm.body_visible = false
-  elseif h.body or h.climb then
-    h.jumpin, h.jump_phase = false, 0
-    heli_drop_art(h, worm)
-  end
-end
-
-wa.on.worm_message(function(worm, msg)
-  if msg == wa.msg.FRAME_FINISH then
-    heli_frame(worm)
-  end
-end, { msgs = { wa.msg.FRAME_FINISH } })
-
--- Collide: hitting anything but a mine faster than a pixel a frame crashes
--- it, the ground included -- a slow landing is PX's smooth landing -- judged
--- on the speed before WA exchanged velocities.
-if wa.on.contact then
-  wa.on.contact(function(worm, other, c)
-    local h = helis[worm.id]
-    if h and h.flying and other.kind ~= "mine"
-        and (math.abs(c.vx) > 1 or math.abs(c.vy) > 1) then
-      heli_crash(worm, h, c.vx, c.vy)
-    end
-  end)
-end
-end
-
--- Shared by the balloon and glider handlers to recognize the equipped weapon.
-local balloons = {}
-
-shared.balloons = balloons
-shared.trunc = trunc
-`
-      },
-      {
-        path: 'weapons/hot_air_balloon.lua',
-        name: 'weapons/hot_air_balloon.lua',
-        language: 'lua',
-        content: `-- Highlander: Hot Air Balloon. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-local balloons = shared.balloons
-
--- --------------------------------------------------------- Hot Air Balloon
-do
-  --
-  -- PX's balloon_s (r2_balloon by rafa''2, modified by 0rang3). PX flies it on
-  -- WA's parachute with the worm's gravity turned upside down; here the pack
-  -- flies it (worm:take) with WA's own parachute physics, upside down. WA 3.8.1,
-  -- per frame (0x4FCB30): the speed gains gravity times the worm's gravity
-  -- factor and, unless the worm is against land beside it, the wind times its
-  -- wind factor; then both speeds are damped. Its parachute (SetState 0x7D at
-  -- 0x50EBE2 and 0x50EC57) damps them to 0.8 and takes the wind factor from the
-  -- weapon record's +0x38 in percent: the patched bungee's fire_method, 100.
-  -- So it rises at up to four times gravity and drifts with four times the
-  -- wind. The arrow keys push it as they push WA's parachute (0x513EB0, run
-  -- before that step): half of gravity a frame each way held (through the
-  -- worm's +0x44 push, divided by its mass, 1.0), opposite keys cancelling. It pops -- the worm given back to WA, falling -- on touching land,
-  -- in water, on the jump key (which closes WA's parachute), and when the
-  -- turn ends. The worm's body is hidden behind the balloon, drawn in its
-  -- team's colour, and the worm in its basket, as PX's RenderWorm override.
-  --
-  -- It still opens as WA's parachute (the patched bungee, by hand or
-  -- automatically); the pack takes the worm on the first frame of it.
-
-  local BALLOON_DAMP = 0.79998779296875       -- WA's parachute damping, 0.8
-  local BALLOON_WIND = 100          -- the patched bungee's fire_method, in percent
-  local BALLOON_DEPTH = wa.depth.FRONT + 1     -- behind the basket, in front of worms
-  local BASKET_DEPTH = wa.depth.FRONT
-  -- PX's GetTeamColorRGB, by WA's colour index (worm.alliance, 0 red .. 5 cyan).
-  -- PX adds it to its dark grey balloon (SetColorMod mode 8); the GPU tint
-  -- multiplies, so the pack's balloon art is PX's lightened to white, and the
-  -- team colour shows at full strength.
-  local TEAM_RGB = { 0xFF8080, 0x0096FF, 0x00D000, 0xFFFF40, 0xE800E8, 0x50FFFF }
-
-  -- Also records the weapon equipped before WA changes the visible slot while
-  -- opening a parachute, for both the balloon and glider handlers.
-  -- worm id -> { active, x, y, vx, vy, ticks, equipped_weapon, balloon, basket }
-
-  local function balloon_of(worm)
-    local b = balloons[worm.id]
-    if not b then
-      b = { active = false, ticks = 0 }
-      balloons[worm.id] = b
-    end
-    return b
-  end
-
-  local function balloon_sound(worm, name, n)
-    wa.sound.play(worm, "sounds/balloon/" .. name .. wa.random(1, n) .. ".wav")
-  end
-
-
-  -- How many frames after popping against land the worm is watched: WA may
-  -- stand it up there, in mid-air under a ceiling.
-  local BALLOON_UNSTAND = 3
-
-  -- StopBalloon: a pop, and the worm back to WA, falling with its speed.
-  -- Against land it keeps no upward speed, and for a few frames, if WA has
-  -- stood it up, it is released again, falling: PX's balloon does the same
-  -- (WS_IDLE -> WS_SLIDING) when WA's parachute closes against the land.
-  -- \`why\` goes to the log with each pop, so a report of a balloon that
-  -- would not pop can be traced to what ended it.
-  local function balloon_stop(worm, b, why, against_land)
-    if not b.active then
-      return
-    end
-    wa.log(string.format(
-      "highlander: balloon of worm %d popped after %d frames: %s (turn clock %d ms)",
-      worm.id, b.ticks, why, wa.world.turn_clock()
-    ))
-    b.active, b.ticks = false, 0
-    if b.balloon then b.balloon:despawn(); b.balloon = nil end
-    if b.basket then b.basket:despawn(); b.basket = nil end
-    worm.body_visible = true
-    balloon_sound(worm, "pop", 4)
-    local vy = against_land and math.max(b.vy, 0) or b.vy
-    if worm.taken then
-      worm:release(b.vx, vy)
-    end
-    b.unstand = against_land and BALLOON_UNSTAND or nil
-  end
-
-  local function balloon_draw(worm, b)
-    -- DrawBalloonWorm: the balloon above, in the team's colour, and the worm
-    -- in its basket, whose art faces left.
-    local f = worm.facing
-    local function art(sheet)
-      return wa.actors.spawn({
-        sprite = sheet, x = b.x, y = b.y, gravity = false,
-        collide = false, owner = worm, on = function() end,
-      })
-    end
-    b.balloon = b.balloon or art("sprites/balloon/balloon")
-    b.basket = b.basket or art("sprites/balloon/basket")
-    local x = b.x + 6 * f
-    b.balloon.x, b.balloon.y, b.balloon.vx, b.balloon.vy = x, b.y - 43, 0, 0
-    b.balloon:frame(math.min((b.ticks % 200) * 16 // 200, 15))
-    b.balloon:gfx({ tint = 0xFF000000 | (TEAM_RGB[(worm.alliance or 0) + 1] or 0xFFFFFF),
-      depth = BALLOON_DEPTH })
-    b.basket.x, b.basket.y, b.basket.vx, b.basket.vy = x, b.y + 3, 0, 0
-    b.basket.facing = -f
-    b.basket:frame(math.min((b.ticks % 80) * 17 // 80, 16))
-    b.basket:gfx({ depth = BASKET_DEPTH })
-    worm.body_visible = false
-  end
-
-  local function balloon_frame(worm)
-    local b = balloon_of(worm)
-    local state = worm.state
-    -- WA may change the selected slot to Parachute (or none) as Bungee fires.
-    -- The weapon equipped before that transition identifies the auto trigger;
-    -- an unrelated parachute opening must not become a Hot Air Balloon.
-    local equipped = b.equipped_weapon
-    if not b.active and state == "parachuting" and not b.was_parachuting
-        and equipped == "px.hot_air_balloon" then
-      b.active, b.ticks = true, 0
-      b.x, b.y, b.vx, b.vy = worm.x, worm.y, worm.vx, worm.vy
-      -- Under the balloon the worm fires what WA lets it fire mid-air.
-      worm:take{ turn = "run", fire = true }
-      balloon_sound(worm, "inflate", 3)
-    end
-    b.was_parachuting = state == "parachuting"
-    if state ~= "parachuting" then b.equipped_weapon = worm.weapon end
-    if b.unstand then
-      if state == "standing" then
-        worm:release(0, 0)
-        b.unstand = nil
-      else
-        b.unstand = b.unstand > 1 and b.unstand - 1 or nil
-      end
-    end
-    if not b.active then
-      return
-    end
-    -- The engine let go: the turn ended, or WA knocked the worm flying.
-    if not worm.taken then
-      balloon_stop(worm, b, "the engine let go (turn over or knocked flying)")
-      return
-    end
-    local vx, vy = b.vx, b.vy
-    -- The arrow keys, as WA's parachute takes them (0x514AC0, 0x513EB0).
-    local k = worm.keys or {}
-    local left, right, up, down = k.left, k.right, k.up, k.down
-    if left and right then left, right = false, false end
-    if up and down then up, down = false, false end
-    local g = wa.world.gravity()
-    local push = g / 2
-    vx = vx + (right and push or 0) - (left and push or 0)
-    vy = vy + (down and push or 0) - (up and push or 0)
-    -- WA's parachute physics, gravity upside down (0x4FCB30).
-    vy = vy - g * worm.gravity
-    local side = wa.world.wind() >= 0 and 1 or -1
-    if worm:fits(b.x + side, b.y) then
-      vx = vx + wa.world.wind() * (BALLOON_WIND / 100)
-    end
-    vx, vy = vx * BALLOON_DAMP, vy * BALLOON_DAMP
-    b.vx, b.vy = vx, vy
-    local x, y = b.x + vx, b.y + vy
-    -- It pops on touching land, as WA's parachute closes there: where WA's
-    -- own test says the worm would touch it, so it never sits inside it.
-    if not worm:fits(x, y) then
-      balloon_stop(worm, b, "touched land", true)
-      return
-    end
-    if y >= wa.world.water() then
-      balloon_stop(worm, b, "reached the water")
-      return
-    end
-    b.x, b.y = x, y
-    worm:carry(x, y)
-    b.ticks = b.ticks + 1
-    balloon_draw(worm, b)
-  end
-
-  -- WA's key messages, named for the log. In flight WA sends jump for Space
-  -- and fire for Enter.
-  local BALLOON_KEY_MESSAGES = {
-    [wa.msg.JUMP] = "jump", [wa.msg.JUMP_UP] = "backflip",
-    [wa.msg.FIRE_WEAPON] = "fire", [wa.msg.RELEASE_WEAPON] = "release",
-  }
-
-  wa.on.worm_message(function(worm, msg)
-    if msg == wa.msg.FRAME_FINISH then
-      balloon_frame(worm)
-      return
-    end
-    local b = balloons[worm.id]
-    if not (b and b.active) then
-      return
-    end
-    local key = BALLOON_KEY_MESSAGES[msg]
-    if key then
-      wa.log(string.format("highlander: balloon of worm %d got WA's %s message at flight frame %d",
-        worm.id, key, b.ticks))
-    end
-    if msg == wa.msg.JUMP then
-      -- The jump key closes WA's parachute: here it pops the balloon.
-      -- In flight WA sends it for Space.
-      balloon_stop(worm, b, "jump key (Space in flight)")
-      return "eat"
-    end
-  end, { msgs = { wa.msg.FRAME_FINISH, wa.msg.JUMP, wa.msg.JUMP_UP, wa.msg.FIRE_WEAPON, wa.msg.RELEASE_WEAPON } })
-
-  -- M_TURNBEGIN: any balloon still up pops.
-  wa.on.turn_start(function()
-    for _, worm in ipairs(wa.worms.all()) do
-      local b = balloons[worm.id]
-      if b and b.active then
-        balloon_stop(worm, b, "a new turn began")
-      end
-    end
-  end)
-end
-`
-      },
-      {
-        path: 'weapons/ice_arrow.lua',
-        name: 'weapons/ice_arrow.lua',
-        language: 'lua',
-        content: `-- Ice Arrow: let WA's ArrowEntity apply the bow hit and its momentum, then
--- freeze the worm on its next frame. PX's CWorm::Message defers SetState in
--- exactly this way, so the hit's native state setup runs first.
-local shared = require("lib/shared")
-local pending = {} -- stable worm id -> freeze on that worm's next frame
-
-wa.on.hurt(function(hit)
-  if hit.phase == "post" and hit.source_weapon == "px.ice_arrow"
-    and hit.kind == "hit" then
-    pending[hit.worm.id] = true
+  if msg == wa.msg.START_TURN then
+    start_turn(worm)
+  elseif msg == wa.msg.FRAME_FINISH then
+    check_death(worm)
   end
 end)
-
-wa.on.worm_message(function(worm)
-  if pending[worm.id] then
-    pending[worm.id] = nil
-    worm:freeze()
-  end
-end, { msgs = { wa.msg.FRAME_FINISH } })
 `
-      },
-      {
-        path: 'weapons/javelin.lua',
-        name: 'weapons/javelin.lua',
-        language: 'lua',
-        content: `-- Highlander: Javelin. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-local current_worm = shared.current_worm
-local fires = shared.fires
-local trunc = shared.trunc
-local turrets = require("lib/turret")
-
--- ---------------------------------------------------------------- Javelin
-
-do
-  local speed = {}
-  -- Pre keeps the incoming speed even when this frame's stock collision
-  -- destroys the missile. Post keeps acceleration for the following frame.
-  wa.on.missile_frame(function(m)
-    if m.weapon == "px.javelin" then speed[m.id] = { m.vx, m.vy, uid = m.uid } end
-  end)
-
-  -- How the part of the stamp inside the land fades: over 3 pixels from the
-  -- spear's outline, its colour mixed with the earth's. Tuned by eye in game.
-  local JAVELIN_BURIED = { soften = 3, blend = "mix" }
-
-  local function trunc(n) return n < 0 and math.ceil(n) or math.floor(n) end
-  local function orientation(vx, vy)
-    if vx == 0 then return vy > 0 and 16 or 0 end
-    if vy == 0 then return vx > 0 and 8 or 24 end
-    -- PX uses ratio bins, not evenly spaced atan2 angles.
-    if vx > 0 and vy < 0 then return math.min(trunc(3 * vx / -vy), 7) end
-    if vx > 0 then return math.min(trunc(8 + 3 * vy / vx), 15) end
-    if vy > 0 then return math.min(trunc(16 + 3 * -vx / vy), 23) end
-    return math.min(trunc(24 + 3 * -vy / -vx), 31)
-  end
-  local function within(o, x, y, r)
-    return o and math.abs(x - o.x) < r and math.abs(y - o.y) < r
-  end
-  fires.javelin = function(ev)
-    local v = ev.missile and speed[ev.missile]
-    if ev.missile then speed[ev.missile] = nil end
-    local vx, vy = v and v[1] or 0, v and v[2] or 0
-    local target
-    -- The circle encloses PX's strict 20px square. Keep native traversal
-    -- order, including the shooter; PX stops at the first eligible object.
-    for _, o in ipairs(wa.world.electrical_nearby(ev.x, ev.y, 29, false)) do
-      if (o.kind == "worm" or o.kind == "mine" or o.kind == "crate" or o.kind == "oil")
-        and within(o, ev.x, ev.y, 20) then target = o; break end
-    end
-    if not target then
-      local sentry = turrets.projectile_target(ev.x, ev.y)
-      if sentry and turrets.projectile_hit(sentry, 20, vx / 4, vy / 4, v and v.uid) then return end
-    end
-    if not target then
-      local active = current_worm()
-      if within(active, ev.x, ev.y, 25) then target = active end
-    end
-    if target then
-      target.vx, target.vy = vx / 4, vy / 4
-      if target.kind == "worm" then target:hurt(20)
-      else target:hit(20, vx / 2, vy / 2, "projectile") end
-      return
-    end
-    -- Centred on the impact, as PX's, so its front half lies in the land:
-    -- that half fades into the earth (the engine's buried stamp) instead of
-    -- being drawn over it, and the javelin looks stuck.
-    wa.land.stamp{
-      sprite = "sprites/javelin/stamp", frame = orientation(vx, vy), x = ev.x, y = ev.y,
-      buried = JAVELIN_BURIED,
-    }
-    -- PX plays it unplaced. On the turn's worm: an explosion's ev.worm is the
-    -- missile's owner, which need not be a worm and has no sound of its own.
-    local shooter = current_worm()
-    if shooter then wa.sound.play(shooter, "sounds/javelin_impact.wav") end
-  end
-end
-`
-      },
-      {
-        path: 'weapons/jump.lua',
-        name: 'weapons/jump.lua',
-        language: 'lua',
-        content: `-- Highlander: Jump. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-local fires = shared.fires
-
--- ------------------------------------------------------------------ Jump
-do
---
--- PX's jumpscript (utility_jump). Its record throws like a grenade, but
--- nothing leaves the worm: FireFinal gives the worm the shot's own speed --
--- the aim and the charge -- and plays the team's "Jump" line. The worm keeps
--- its aim posture, eyes on the crosshair, until it jumps.
---
--- Differences: PX shows WA's wjump while the charge builds
--- (SetAnimEx(269, FirePower)), which looks ahead rather than along the aim;
--- it also mutes the worm's "Fire!" and "Watch this" lines while the Jump is
--- selected, and stops a fuse and bounce being chosen for it.
-
--- The first team's "Jump1" speech: WA loads each team's 54 lines in turn
--- after its own sounds, so a worm's is 54 on per team (PX's PlaySoundBank(150)).
-local JUMP_SPEECH, SPEECH_LINES = 150, 54
-
-fires.jump = function(fire)
-  local worm = fire.worm
-  worm:release(fire.vx, fire.vy)
-  wa.sound.play(worm, JUMP_SPEECH + SPEECH_LINES * (worm.team - 1))
-end
-end
-`
-      },
-      {
-        path: 'weapons/kamikaze_rocket.lua',
-        name: 'weapons/kamikaze_rocket.lua',
-        language: 'lua',
-        content: `-- Highlander: Kamikaze Rocket (PX weapon_kamikaze_rocket: KamikazeRocket.txt,
--- by Pablo, updated by rafa\`\`2), on the Suicide Bomber slot as PX's
--- Highlander scheme has it. Its record is WA's Kamikaze's: WA's own
--- Kamikaze flies the worm, digs its way and hits the worms it passes. As PX
--- does, the pack sets where the worm is before each of WA's frames: a rocket
--- at 8 px a frame from the worm along its aim, turned 9 degrees a frame by
--- left and right, digging, for 4 seconds; then it blows up (damage 30,
--- blast 100) and the worm goes into the water. Fired only with Ctrl held
--- (Ctrl + Space); without, nothing is used.
-local shared = require("lib/shared")
-local SPEED = 8             -- px a frame (kRocketSpeed)
-local TURN = 0.05           -- PX angle units (times pi) a frame
-local LIFE = 4000           -- ms, less 20 a frame: 200 frames
-local HOLE = 8              -- MakeHole(8) each frame
-local BOOM = { damage = 30, id = 100 }
-local HINT_FRAMES = 150
-local STALE = 200           -- other worms' frames without one of its own
-local FLY = "sprites/kamikaze_rocket/fly"
-local FLY_FRAMES, FLY_HALF_W, FLY_HALF_H = 5, 30, 40
-local DEPTH = wa.depth.FRONT
-
-local rockets = {} -- worm id -> its rocket
-local armed = {}   -- worm id -> fired with Ctrl, its flight not yet begun
-local hint = 0     -- frames left of the "hold Ctrl" line
-
--- PX's FireFinal: from the worm, at its aim (FireAngle, 0 down to 1 up)
--- on its side.
-local function launch(worm)
-  rockets[worm.id] = {
-    x = worm.x, y = worm.y, angle = worm.aim * worm.facing, life = LIFE, age = 0,
-    facing = worm.facing, stale = 0,
-  }
-  worm.visible = false
-end
-
-local function finish(worm)
-  rockets[worm.id] = nil
-  worm.visible = true
-end
-
--- One of WA's frames, before WA's Kamikaze runs it.
-local function fly(worm, r)
-  local keys = wa.world.keys()
-  if keys.left then r.angle = r.angle + TURN end
-  if keys.right then r.angle = r.angle - TURN end
-  local a = r.angle * math.pi
-  r.x = r.x + (SPEED * wa.math.sin(a))
-  r.y = r.y + (SPEED * wa.math.cos(a))
-  worm.x, worm.y = r.x, r.y
-  r.age = r.age + 1
-  r.life = r.life - 20
-  if r.life <= 0 then
-    -- The blast, then the worm out of the map into the water, where WA's
-    -- Kamikaze ends it (0x85, drowning).
-    local boom = wa.actors.spawn({
-      sprite = false, x = r.x, y = r.y, gravity = false, collide = false, owner = worm,
-      on = function() end,
-    })
-    boom:explode(BOOM)
-    boom:despawn()
-    worm.x, worm.y = -2500, wa.world.water() + 1000
-    r.done = true
-    return
-  end
-  wa.land.cut({ x = r.x, y = r.y, shape = "circle", radius = HOLE })
-end
-
-wa.on.worm_message(function(worm, msg)
-  if msg == wa.msg.FIRE_WEAPON then
-    if worm.weapon ~= "px.kamikaze_rocket" then return end
-    if not wa.world.keys().ctrl then
-      hint = HINT_FRAMES
-      return "eat"
-    end
-    armed[worm.id] = true
-    return
-  end
-  -- FRAME_FINISH
-  if worm.turn and hint > 0 then hint = hint - 1 end
-  -- Leaving the map sideways, WA's Kamikaze blows the worm up and frees it:
-  -- its frames stop, so its rocket goes once the other worms have had a few.
-  for id, other in pairs(rockets) do
-    if id ~= worm.id then
-      other.stale = other.stale + 1
-      if other.stale > STALE then rockets[id] = nil end
-    end
-  end
-  local r = rockets[worm.id]
-  if r then r.stale = 0 end
-  if worm.state == "kamikaze" then
-    if not r and armed[worm.id] then
-      armed[worm.id] = nil
-      launch(worm)
-      r = rockets[worm.id]
-    end
-    if r and not r.done then fly(worm, r) end
-  elseif r then
-    finish(worm)
-  end
-end, { msgs = { wa.msg.FIRE_WEAPON, wa.msg.FRAME_FINISH } })
-
--- A worm armed but never flying (its fire cancelled) is not armed next turn.
-wa.on.turn_start(function()
-  armed = {}
-end)
-
-if wa.on.hud then
-  wa.on.hud(function()
-    for _, id in ipairs(wa.sorted(rockets)) do
-      local r = rockets[id]
-      if not r.done then
-        wa.hud.line(string.format("Kamikaze Rocket: %.2f", math.max(0, r.life) / 1000))
-      end
-    end
-    if hint > 0 then
-      wa.hud.line("Hold Ctrl and press Space to use the Kamikaze Rocket.")
-    end
-  end)
-end
-
--- The rocket, drawn as PX's: its art faces down, turned to its heading and
--- mirrored for a worm facing right.
-if wa.on.draw and wa.draw.quad then
-  local QUAD = { sprite = FLY, blend = "alpha", color = 0xFFFFFFFF, depth = DEPTH,
-    points = { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } } }
-  local CORNERS = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } }
-  wa.on.draw(function()
-    for _, id in ipairs(wa.sorted(rockets)) do
-      local r = rockets[id]
-      if not r.done then
-        local t = -r.angle * math.pi
-        local c, s = wa.math.cos(t), wa.math.sin(t)
-        local flip = r.facing > 0 and -1 or 1
-        QUAD.frame = (r.age // 10) % FLY_FRAMES
-        for i, k in ipairs(CORNERS) do
-          local dx, dy = k[1] * flip * FLY_HALF_W, k[2] * FLY_HALF_H
-          QUAD.points[i][1] = r.x + (dx * c - dy * s)
-          QUAD.points[i][2] = r.y + (dx * s + dy * c)
-        end
-        wa.draw.quad(QUAD)
-      end
-    end
-  end)
-end
-
-shared.kamikaze_rockets = rockets -- for the Highlander mock
-`
-      },
-      {
-        path: 'weapons/laser_gun.lua',
-        name: 'weapons/laser_gun.lua',
-        language: 'lua',
-        content: `-- Highlander: Laser Gun. Split from rules.lua by tools/split_highlander.py.
--- Squares by multiplication: \`^\` calls the C runtime's pow, whose last bit
--- may differ between machines.
-local function sq(v) return v * v end
-
-local shared = require("lib/shared")
-local laser = require("lib/laser")
-local fires = shared.fires
-
--- ------------------------------------------------------------- Laser Gun
---
--- PX's lasergun (CLaserRay). The record is an uzi firing one bullet; PX
--- fires none (FireFinal without super), and each frame sets the worm's shot
--- counters to 0 of 1, so WA keeps the worm in its repeat-fire state, aim
--- live, while a beam burns for 5 s (250 frames) from the worm along its aim.
--- Every fourth frame the beam traces: to the first land, 2048 px at most,
--- cutting 4 px holes there (along the cut when the aim held still); and
--- every worm, mine, crate and oil drum within 5 px of it takes fire damage:
--- a worm 2, then 1 once it has taken 10, and no more after 45 from this beam;
--- an oil drum 4, a crate 1. Drawn: a red strip, its width pulsing from 1.0
--- to 0.5, and glows at the muzzle and where it hits; red sparks from the
--- muzzle, glows rising from the cut, yellow sparks where it touches things.
---
--- Here the engine hands each of WA's shots to on_fire and skips WA's bullet
--- (a gun slot with an on_fire), and the pack holds worm.shots_fired and
--- worm.shots_to_fire as PX does.
---
--- Differences: a mine the beam touches is armed on its fuse, once, rather
--- than sent PX's gun damage (object:hit takes crates and oil drums); the
--- beam's loop sound is played again every 51 frames, not looped.
-
--- Its own block: the file is at Lua's 200 locals for one chunk.
-do
-  local LASER_LIFE = 250
-  local LASER_REACH = 2048
-  local LASER_LOOP_FRAMES = 51 -- laser_loop.wav is 1.02 s
-  -- States a worm is not firing in: the beam stops (PX keeps it only in
-  -- repeat fire, firing, aiming and fired).
-  local LASER_STOPS = { standing = true, sliding = true, jetpacking = true, parachuting = true,
-    bungee = true, tumbling = true, teleporting = true, drilling = true, punching = true }
-  local lasers = {} -- worm id -> the beam
-
-  local laser_between, laser_particle = laser.between, laser.particle
-
-  -- UpdatePosDir: the beam's direction from the worm's aim (0 down, 1 up)
-  -- and side; it starts at the worm and draws from 24 px out.
-  local function laser_aim(r, w)
-    local ang = (1 - w.aim) * math.pi
-    if w.facing < 0 then ang = 2 * math.pi - ang end
-    r.dx, r.dy = wa.math.sin(ang), -wa.math.cos(ang)
-    r.x = w.x + (2 * w.facing * r.dy - r.dx)
-    r.y = w.y + (-2 - r.dy)
-    r.gx = r.x + (24 * r.dx)
-    r.gy = r.y + (24 * r.dy)
-  end
-
-  local function laser_sparks(r, n, v0, v1, s0, s1)
-    local base = (1 - r.aim) * math.pi
-    if r.facing < 0 then base = 2 * math.pi - base end
-    for _ = 1, n do
-      local ang = base + laser_between(r, -0.8, 0.8)
-      local v = laser_between(r, v0, v1)
-      local s = laser_between(r, s0, s1)
-      laser_particle(r, { x = r.gx, y = r.gy, vx = v * wa.math.sin(ang),
-        vy = -v * wa.math.cos(ang), life = 30, drag = 0.3, grav = 0.8,
-        s0 = s, s1 = 0.01, c0 = { 255, 0, 0 }, c1 = { 80, 0, 0 } })
-    end
-  end
-
-  local function laser_objects()
-    local out = {}
-    for _, group in ipairs({ wa.worms, wa.mines, wa.crates, wa.oil }) do
-      if group then
-        for _, obj in ipairs(group.all()) do out[#out + 1] = obj end
-      end
-    end
-    return out
-  end
-
-  local LASER_RADIUS = { worm = 6, mine = 5, crate = 9, oil = 9 }
-
-  -- PerformTrace with damage: the cut, then everything touching the beam.
-  local function laser_trace(r, w)
-    local x1 = r.x + (LASER_REACH * r.dx)
-    local y1 = r.y + (LASER_REACH * r.dy)
-    local land = wa.land.trace(r.x, r.y, x1, y1)
-    local hx, hy = land and land.x or x1, land and land.y or y1
-    if land then
-      if r.hit and r.dx == r.last_dx and r.dy == r.last_dy then
-        -- The aim held: a clean cut from the last hit to this one.
-        local steps = math.max(1, math.floor(math.sqrt(sq(hx - r.hx) + sq(hy - r.hy)) / 2))
-        for i = 0, steps do
-          wa.land.cut({ x = r.hx + (hx - r.hx) * i / steps, y = r.hy + (hy - r.hy) * i / steps, shape = "circle", radius = 4 })
-        end
-      else
-        wa.land.cut({ x = hx, y = hy, shape = "circle", radius = 4 })
-      end
-      local s = laser_between(r, 0.6, 0.9)
-      laser_particle(r, { x = hx, y = hy, life = 60, drag = 0.2, grav = -0.4, jitter = 0.6,
-        s0 = s, s1 = 0.01, c0 = { 255, 0, 0 }, c1 = { 255, 0, 0 } })
-      laser_particle(r, { x = hx, y = hy, life = 80, drag = 0, grav = 0,
-        s0 = 0.6, s1 = 0.1, c0 = { 200, 0, 0 }, c1 = { 0, 0, 0 } })
-    end
-    r.hx, r.hy, r.hit = hx, hy, land ~= nil
-    local lx, ly = (hx - r.x), (hy - r.y)
-    r.draw_beam = lx * lx + ly * ly > 24 * 24
-    local length = math.sqrt(lx * lx + ly * ly)
-    for _, obj in ipairs(laser_objects()) do
-      local ox, oy = (obj.x - r.x), (obj.y - r.y)
-      local along = ox * r.dx + oy * r.dy
-      local across = math.abs(ox * r.dy - oy * r.dx)
-      if along >= 0 and along <= length and across <= 5 + (LASER_RADIUS[obj.kind] or 6)
-          and not (obj.kind == "worm" and obj.id == w.id) then
-        local key = obj.kind .. ":" .. obj.id
-        if obj.kind == "worm" then
-          if obj.hp > 0 then
-            local taken = r.taken[key] or 0
-            local amount = taken >= 45 and 0 or taken >= 10 and 1 or 2
-            if amount > 0 then obj:hurt(amount) end
-            r.taken[key] = taken + amount
-          end
-        elseif obj.kind == "oil" or obj.kind == "crate" then
-          obj:hit(obj.kind == "oil" and 4 or 1, r.dx, r.dy)
-        elseif obj.kind == "mine" and not r.armed[key] then
-          r.armed[key] = true
-          obj:arm(obj.fuse < 0 and wa.random(1000, 5000) or obj.fuse)
-        end
-        -- FX_HitObject: a yellow flash and two sparks.
-        local px, py = obj.x - (3 * r.dx), obj.y - (3 * r.dy)
-        local tone = math.floor(laser_between(r, 0, 50))
-        laser_particle(r, { x = px, y = py, life = 10, drag = 0, grav = 0,
-          s0 = laser_between(r, 0.4, 0.8), s1 = 0.01, c0 = { 210, 210 - tone, 0 }, c1 = { 210, 50 - tone, 0 } })
-        for _ = 1, 2 do
-          local a, v = laser_between(r, 0, 2 * math.pi), laser_between(r, 0.5, 1.8)
-          laser_particle(r, { x = px, y = py, vx = v * wa.math.cos(a), vy = v * wa.math.sin(a),
-            life = 30, drag = 0.05, grav = 1, s0 = laser_between(r, 0.2, 0.4), s1 = 0.01,
-            c0 = { 255, 255 - tone, 0 }, c1 = { 255, 80 - tone, 0 } })
-        end
-      end
-    end
-  end
-
-  local function laser_stop(r, w)
-    r.dead = true
-    if w then
-      -- WA ends the repeat fire, as when its shots run out.
-      w.shots_fired = w.shots_to_fire
-      wa.sound.play(w, "sounds/laser_gun/laser_end.wav")
-    end
-  end
-
-  fires.laser = function(fire)
-    local w = fire.worm
-    -- Each of WA's shots comes here; one beam per worm, as PX's LaserRayObj.
-    if lasers[w.id] then return end
-    local r = { worm_id = w.id, life = LASER_LIFE, counter = 0, size = 1.0, first = true,
-      taken = {}, armed = {}, fx = {}, seed = (w.x // 1 * 7919 + w.y // 1) % 0x80000000 }
-    r.aim, r.facing = w.aim, w.facing
-    laser_aim(r, w)
-    r.hx, r.hy, r.last_dx, r.last_dy = r.x, r.y, r.dx, r.dy
-    lasers[w.id] = r
-    wa.sound.play(w, "sounds/laser_gun/laser_start.wav")
-    wa.sound.play(w, "sounds/laser_gun/laser_loop.wav")
-    wa.actors.spawn({
-      sprite = false, x = w.x, y = w.y, gravity = false, collide = false, owner = w,
-      on = function(a)
-        r.life = r.life - 1
-        laser.step(r)
-        if r.dead then
-          if r.life <= -10 and #r.fx == 0 then
-            lasers[r.worm_id] = nil
-            a:despawn()
-          end
-          return
-        end
-        if r.life <= 0 or w.hp <= 0 or not w.turn or w.weapon ~= "px.laser_gun" or LASER_STOPS[w.state or ""] then
-          laser_stop(r, w.hp > 0 and w or nil)
-          return
-        end
-        w.shots_fired, w.shots_to_fire = 0, 1
-        r.size = r.size - 0.07
-        if r.size < 0.5 then r.size = 1.0 end
-        r.aim, r.facing = w.aim, w.facing
-        laser_aim(r, w)
-        if r.first then
-          r.first = false
-          laser_sparks(r, 8, 5, 9, 0.4, 0.7) -- FX_InitialBurst
-        end
-        if (LASER_LIFE - r.life) % LASER_LOOP_FRAMES == 0 then
-          wa.sound.play(w, "sounds/laser_gun/laser_loop.wav")
-        end
-        if r.counter <= 0 then
-          r.counter = 3
-          laser_trace(r, w)
-          laser_sparks(r, 1, 2, 5, 0.2, 0.5) -- FX_MuzzleSparks
-        else
-          r.counter = r.counter - 1
-        end
-        r.last_dx, r.last_dy = r.dx, r.dy
-      end,
-    })
-  end
-
-  if wa.on.draw and wa.draw.ribbon then
-    wa.on.draw(function()
-      for _, r in pairs(lasers) do
-        laser.draw_particles(r)
-        if not r.dead then
-          local c = laser.argb(255, { 255, 0, 0 })
-          laser.glow(r.gx, r.gy, 32 * 0.5 * r.size, c)
-          if r.draw_beam then laser.beam(r.gx, r.gy, r.hx, r.hy, 2 * 8 * r.size, c) end
-          if r.hit then laser.glow(r.hx, r.hy, 32 * 0.75 * r.size, c) end
-        end
-      end
-    end)
-  end
-end
-`
-      },
-      {
-        path: 'weapons/nuke_rocket.lua',
-        name: 'weapons/nuke_rocket.lua',
-        language: 'lua',
-        content: `-- Highlander: Nuke Rocket. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-
--- ------------------------------------------------------------ Nuke Rocket
-do
---
--- PX's nuke_rocket_script, on the mine slot. The scheme's record is a
--- placed weapon that WA fires as a missile (fire type 2, method 2:
--- CreateWeaponProjectile), and it already has every value PX's FireFinal
--- gives its first rocket (a 3 s fuse, damage 0, bias 50, push 70, sound
--- 66). So WA's own shot is PX's first rocket: it fuses on the ground,
--- hissing (sound 66 every 10 frames). When it explodes, a nuke climbs out
--- of it: a real WA missile of the same slot (wa.weapons.launch, as PX's
--- MakeNuke creates a CMissile), silent, with a 1.6 s fuse, bursting into
--- the record's clustlets. For 53 frames it climbs, randomly and jittering
--- sideways, and carries worms and missiles within 17 pixels along; then
--- it brakes. Its explosion adds PX's two 40/40 blasts and sounds 85, 70.
--- PX's build of 28.09.2026 gives the nuke reddaz's bounce physics, with
--- restitution 0.11; here it keeps 11% of its speed when it hits terrain
--- (the record's terrain friction, 0 on WA's Mine record: it stopped dead).
--- The fusing rocket keeps the record's 0 and stays where it lands.
---
--- Not ported: PX's particle trails, and carrying mines, crates, oil drums
--- and bowling balls (their speed is not writable from Lua).
-local NR_HISS = 66    -- the fusing rocket's hiss, every 10 frames
-local NR_CLIMB = 53   -- frames the nuke climbs (PX: "1.1-1.2 second")
-local NR_CARRY = 17   -- pixels: what the climbing nuke carries along
-local NUKE = { fuse = 1600, sound = 0, burst = "clusters", terrain_keep_pct = 11 }
-local NUKE_BLAST = { damage = 40, id = 40 } -- PX's DoExplosion(x, y, 40, 40), twice
-
-local nr_first = {}    -- missile id -> frames: a first rocket, fusing
-local nr_speed = {}    -- missile id -> { vx, vy } at its last frame
-local nr_nuke = {}     -- missile id -> frames flown: a nuke
-local nr_climbing = {} -- nuke id -> { x, y, vx, vy }, while it climbs
-local nr_pending = {}  -- nukes to launch once the rocket's blast is over
-local nr_shooter       -- the worm that fired (PX's ClWT / ClWN)
-local nr_expect        -- fired: the next mine-slot missile is the rocket
-
-local function near(ax, ay, bx, by)
-  local r = NR_CARRY
-  return math.abs(ax - bx) < r and math.abs(ay - by) < r
-end
-
-wa.on.missile_frame(function(m)
-  local t = nr_nuke[m.id]
-  if t ~= nil then
-    -- Before WA moves it, as PX's M_FRAME runs before super.
-    if m.phase ~= "pre" then
-      return
-    end
-    -- Retain the original lottery and RNG draw count; convert its speed to pixels.
-    if t < NR_CLIMB then
-      m.vy = m.vy - wa.random(19661, 52429) / 65536 -- 0.3 to 0.8 a frame
-      if t % 2 == 1 then
-        m.vx = m.vx + wa.random(-19661, 19661) / 65536 -- up to 0.3 either way
-      end
-      nr_climbing[m.id] = { x = m.x, y = m.y, vx = m.vx, vy = m.vy }
-      for _, w in ipairs(wa.worms.all()) do
-        if near(w.x, w.y, m.x, m.y) then
-          w.vx, w.vy = m.vx, m.vy
-        end
-      end
-    else
-      nr_climbing[m.id] = nil
-      if m.vy < 0 then
-        m.vy = m.vy + 0.1999969482421875 -- 0.2: slows the climb without faking gravity
-      end
-    end
-    nr_nuke[m.id] = t + 1
-    return
-  end
-  -- The rocket is the missile WA fires after the fire key. Later ones of
-  -- the slot (the nuke's cluster bits) are no rockets.
-  if nr_first[m.id] == nil and nr_expect and m.weapon == "px.nuke_rocket" then
-    nr_first[m.id], nr_expect = 0, false
-  end
-  if nr_first[m.id] ~= nil then
-    if m.phase == "post" then
-      nr_speed[m.id] = { m.vx, m.vy }
-      local n = (nr_first[m.id] or 0) + 1
-      nr_first[m.id] = n
-      if n % 10 == 0 and nr_shooter then
-        wa.sound.play(nr_shooter, NR_HISS)
-      end
-    end
-    return
-  end
-  -- Any other missile a climbing nuke passes is carried along.
-  if m.phase == "pre" then
-    for _, c in pairs(nr_climbing) do
-      if near(m.x, m.y, c.x, c.y) then
-        m.vx, m.vy = c.vx, c.vy
-      end
-    end
-  end
-end)
-
-shared.nuke_rocket_explode = function(ev)
-  local id = ev.missile
-  if not id then
-    return
-  end
-  if nr_nuke[id] then
-    nr_nuke[id], nr_climbing[id] = nil, nil
-    local owner = nr_shooter
-    if owner then
-      wa.sound.play(owner, 85)
-      wa.sound.play(owner, 70) -- "louder please :D"
-      for _ = 1, 2 do
-        wa.actors.spawn({
-          sprite = false, x = ev.x, y = ev.y, owner = owner,
-          explode = { damage = NUKE_BLAST.damage, id = NUKE_BLAST.id, now = true },
-        })
-      end
-    end
-    return
-  end
-  if nr_first[id] then
-    local speed = nr_speed[id] or { 0, 0 }
-    nr_first[id], nr_speed[id] = nil, nil
-    if nr_shooter then
-      wa.sound.play(nr_shooter, "sounds/nuke_rocket_launch.wav")
-    end
-    -- Launched after the blast, as PX's comes after super.
-    nr_pending[#nr_pending + 1] = { x = ev.x, y = ev.y, vx = speed[1], vy = speed[2] }
-  end
-end
-
-wa.on.worm_message(function(worm, msg)
-  if msg == wa.msg.FIRE_WEAPON and worm.weapon == "px.nuke_rocket" then
-    nr_shooter, nr_expect = worm, true
-  elseif msg == wa.msg.FRAME_FINISH and #nr_pending > 0 then
-    local owner = nr_shooter or worm
-    for _, p in ipairs(nr_pending) do
-      local id = wa.weapons.launch({
-        weapon = "px.nuke_rocket", owner = owner, x = p.x, y = p.y, vx = p.vx, vy = p.vy,
-        missile = {
-          fuse = NUKE.fuse, flight_sound = NUKE.sound, burst = NUKE.burst,
-          bounce = { terrain_keep_pct = NUKE.terrain_keep_pct },
-        },
-      })
-      nr_nuke[id] = 0
-    end
-    nr_pending = {}
-  end
-end, { msgs = { wa.msg.FIRE_WEAPON, wa.msg.FRAME_FINISH } })
-end
-`
-      },
-      {
-        path: 'weapons/portal_gun.lua',
-        name: 'weapons/portal_gun.lua',
-        language: 'lua',
-        content: `-- PX p_portalgun2: a pair per team, orange (-) and blue (+). Ctrl/Alt
--- chooses the other colour for one shot. Pause toggles the team's pair.
--- The transport rules are reusable Lua; WA keeps the transported bodies.
-local shared = require("lib/shared")
-local Portals = require("lib/portals")
-local Effects = require("lib/portal_effects")
--- The slot the Portal Gun sits on this match (its home: Scales of Justice).
-local SLOT, ART = "px.portal_gun", "sprites/portal_gun/"
-local SPEED = 35
-local chosen, held, half_used = {}, {}, {}
-local bolts, effects = {}, Effects.new()
-local ticker
-local colours = { 0xFFDF6400, 0xFF003FEF }
-local team_colours = { 0xD21400, 0x0014DC, 0x00DC00, 0xFADC00, 0xDC00DC, 0x00E6E6 }
-local function sound(name, worm) wa.sound.play(worm, "sounds/" .. name .. ".wav") end
-local network = Portals.new({ grace = 0, on_transport = function(body, entry)
-  effects:transport(entry)
-  if (body.kind or "worm") == "worm" then sound("portal_teleport", body) end
-end })
-shared.portals = network
-
-local function tick()
-  network:tick()
-  effects:tick(wa.world.gravity())
-  for _, group in ipairs(wa.sorted(network.pairs)) do
-    local pair = network.pairs[group]
-    if pair.active and pair[1] and pair[2] and network.age % 500 ~= 0 then
-      for colour = 1,2 do effects:ambient(pair[colour]) end
-    end
-  end
-  -- Bounded return cache, without userdata or freed native pointers.
-  if network.age % 150 == 0 then
-    local alive = {}
-    for _, worm in ipairs(wa.worms.all()) do alive["worm:" .. worm.id] = true end
-    for _, list in ipairs({wa.missiles, wa.mines, wa.crates, wa.oil, wa.graves, wa.arrows}) do
-      for _, body in ipairs(list.all()) do alive[body.kind .. ":" .. body.uid] = true end
-    end
-    if shared.portal_bowling_balls then
-      for _, body in ipairs(shared.portal_bowling_balls()) do alive["actor:" .. body.id] = true end
-    end
-    for _, key in ipairs(wa.sorted(network.last_exit)) do
-      if not alive[key] then network.last_exit[key] = nil end
-    end
-  end
-end
-local function ensure_ticker(worm)
-  if ticker then return end
-  ticker = wa.actors.spawn({ sprite = ART .. "portal_glow.png", x = 0, y = -1000,
-    owner = worm, gravity = false, collide = false, on = { frame = tick } })
-  ticker:scale(0)
-end
-
--- PX's CheckWall: at least one of its four diagonal traces touches land.
-local function supported(x, y)
-  for _, d in ipairs({ {-15,-15}, {15,15}, {-15,15}, {15,-15} }) do
-    local hit = wa.land.trace(x, y, x + d[1], y + d[2])
-    if hit and hit.hit then return true end
-  end
-  return false
-end
-local function shooter(b)
-  for _, w in ipairs(wa.worms.all()) do if w.id == b.worm_id then return w end end
-end
-local function place(b, hit)
-  if hit.y >= wa.world.water() or not supported(hit.x, hit.y) then
-    effects:impact(hit.x, hit.y, true)
-    sound("portal_gun_failhit", shooter(b))
-    return false
-  end
-  local p, fresh = network:place(b.team, b.colour, hit.x, hit.y, hit.nx, hit.ny, b.team_colour)
-  if not p then effects:impact(hit.x, hit.y, true); sound("portal_gun_failhit", shooter(b)); return false end
-  if fresh then chosen[b.team] = 3 - b.colour end
-  sound("portal_gun_hit", shooter(b))
-  effects:impact(hit.x, hit.y, false)
-  -- Each two successful placements use one ammo. Misses are refunded, as
-  -- PX's FireFinal/TakeOffPortalWeap; attribute delayed hits to their shooter.
-  if half_used[b.worm_id] then
-    half_used[b.worm_id] = nil
-    local worm = shooter(b)
-    if worm then worm:ammo(SLOT, -1) end
-  else half_used[b.worm_id] = true end
-  return true
-end
-local function remove(b)
-  bolts[b.id] = nil
-  b.a:despawn()
-end
-local function bolt_frame(b)
-  b.age = b.age + 1
-  local size = wa.world.size()
-  if b.x < 0 or b.x > size.w or b.y < -size.h then b.vy = b.vy + wa.world.gravity() end
-  local hit = wa.world.trace({ x0 = b.x, y0 = b.y, x1 = b.x + b.vx, y1 = b.y + b.vy,
-    with = {"terrain"}, radius = 0 })
-  if hit and hit.hit then
-    place(b, hit)
-    remove(b)
-    return
-  end
-  b.x, b.y = b.x + b.vx, b.y + b.vy
-  if b.y >= wa.world.water() or b.age > 600 or math.abs(b.x) > 32000 or math.abs(b.y) > 32000 then
-    remove(b); return
-  end
-  b.a.x, b.a.y = b.x, b.y
-  b.a:frame((b.age // 2) % 20)
-  b.a:gfx({ scale = 0.12, tint = colours[b.colour] & 0xFFFFFF, depth = wa.depth.OBJECTS })
-  effects:trail(b.x, b.y, b.colour)
-end
-local function air_aim(worm, keys)
-  if (keys.left or keys.right) and keys.up then return 0.75 end
-  if (keys.left or keys.right) and keys.down then return 0.175 end
-  if keys.left or keys.right then return 0.5 end
-  if keys.down then return 0 end
-  if keys.up then return 1 end
-  return worm.aim
-end
-shared.fires.portal_gun = function(fire)
-  local worm, keys = fire.worm, wa.world.keys()
-  ensure_ticker(worm)
-  local colour = chosen[worm.team] or 1
-  if keys.ctrl or keys.alt then colour = 3 - colour end
-  local aim = fire.airborne and air_aim(worm, keys) or worm.aim
-  local angle = (1 - aim) * math.pi
-  local dx, dy = wa.math.sin(angle) * worm.facing, -wa.math.cos(angle)
-  local power = fire.power or 1
-  local b = { x = worm.x + dx, y = worm.y + dy,
-    vx = (dx * SPEED * power), vy = (dy * SPEED * power),
-    worm_id = worm.id, team = worm.team, team_colour = team_colours[worm.alliance + 1],
-    colour = colour, age = 0 }
-  -- Native ground fire consumes ammo after this callback; airborne fire
-  -- dispatches Lua alone and therefore needs no refund.
-  if not fire.airborne then worm:ammo(SLOT, 1) end
-  local a = wa.actors.spawn({ sprite = ART .. "portal_ball", x = b.x, y = b.y,
-    owner = worm, gravity = false, collide = false, on = { frame = function() bolt_frame(b) end } })
-  b.a, b.id = a, a.id
-  a:gfx({ scale = 0.12, tint = colours[colour] & 0xFFFFFF, depth = wa.depth.OBJECTS })
-  bolts[b.id] = b
-  sound("portal_gun_shoot", worm)
-end
-
-wa.on.body_move(function(body) if next(network.pairs) then network:move(body) end end,
-  { kinds = { "worm", "missile", "mine", "crate", "oil", "grave", "arrow" } })
-wa.on.worm_message(function(worm)
-  if not worm.turn then return end
-  local keys, id, team = wa.world.keys(), worm.id, worm.team
-  local old = held[id] or {}
-  if keys.pause_key and not old.pause_key then
-    local pair = network.pairs[team]
-    if pair then
-      network:active(team, not pair.active)
-      sound(pair.active and "portal_active" or "portal_inactive", worm)
-    end
-  end
-  -- Jumping and falling it fires through on_fire (the claim's airborne =
-  -- true, the profile's "Fires jumping, falling" setting).
-  if worm.weapon == SLOT then
-    if keys.minus_key and not old.minus_key then chosen[team] = 1 end
-    if keys.plus_key and not old.plus_key then chosen[team] = 2 end
-  end
-  held[id] = { portal = worm.weapon == SLOT, plus_key = keys.plus_key, minus_key = keys.minus_key, pause_key = keys.pause_key }
-end, { msgs = { wa.msg.FRAME_FINISH } })
-wa.on.turn_start(function() network:turn_start(); held = {} end)
-wa.on.turn_end(function() network:turn_end() end)
-
-if wa.on.hud then wa.on.hud(function()
-  local worm = shared.current_worm()
-  if worm and worm.weapon == SLOT then
-    wa.hud.line("Portal Gun: " .. ((chosen[worm.team] or 1) == 1 and "ORANGE" or "BLUE")
-      .. " (- orange, + blue; Ctrl/Alt other colour; Pause toggle)")
-  end
-end) end
-
-if wa.on.draw then
-  local function quad(sprite, x, y, w, h, angle, colour, blend, depth, frame)
-    local c, s = wa.math.cos(angle or 0), wa.math.sin(angle or 0)
-    local points = {}
-    for _, v in ipairs({ {-w/2,-h/2}, {w/2,-h/2}, {w/2,h/2}, {-w/2,h/2} }) do
-      points[#points + 1] = { x + (v[1]*c-v[2]*s), y + (v[1]*s+v[2]*c) }
-    end
-    wa.draw.quad({sprite = ART .. sprite, points = points, color = colour, blend = blend,
-      depth = depth or wa.depth.OBJECTS, frame = frame or 0})
-  end
-  wa.on.draw(function()
-    for _, group in ipairs(wa.sorted(network.pairs)) do
-      local pair = network.pairs[group]
-      for colour = 1, 2 do
-        local p = pair[colour]
-        if p then
-          -- PX's CAnimation draws the endpoint independently of CPortal's
-          -- linked/active state. Its alpha=50 is a percentage and draws the
-          -- image repeatedly, not a byte alpha that makes singles disappear.
-          local angle = math.pi / 2 - wa.math.atan(p.nx, p.ny)
-          quad(colour == 1 and "portal_orange.png" or "portal_blue.png", p.draw_x, p.draw_y,
-            40, 100, angle, 0xFFFFFFFF, "add")
-          quad("portal_black_mask", p.draw_x - (p.x-p.draw_x)*2, p.draw_y - (p.y-p.draw_y)*2,
-            12.5, 12.5, 0, (135 << 24) | (p.team_colour or 0xFFFFFF), "alpha",
-            wa.depth.OBJECTS - 1, (network.age // 50) % 2)
-        end
-      end
-    end
-    effects:draw(quad)
-    local worm = shared.current_worm()
-    if worm and worm.weapon == SLOT and worm.aiming then
-      local keys = wa.world.keys()
-      local colour = chosen[worm.team] or 1
-      if keys.ctrl or keys.alt then colour = 3 - colour end
-      quad("portal_gun_glow.png", worm.x, worm.y, 80, 80,
-        worm.facing * (0.5 - worm.aim) * math.pi, (100 << 24) | (colours[colour] & 0xFFFFFF), "add", 0x000CFFFF)
-    end
-  end)
-end
-shared.portal_air_aim = air_aim
-`
-      },
-      {
-        path: 'weapons/reinforcement.lua',
-        name: 'weapons/reinforcement.lua',
-        language: 'lua',
-        content: `-- Highlander: Reinforcement (PX utility_reinforcement: reinforcement_SCRIPT.txt).
-local shared = require("lib/shared")
--- "Reinforcement", 200).
-local NAME, HEALTH = "Reinforcement", 200
--- Its centre this far above the land it stands on: WA's standing worm
--- settles the rest itself.
-local STAND = 12
-
--- The ground under x (pixels): the first land below open air from the top
--- (on a cavern, the roof's underside is not ground). Nil over the water.
-local function ground(x)
-  local size = wa.world.size()
-  local y = 0
-  while y < size.h and wa.land.solid(x, y) do y = y + 1 end
-  while y < size.h and not wa.land.solid(x, y) do y = y + 1 end
-  if y >= size.h then return nil end
-  return y
-end
-
--- A click places it: PX drops the worm at the click's x from 200 pixels
--- above the map on a jet pack with no fuel, and stands it up once it has
--- landed. Here it stands on the ground under the click straight away, so
--- it takes no fall damage either. Over the water it drops in at the
--- surface, as PX's falls in. It takes a dead worm's place, as PX's does;
--- with 8 living worms the team is full (PX: "Too many worms (8) in your
--- team!").
-shared.fires.reinforcement = function(ev)
-  local worm = ev.worm
-  local x = ev.x // 1
-  local y = ground(x)
-  local at = y and (y - STAND) or wa.world.water() - STAND
-  local ok, spawned = pcall(wa.worms.spawn, { team = worm.team, x = x, y = at, name = NAME, health = HEALTH })
-  if not ok then
-    wa.log("Reinforcement: " .. tostring(spawned))
-    wa.sound.play(worm, "sounds/gravity_control/error.wav")
-  elseif shared.fresh_hand then
-    -- Highlander's rules: dealt a fresh hand, as a new worm.
-    shared.fresh_hand(spawned)
-  end
-end
-`
-      },
-      {
-        path: 'weapons/sentry_gun.lua',
-        name: 'weapons/sentry_gun.lua',
-        language: 'lua',
-        content: `-- Highlander: Sentry Gun (PX weapon_sentry_gun: sentrygun.txt's PxSentryGun),
--- on the Kamikaze slot as PX's Highlander scheme has it. The turret itself
--- (placing, planting, aiming, reloading, damage) is lib/turret.lua; this is
--- what it fires: stock Uzi rounds with PX's damage and spread, ejecting
--- casings. Ported from the standalone sentry_gun pack
--- (mods/examples/sentry_gun_old).
-local shared = require("lib/shared")
-local turret = require("lib/turret")
-local ART = "sprites/sentry_gun/"
-local SND = "sounds/sentry_gun/"
-local DAMAGE = 2           -- per round
-local MUZZLE_OUT = 11      -- pixels from the pivot along the bore
--- PX rolls a barrel deviation for each round and keeps every 5th one
--- pin-point: tenths of a degree, from WA's shared RNG.
-local SPREAD_TENTHS = 20   -- +-2.0 degrees
--- PX ejects a shell casing (WA's "uzicase" frames) on every shot, sideways
--- from the barrel to the side the turret faces, with a little random angle
--- and speed, gravity and no bounce, gone after 100 frames.
-local CASING = ART .. "casing"
-local CASING_FRAMES, CASING_LIFE = 16, 100
-local CASING_JITTER_DEG = 17                  -- PX's RandomFloat(-0.3, 0.3) rad
-local CASING_SPEED_MIN, CASING_SPEED_MAX = 200, 300 -- PX's 2.0 to 3.0, hundredths
-
--- Tints for the grey head, from PX's own render (G/R about 0.39 and B/R
--- about 0.28 on its red housing), the dominant channel pinned at 255: a
--- vertex tint only scales down. Red to cyan, as worm.alliance + 1. The same
--- colours tint the housing the worm carries (worm_sprites_team_tint).
-local TEAM_TINT = { 0xFF6447, 0x4764FF, 0x47FF64, 0xE6E647, 0xE647E6, 0x47E6E6 }
-shared.sentry_team_tint = TEAM_TINT
-
-local function casing(t, a, s, rad)
-  local jitter = wa.random(-CASING_JITTER_DEG, CASING_JITTER_DEG)
-  local eject = rad + math.rad(90 * s.side + jitter)
-  local speed = wa.random(CASING_SPEED_MIN, CASING_SPEED_MAX) / 100
-  local life, spin = CASING_LIFE, 0
-  wa.actors.spawn({
-    sprite = CASING, x = a.x, y = a.y - t.muzzle_up,
-    vx = (wa.math.sin(eject) * speed), vy = (wa.math.cos(eject) * speed),
-    gravity = false, collide = false, owner = t.owner(a, s), kind = "casing",
-    on = function(c)
-      life = life - 1
-      if life <= 0 then c:despawn(); return end
-      c:gravity()
-      c:move({ terrain = false, worms = false })
-      spin = (spin + 1) % CASING_FRAMES
-      c:frame(spin)
-    end,
-  })
-end
-
--- WA traces and handles each impact exactly as a stock Uzi round, including
--- directional push and its small hit graphics. Ignore only the emitting
--- sentry's body/feet during tracing. WA handles intervening worms/objects,
--- friendly fire and nearby hits; no synthetic explosions or impact actors.
-local function fire(t, a, s)
-  local owner = t.owner(a, s)
-  -- The native gun needs a living worm parent. An eliminated coalition's
-  -- sentry retains its colour/ammo, and can fire again after capture/revival.
-  if owner == a then t.stop_firing(a, s); return end
-  s.shots = s.shots + 1
-  local dev = 0
-  if s.shots % 5 ~= 0 then dev = wa.random(-SPREAD_TENTHS, SPREAD_TENTHS) / 10 end
-  local rad = math.rad(s.angle + dev)
-  local dx, dy = wa.math.sin(rad), wa.math.cos(rad)
-  local mx, my = turret.muzzle(t, a, s.angle)
-  casing(t, a, s, rad)
-  wa.weapons.fire_bullet {
-    weapon = "stock.uzi", owner = owner,
-    x = mx, y = my, dx = dx, dy = dy, damage = DAMAGE, ignore = { a },
-  }
-  s.ammo = s.ammo - 1
-  if s.ammo <= 0 then
-    s.active = false
-    t.stop_firing(a, s)
-  end
-end
-
-local gun = turret.new({
-  kind = "sentry", weapon = "px.sentry_gun",
-  muzzle_out = MUZZLE_OUT,
-  art = { base = ART .. "turret_base", mask = ART .. "turret_mask.png", gun = ART .. "turret_gun", flare = ART .. "turret_flare", light = ART .. "turret_light.png" },
-  sounds = {
-    place = SND .. "sentryplace.wav", beep = SND .. "sentrybeeps2.wav",
-    fire_loop = SND .. "sentryfireloop.wav", fire_end = SND .. "sentryfireend.wav",
-    servo_start = SND .. "sentryservostart.wav", servo_loop = SND .. "sentryservoloop.wav",
-    servo_end = SND .. "sentryservoend.wav",
+      }
+    ],
   },
-  tints = TEAM_TINT,
-  fire = fire,
-})
-
-shared.fires.sentry_gun = function(fire_ev) gun.place(fire_ev) end
-shared.sentry_gun = gun -- for the Highlander mock
-`
-      },
+  {
+    id: 'example.swim_suit',
+    name: 'Swim Suit',
+    version: '0.1.0',
+    author: 'StepS / PyroMan (Project X port)',
+    category: 'utility',
+    description: 'Worm manipulation: take a worm into water, swim under four-key control, dive, float and drown. Extracted from Project X.',
+    tags: ['example', 'worm', 'water'],
+    files: [
       {
-        path: 'weapons/sentry_laser.lua',
-        name: 'weapons/sentry_laser.lua',
+        path: 'lib/shared.lua',
+        name: 'lib/shared.lua',
         language: 'lua',
-        content: `-- Highlander: Sentry Laser (PX weapon_sentry_laser: SentryLaser.txt's
--- PxSentryLaser and CLaserRayS, by rafa\`\`2), on the Dragon Ball slot as
--- PX's Highlander scheme has it. Projectile defence: the turret of
--- lib/turret.lua, aimed not at worms but at the nearest moving missile, mine
--- or Bowling Ball of another colour within 300 px, in sight beyond its barrel-sweep grace area. Each of
--- its 4 shots a turn is a short laser in its owner's colour that
--- disintegrates the target (gone, no explosion) and burns what is in
--- between: worms 10, crates and oil drums 20, a mine armed, a 4 px hole
--- where it stops. It fires on any colour's turn.
---
--- Differences: WA's arrows (PX also shot them) are not listed to Lua, so it
--- ignores them; a mine the beam crosses is armed on its fuse, as the Laser
--- Gun's beam does, rather than sent PX's gun damage.
-local shared = require("lib/shared")
-local turret = require("lib/turret")
-local laser = require("lib/laser")
-local ART = "sprites/sentry_laser/"
-local SND = "sounds/sentry_laser/"
-local RAY_LIFE = 10          -- CLaserRayS LifeTime: frames the beam shows
--- PX's ray starts at the barrel's centre (BarrelOffsetX 17, scaled 0.8) and
--- 6 px on.
-local MUZZLE_OUT = 17 * 0.8 + 6
--- PX rocks the barrel (2 px either way) while it fires; here for this long
--- after each shot.
-local RECOIL_FRAMES = 12
-local HOLE = 4               -- MakeHole(4) where the beam stops
-local WORM_DAMAGE, OBJECT_DAMAGE = 10, 20
--- The circles the beam touches things within (as the Laser Gun's).
-local RADIUS = { worm = 6, mine = 5, crate = 9, oil = 9 }
+        content: `-- Highlander: what its modules share, one table per match.
+-- Split from rules.lua by tools/split_highlander.py.
+local shared = {}
 
--- The body's tint (as the Sentry Gun's housing, red to cyan) and the beam's
--- colour, PX's pure team colours.
-local TEAM_TINT = shared.sentry_team_tint or { 0xFF6447, 0x4764FF, 0x47FF64, 0xE6E647, 0xE647E6, 0x47E6E6 }
-local BEAM_RGB = {
-  { 255, 0, 0 }, { 0, 0, 255 }, { 0, 255, 0 }, { 255, 255, 0 }, { 255, 0, 255 }, { 0, 255, 255 },
-}
-
-local rays = {} -- every ray still showing, in the order fired
-
--- What it shoots at: WA's missiles and mines (their team's colour), then the
--- Bowling Balls, each in its list's order, which every machine shares.
-local function targets()
-  local out = {}
-  for _, group in ipairs({ wa.missiles, wa.mines }) do
-    for _, o in ipairs(group.all()) do
-      out[#out + 1] = { key = o.id, x = o.x, y = o.y, alliance = o.alliance,
-        moving = o.vx ~= 0 or o.vy ~= 0, obj = o }
-    end
-  end
-  if shared.bowling_ball_targets then
-    for _, b in ipairs(shared.bowling_ball_targets()) do
-      out[#out + 1] = { key = "ball:" .. b.id, x = b.x, y = b.y, alliance = b.alliance,
-        moving = b.moving, ball = b.id }
-    end
-  end
-  return out
-end
-
--- Everything the beam from (x0, y0) along (dx, dy), \`length\` px, touches:
--- worms, mines, crates and oil drums, in that order.
-local function touched(x0, y0, dx, dy, length, skip)
-  local out = {}
-  for _, group in ipairs({ wa.worms, wa.mines, wa.crates, wa.oil }) do
-    for _, obj in ipairs(group.all()) do
-      if obj.id ~= skip then
-        local ox, oy = (obj.x - x0), (obj.y - y0)
-        local along = ox * dx + oy * dy
-        local across = math.abs(ox * dy - oy * dx)
-        if along >= 0 and along <= length and across <= (RADIUS[obj.kind] or 6) then
-          out[#out + 1] = obj
-        end
-      end
-    end
-  end
-  return out
-end
-
--- FX_HitObject: a yellow flash and three sparks.
-local function fx_hit_object(r, x, y)
-  local tone = math.floor(laser.between(r, 0, 50))
-  laser.particle(r, { x = x, y = y, life = 10, drag = 0, grav = 0,
-    s0 = laser.between(r, 0.4, 0.8), s1 = 0.01, c0 = { 210, 210 - tone, 0 }, c1 = { 210, 50 - tone, 0 } })
-  for _ = 1, 3 do
-    local a, v = laser.between(r, 0, 2 * math.pi), laser.between(r, 0.5, 1.8)
-    tone = math.floor(laser.between(r, 0, 50))
-    laser.particle(r, { x = x, y = y, vx = v * wa.math.cos(a), vy = v * wa.math.sin(a),
-      life = 50, drag = 0.05, grav = 1, jitter = 0.2, s0 = laser.between(r, 0.5, 0.7), s1 = 0.01,
-      c0 = { 255, 255 - tone, 0 }, c1 = { 255, 80 - tone, 0 } })
-  end
-end
-
--- PX's Disintegrate: bursts at the muzzle and where the target was.
-local function fx_disintegrate(r, x, y)
-  local c, dim = r.rgb, { r.rgb[1] * 0.2, r.rgb[2] * 0.2, r.rgb[3] * 0.2 }
-  for _ = 1, 5 do -- FX_InitialBurst
-    local v = laser.between(r, 5, 8)
-    local ang = r.ang + laser.between(r, -0.25, 0.25)
-    laser.particle(r, { x = r.x, y = r.y, vx = -v * wa.math.sin(ang), vy = -v * wa.math.cos(ang),
-      life = 40, drag = 0.1, grav = 0.4, jitter = 0.5, s0 = laser.between(r, 0.4, 0.7), s1 = 0.01,
-      c0 = c, c1 = dim, alpha = 215 })
-  end
-  laser.particle(r, { x = r.x, y = r.y, life = 25, drag = 0, grav = 0, s0 = 0.6, s1 = 0.01,
-    c0 = c, c1 = dim, alpha = 225 }) -- FX_BarrelFlash
-  local tone = math.floor(laser.between(r, 0, 50))
-  local v = laser.between(r, 2, 5)
-  laser.particle(r, { x = r.x, y = r.y, vx = v * wa.math.sin(r.ang), vy = -v * wa.math.cos(r.ang),
-    life = 30, drag = 0.3, grav = 0.8, jitter = 0.8, s0 = laser.between(r, 0.2, 0.5), s1 = 0.01,
-    c0 = { 255, 255 - tone, 0 }, c1 = { 255, 80 - tone, 0 } }) -- FX_MuzzleSparks
-  for i = 0, 3 do -- FX_Disintegrate
-    local a = math.pi / 4 + math.pi / 2 * i
-    laser.particle(r, { x = x, y = y, vx = 1.5 * wa.math.sin(a), vy = 1.5 * wa.math.cos(a),
-      life = 60, drag = 0.05, grav = 0, s0 = 0.5, s1 = 0.01, c0 = c, c1 = dim })
-  end
-  fx_hit_object(r, x, y)
-  -- FX_HitTerrain
-  laser.particle(r, { x = x, y = y, life = 40, drag = 0.2, grav = -0.4, jitter = 0.6,
-    s0 = laser.between(r, 0.6, 0.9), s1 = 0.01, c0 = c, c1 = c })
-  laser.particle(r, { x = x, y = y, life = 50, drag = 0, grav = 0, s0 = 0.6, s1 = 0.1,
-    c0 = c, c1 = { c[1] * 0.3, c[2] * 0.3, c[3] * 0.3 } })
-end
-
--- The ray shows for RAY_LIFE frames and its particles live on after it.
-local function ray_actor(r, body)
-  wa.actors.spawn({
-    sprite = false, x = r.x, y = r.y, gravity = false, collide = false, owner = body,
-    on = function(a)
-      laser.step(r)
-      r.life = r.life - 1
-      r.size = r.size - 0.07
-      if r.size < 0.5 then r.size = 1.0 end
-      if r.life == 0 then a:sound("sounds/laser_gun/laser_end.wav") end
-      if r.life <= 0 and #r.fx == 0 then
-        for i, other in ipairs(rays) do
-          if other == r then table.remove(rays, i) break end
-        end
-        a:despawn()
-      end
-    end,
-  })
-end
-
--- One shot (CLaserRayS): from the muzzle to the target, or to the land or
--- object before it; burns what is in between, cuts a hole where it stops,
--- and disintegrates the target.
-local function fire(t, a, s, target)
-  local ang = math.rad(s.angle)
-  local x0, y0 = turret.muzzle(t, a, s.angle)
-  local hx, hy = target.x, target.y
-  local land = turret.trace(a, x0, y0, hx, hy)
-  if land then hx, hy = land.x, land.y end
-  local lx, ly = (hx - x0), (hy - y0)
-  local length = math.sqrt(lx * lx + ly * ly)
-  local dx, dy = 0, 0
-  if length > 0 then dx, dy = lx / length, ly / length end
-
-  local r = { x = x0, y = y0, hx = hx, hy = hy, life = RAY_LIFE, size = 1.0, fx = {},
-    ang = ang, rgb = BEAM_RGB[s.alliance + 1] or { 125, 125, 125 },
-    seed = (x0 // 1 * 7919 + y0 // 1) % 0x80000000 }
-  rays[#rays + 1] = r
-  a:sound("sounds/laser_gun/laser_start.wav")
-
-  wa.land.cut({ x = hx, y = hy, shape = "circle", radius = HOLE })
-  for _, obj in ipairs(touched(x0, y0, dx, dy, length, target.obj and target.obj.id)) do
-    if obj.kind == "worm" then
-      if obj.hp > 0 then obj:hurt(WORM_DAMAGE) end
-    elseif obj.kind == "crate" or obj.kind == "oil" then
-      obj:hit(OBJECT_DAMAGE, dx, dy)
-    elseif obj.kind == "mine" and not s.armed[obj.id] then
-      s.armed[obj.id] = true
-      obj:arm(obj.fuse < 0 and wa.random(1000, 5000) or obj.fuse)
-    end
-    fx_hit_object(r, obj.x + (3 * dx), obj.y + (3 * dy))
-  end
-
-  -- A shot stopped by intervening terrain cannot destroy a target beyond it.
-  if not land then
-    if target.ball then
-      shared.remove_bowling_ball(target.ball)
-    elseif target.obj then
-      target.obj:remove()
-    end
-    fx_disintegrate(r, target.x, target.y)
-    a:sound(SND .. "sentrylaserdisin.wav")
-    -- The target is gone: acquire the next one with its own beep and delay.
-    s.tid, s.had_target = nil, false
-  end
-  ray_actor(r, a)
-
-  t.stop_firing(a, s)
-  s.recoil = RECOIL_FRAMES
-  s.ammo = s.ammo - 1
-  if s.ammo <= 0 then s.active = false end
-end
-
-local sentry = turret.new({
-  kind = "sentry_laser", weapon = "px.sentry_laser",
-  muzzle_out = MUZZLE_OUT,
-  sensor_px = 300, ammo = 4, shot_frames = 6, activate = 20, beep_frames = 20,
-  rot_active = 5.0, aim_tolerance = 5.0, health = 35, hold_own_turn = false,
-  art = { base = ART .. "turret_base", mask = ART .. "turret_mask.png", gun = ART .. "turret_body", barrel = ART .. "turret_barrel", light = ART .. "turret_light.png" },
-  sounds = {
-    place = SND .. "sentrylaserplace.wav", beep = SND .. "sentrylaserbeep.wav",
-    servo_start = SND .. "sentrylaserstart.wav", servo_loop = SND .. "sentrylaserloop.wav",
-    servo_end = SND .. "sentrylaserend.wav",
-  },
-  tints = TEAM_TINT,
-  targets = targets,
-  fire = fire,
-})
-
--- A mine the beam has armed stays armed: once per turret, not per shot.
-local place = sentry.place
-sentry.place = function(fire_ev)
-  local body, s = place(fire_ev)
-  if s then s.armed = {} end
-  return body, s
-end
-
-shared.fires.sentry_laser = function(fire_ev) sentry.place(fire_ev) end
-shared.sentry_laser = sentry -- for the Highlander mock
-
-if wa.on.draw and wa.draw.ribbon then
-  wa.on.draw(function()
-    for _, r in ipairs(rays) do
-      laser.draw_particles(r)
-      if r.life > 0 then
-        local c = laser.argb(255, r.rgb)
-        laser.beam(r.x, r.y, r.hx, r.hy, 2 * 4 * r.size, c)
-        laser.glow(r.hx, r.hy, 32 * 0.4 * r.size, c)
-      end
-    end
-  end)
-end
+return shared
 `
       },
       {
-        path: 'weapons/sniper_rifle.lua',
-        name: 'weapons/sniper_rifle.lua',
-        language: 'lua',
-        content: `-- Highlander: the Sniper Rifle's laser sight. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-
--- The Sniper Rifle's sight remains a draw callback. Keep only its last aim
--- through its firing poses; the rifle and flash themselves are engine draws.
-local held = {}
-wa.on.worm_message(function(worm, msg)
-  local h = held[worm.id]
-  if msg == wa.msg.FIRE_WEAPON and h then h.firing = true end
-  if msg ~= wa.msg.FRAME_FINISH then return end
-  if worm.weapon == "px.sniper_rifle" and worm.aiming and shared.owns("handgun") then
-    held[worm.id] = { slot = "handgun", aim = worm.aim }
-  elseif not (h and h.firing and worm.weapon == "px.sniper_rifle"
-      and (worm.state == "firing" or worm.state == "fired")) then
-    held[worm.id] = nil
-  end
-end, { msgs = { wa.msg.FIRE_WEAPON, wa.msg.FRAME_FINISH } })
-
--- ------------------------------------------ the Sniper Rifle's laser sight
--- Shared with later sections; the rest of this section is local to it.
-local STOPPERS
-do
---
--- PX's LaserSight (weapon_gun_sniper_rifle_sb, on utility_laser_pointer's
--- laserray): while the current worm aims the rifle, a red ray from 12 pixels
--- out along the aim to the first thing in its way, drawn every rendered
--- frame as 100-pixel quads of laser.png, added to the scene, narrowing along
--- the ray, with a faint 7-pixel tip. It is drawing only: wa.on.draw, never
--- the simulation.
-
-local LASER_LEN = 15000
-local LASER_WIDTH = 2
-local LASER_STEP = 5 -- PX's Trace tests every 5 pixels
--- PX starts the ray on the worm's centre line, but the rifle art's barrel
--- runs 2 pixels to its left (columns 26-29 of 60), so the ray ran that far
--- under the barrel. It starts on the barrel instead.
-local LASER_BARREL = 2
-local function argb(a, r, g, b)
-  return ((a * 256 + r) * 256 + g) * 256 + b
-end
-local LASER_RED, LASER_START, LASER_TIP =
-  argb(255, 255, 48, 48), argb(192, 255, 96, 96), argb(16, 255, 48, 48)
--- PX's Trace stops at anything its 2x2 mask touches. Terrain is traced
--- exactly; objects by these radii in pixels, an estimate of their masks.
-STOPPERS = { { wa.worms, 6 }, { wa.mines, 4 }, { wa.crates, 10 }, { wa.oil, 9 } }
-
-local function laser_length(x, y, dx, dy, shooter)
-  local len = LASER_LEN
-  local hit = wa.land.trace(x, y,
-    (x + dx * LASER_LEN), (y + dy * LASER_LEN))
-  if hit then
-    len = math.sqrt(((hit.x - x) * (hit.x - x)) + ((hit.y - y) * (hit.y - y)))
-  end
-  for _, s in ipairs(STOPPERS) do
-    local list, r = s[1], s[2]
-    if list and list.all then
-      for _, o in ipairs(list.all()) do
-        if o.id ~= shooter then
-          local ox, oy = (o.x - x), (o.y - y)
-          local t = ox * dx + oy * dy
-          if t > 0 and t < len and math.abs(ox * dy - oy * dx) < r then
-            len = t
-          end
-        end
-      end
-    end
-  end
-  return math.floor(len / LASER_STEP) * LASER_STEP
-end
-
--- laserray's MakeLaserRayF, point for point.
-local function laser_ray(x, y, ang, len)
-  local rdx, rdy = wa.math.sin(ang - 1.57), -wa.math.cos(ang - 1.57)
-  local dx, dy = wa.math.sin(ang), -wa.math.cos(ang)
-  local tx, ty = x, y
-  local nparts = math.floor(len / 100)
-  local w = (wa.draw.random() / 4 + 0.85) * LASER_WIDTH / 2
-  local wdx, wdy = w * rdx, w * rdy
-  local wscale = 1
-  local lastl = len - nparts * 100
-  local colors
-  for i = 0, nparts do
-    local l = i == nparts and lastl or 100
-    if l <= 0 then break end
-    local p0, p3 = { tx + wdx, ty + wdy }, { tx - wdx, ty - wdy }
-    w = wscale * (wa.draw.random() / 3 + 0.82) * LASER_WIDTH
-    wdx, wdy = w * rdx, w * rdy
-    wscale = wscale - 0.75 / (nparts + 1)
-    local ex, ey = tx + dx * l, ty + dy * l
-    colors = { LASER_RED, LASER_RED, LASER_RED, LASER_RED }
-    if i == 0 then
-      colors[1], colors[4] = LASER_START, LASER_START
-    end
-    wa.draw.quad({
-      points = { p0, { ex + wdx, ey + wdy }, { ex - wdx, ey - wdy }, p3 },
-      colors = colors, sprite = "sprites/sniper_rifle/laser", blend = "add",
-    })
-    tx, ty = ex, ey
-  end
-  local ex, ey = tx + dx * 7, ty + dy * 7
-  wa.draw.quad({
-    points = { { tx + wdx, ty + wdy }, { ex + wdx, ey + wdy }, { ex - wdx, ey - wdy }, { tx - wdx, ty - wdy } },
-    colors = { LASER_RED, LASER_TIP, LASER_TIP, LASER_RED },
-    sprite = "sprites/sniper_rifle/laser", blend = "add",
-  })
-end
-
-if wa.on.draw then
-  wa.on.draw(function()
-    for _, worm in ipairs(wa.worms.all()) do
-      -- The aim the rifle was drawn with, so the ray leaves along it; while
-      -- the worm aims or fires the rifle, not while it puts it away.
-      local h = worm.turn and held[worm.id]
-      local aim = h and h.slot == "handgun" and h.aim
-      if aim then
-        local ang = (1 - aim) * 3.14159
-        if worm.facing < 0 then
-          ang = 6.28318 - ang
-        end
-        local side = LASER_BARREL * worm.facing
-        local x = worm.x + wa.math.sin(ang) * 12 - wa.math.cos(ang) * side
-        local y = worm.y - wa.math.cos(ang) * 12 - wa.math.sin(ang) * side
-        laser_ray(x, y, ang, laser_length(x, y, wa.math.sin(ang), -wa.math.cos(ang), worm.id))
-      end
-    end
-  end)
-end
-end
-
-shared.STOPPERS = STOPPERS
-shared.held = held
-`
-      },
-      {
-        path: 'weapons/super_drill.lua',
-        name: 'weapons/super_drill.lua',
-        language: 'lua',
-        content: `-- Highlander: Super Drill. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-
--- The two with a script of their own. Both run from worm messages, which WA
--- sends in lockstep on every peer and in replays.
-
--- Super Drill (PX weapon_super_drill): WA keeps drilling as it always does,
--- and a hidden actor cuts a second hole at the worm each frame until WA's
--- drill stops. The same as the super_drill example.
-local drills = {}
-
-local function follow_drill(worm, id)
-  local started, waiting = false, 0
-  return function(a)
-    if worm.drilling then
-      started = true
-      wa.land.cut({ x = worm.x, y = worm.y, shape = "drill" })
-      return
-    end
-    -- WA enters its drilling state a few frames after the shot.
-    if not started and waiting < 4 then
-      waiting = waiting + 1
-      return
-    end
-    drills[id] = nil
-    a:despawn()
-  end
-end
-
-shared.drills = drills
-shared.follow_drill = follow_drill
-`
-      },
-      {
-        path: 'weapons/super_tele.lua',
-        name: 'weapons/super_tele.lua',
-        language: 'lua',
-        content: `-- Highlander: Super Tele. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-local fires = shared.fires
-
--- --------------------------------------------------------------- Super Tele
-do
--- PX's FireFinal arms the teleport, the next M_FRAME starts its pose and
--- sound, and M_FRAME moves the worm 50 frames after that. Keep the click
--- from WA's fire context: the live pointer
--- may have moved by the time the worm arrives. Mask 4 is approximated by
--- three overlapping round cuts, centred where PX places them.
-fires.teleports = {} -- worm id -> frozen target and elapsed frames
-
-local function super_tele_arrive(worm, x, y)
-  worm.x, worm.y = x, y
-  for _, rise in ipairs({ 0, 10, 22 }) do
-    wa.land.cut({ x = x, y = y - rise, shape = "circle", radius = 12 })
-  end
-end
-
--- WA's sound slots and the priority its teleport plays them at.
-local TELE_SOUND_PRIORITY = 3
-local SOUND_TELEPORT, SOUND_COMMUNICATOR, SOUND_WORM_POP = 67, 68, 54
--- WA's manual placement plays Communicator at the click and WormPop when
--- the worm appears, this many frames later.
-local PLACEMENT_POP_FRAMES = 21
-
--- During manual placement WA keeps unplaced worms at (960, -10000).
-local function unplaced(worm) return worm.y == -10000 end
-
--- WA's own teleport places a worm at the click, with no wind-up. Super
--- Tele's record is a click weapon, which winds up first: for an unplaced
--- worm the wind-up is skipped, so the click places it at once. On the fire
--- message, before WA starts the wind-up; at the frame's end as a fallback.
-local function skip_placement_windup(worm)
-  if worm.weapon == "px.super_tele" and unplaced(worm) and worm.windup == nil then
-    worm.windup = 0
-  end
-end
-
-fires.super_tele_click = function(ev)
-  local worm = ev.worm
-  if worm.hp <= 0 then return end
-  local y = ev.y
-  if wa.world.cavern() and y < 19 then y = 19 end
-  local previous = fires.teleports[worm.id]
-  if previous and previous.marker then previous.marker:despawn() end
-  -- Waiting 50 frames there makes an unplaced worm fall and take damage
-  -- before the arrival, so it is placed now. It sounds like WA's own
-  -- placement.
-  if unplaced(worm) then
-    super_tele_arrive(worm, ev.x, y)
-    worm:teleport_pose()
-    wa.sound.play(worm, SOUND_COMMUNICATOR, TELE_SOUND_PRIORITY)
-    fires.teleports[worm.id] = { placed = true, frames = 0 }
-    return
-  end
-  -- FireWeapon clears WA's planted X for click-only weapons. Keep a fixed
-  -- stock planted-X marker at the saved target until the worm arrives instead;
-  -- the engine plays it once, as WA plays its own.
-  local marker = wa.actors.spawn({
-    owner = worm, x = ev.x, y = y, sprite = "markerr",
-    gravity = false, collide = false, drown = false,
-  })
-  fires.teleports[worm.id] = { x = ev.x, y = y, frames = 0, pending = true, marker = marker }
-  wa.sound.play(worm, SOUND_COMMUNICATOR, TELE_SOUND_PRIORITY) -- PX's M_SETTARGET confirmation
-end
-
-wa.on.worm_message(function(worm, msg)
-  if msg == wa.msg.FIRE_WEAPON then
-    skip_placement_windup(worm)
-    return
-  end
-  if worm.state == "prefiring" then skip_placement_windup(worm) end
-  local tele = fires.teleports[worm.id]
-  if not tele then return end
-  if tele.placed then
-    tele.frames = tele.frames + 1
-    if tele.frames < PLACEMENT_POP_FRAMES then return end
-    fires.teleports[worm.id] = nil
-    if worm.hp > 0 then wa.sound.play(worm, SOUND_WORM_POP, TELE_SOUND_PRIORITY) end
-    return
-  end
-  if worm.hp <= 0 then
-    tele.marker:despawn()
-    fires.teleports[worm.id] = nil
-    return
-  end
-  if tele.pending then
-    tele.pending = false
-    -- WA's teleport setup clears its activity flag. Do this after the
-    -- Lua-handled FireWeapon return restores that flag, as PX's M_FRAME does.
-    worm:teleport_pose()
-    wa.sound.play(worm, SOUND_TELEPORT, TELE_SOUND_PRIORITY) -- PX's teleport start
-    return
-  end
-  tele.frames = tele.frames + 1
-  if tele.frames < 50 then return end
-  tele.marker:despawn()
-  fires.teleports[worm.id] = nil
-  super_tele_arrive(worm, tele.x, tele.y)
-end, { msgs = { wa.msg.FRAME_FINISH, wa.msg.FIRE_WEAPON } })
-end
-`
-      },
-      {
-        path: 'weapons/swim_suit.lua',
-        name: 'weapons/swim_suit.lua',
+        path: 'swim_suit.lua',
+        name: 'swim_suit.lua',
         language: 'lua',
         content: `-- Highlander: Swim Suit. Split from rules.lua by tools/split_highlander.py.
 local shared = require("lib/shared")
@@ -9133,6 +1863,14 @@ do
 -- suit gives out and it drowns. Fast Walk switches the swim speed between 2
 -- and 6 for the turn. Missiles in the water can hit a swimming worm: they
 -- blow up on it (damage 100, blast 50).
+--
+-- A worm in the suit falling to the water dives (swim_suit_diving_s, by
+-- PyroMan): where WA would take its control (falling at 8 pixels a frame,
+-- WA's fall height, 0x50D370), the rest of its fall is traced frame by frame
+-- at WA's gravity (wa.land.trace, worm:fits); if it ends in the water, the
+-- pack takes the worm (worm:take) and carries it down that path to the
+-- splash, so it reaches the water in control. PX's looked straight down and
+-- held the worm in a state.
 --
 -- Drawn in the worm's place: the swim or, when still, the float animation,
 -- and a bubble around the worm while it wears the suit.
@@ -9161,9 +1899,17 @@ local SWIM_RING_HALF = 25
 -- The land a swimmer stops at: its body, 4 pixels either side, 6 above and below.
 local SWIM_HALF_W, SWIM_HALF_H = 4, 6
 
+-- The dive: WA takes a falling worm's control at 8 pixels a frame; taken
+-- a frame early.
+local DIVE_SPEED = 8
+local DIVE_FRAMES = 2000      -- the longest fall traced
+-- WA's states for a worm falling under its own control: jumping, its fall,
+-- falling (off a cliff, or let go).
+local FALLING = { [0x79] = true, [0x7A] = true, [0x7E] = true }
+
 local swim_speed = 2          -- fastswim: Fast Walk switches 2 and 6
 local swim_in_game = false    -- SwimInGame: someone has worn the suit
-local swimmers = {} -- worm id -> { suit, plopready, plopped, floating, plophase, flophase, fmult, keys, body, x, y, vx, vy }
+local swimmers = {} -- worm id -> { suit, plopready, plopped, floating, plophase, flophase, fmult, keys, body, x, y, vx, vy, dive, dived }
 
 local function swimmer_of(worm)
   local s = swimmers[worm.id]
@@ -9211,6 +1957,32 @@ end
 -- WA's states for a worm knocked flying: tumbling, hit, blasted.
 local KNOCKED = { [0x7F] = true, [0x80] = true, [0x81] = true }
 
+-- One frame of a dive: gravity and wind as WA scales them for the worm, then
+-- the move, its centre traced through the land and the worm's shape tested
+-- where it ends (WA's own test, worm:fits). Returns the new speed and
+-- position, and whether land stops it, in which case the position is where
+-- it still was.
+local function dive_step(worm, x, y, vx, vy)
+  vx = vx + wa.world.wind() * (worm.wind or 0)
+  vy = vy + wa.world.gravity() * (worm.gravity or 1)
+  local nx, ny = x + vx, y + vy
+  if wa.land.trace(x, y, nx, ny) or not worm:fits(nx, ny) then
+    return vx, vy, x, y, true
+  end
+  return vx, vy, nx, ny, false
+end
+
+-- Whether a fall from (x, y) at (vx, vy) reaches the water before land.
+local function dives_into_water(worm, x, y, vx, vy, water)
+  for _ = 1, DIVE_FRAMES do
+    local blocked
+    vx, vy, x, y, blocked = dive_step(worm, x, y, vx, vy)
+    if blocked then return false end
+    if y >= water then return true end
+  end
+  return false
+end
+
 local function swim_frame(worm)
   local s = swimmers[worm.id]
   if not s or not s.suit then
@@ -9218,6 +1990,41 @@ local function swim_frame(worm)
   end
   local water = wa.world.water()
   local cap = SWIM_CAP * swim_speed
+  if s.dive and not worm.taken then
+    -- The engine let go mid-dive: the turn ended, or WA knocked it flying.
+    s.dive = nil
+  end
+  if not FALLING[worm.state_id] and not s.dive then
+    s.dived = false -- landed, or out of its fall: the next fall is looked at
+  end
+  if s.plopready and not s.dive and not s.dived and worm.turn and FALLING[worm.state_id]
+    and worm.y < water
+    and worm.vy + 2 * wa.world.gravity() * (worm.gravity or 1) >= DIVE_SPEED then
+    -- About to lose control: one look at where the fall ends.
+    s.dived = true
+    if dives_into_water(worm, worm.x, worm.y, worm.vx, worm.vy, water) then
+      s.dive = { x = worm.x, y = worm.y, vx = worm.vx, vy = worm.vy }
+      worm:take{ turn = "run" }
+    end
+  end
+  local dive_into
+  if s.dive then
+    local d = s.dive
+    local blocked
+    d.vx, d.vy, d.x, d.y, blocked = dive_step(worm, d.x, d.y, d.vx, d.vy)
+    if blocked then
+      -- Land where the trace found none (it changed): WA's again, as it flies.
+      s.dive = nil
+      worm.x, worm.y = d.x, d.y
+      worm:release(d.vx, d.vy)
+      return
+    end
+    worm:carry(d.x, d.y)
+    if d.y < water then
+      return
+    end
+    s.dive, dive_into = nil, d
+  end
   if worm.y >= water and s.plopready and KNOCKED[worm.state_id] then
     -- Knocked flying into the water: no swim, the suit gives out, and with
     -- the water's bit back WA's water takes it. Held in WA's hit state
@@ -9225,11 +2032,13 @@ local function swim_frame(worm)
     suit_off(worm, s, false)
     return
   end
-  if worm.y >= water and s.plopready and worm.state ~= "teleporting" then
+  if dive_into or worm.y >= water and s.plopready and worm.state ~= "teleporting" then
+    -- Into the water: where a dive reached it, at the dive's speed.
+    local d = dive_into or worm
     wa.sound.play(worm, SWIM_SPLASH)
     s.plopready, s.plopped = false, true
-    s.x, s.y = worm.x, worm.y
-    s.vx, s.vy = math.min(worm.vx, cap), math.min(worm.vy, cap)
+    s.x, s.y = d.x, d.y
+    s.vx, s.vy = math.min(d.vx, cap), math.min(d.vy, cap)
     -- Swimming, it fires nothing but Fast Walk (its swim speed); the suit's
     -- own use is this pack's hook.
     worm:take{ turn = "run", fire = { "stock.fast_walk" } }
@@ -9335,7 +2144,7 @@ local function swim_frame(worm)
     })
   end
   if s.plopped then
-    local sheet = s.floating and "sprites/swim_suit/float" or "sprites/swim_suit/swim"
+    local sheet = s.floating and "sprites/swim_suit/float.png" or "sprites/swim_suit/swim.png"
     if s.body and s.body_sheet ~= sheet then
       s.body:despawn()
       s.body = nil
@@ -9368,7 +2177,7 @@ if wa.on.draw then
           points = {
             { x - h, y - h }, { x + h, y - h }, { x + h, y + h }, { x - h, y + h },
           },
-          sprite = "sprites/swim_suit/ring",
+          sprite = "sprites/swim_suit/ring.png",
           depth = SWIM_RING_DEPTH,
         })
       end
@@ -9392,8 +2201,10 @@ wa.on.worm_message(function(worm, msg)
     end
     if worm.weapon == "stock.fast_walk" then
       swim_speed = swim_speed ~= 6 and 6 or 2
-    elseif worm.weapon == "px.swim_suit" then
-      -- FireFinal(Swim Suit), in place of WA's laser sight.
+    elseif worm.weapon == "stock.laser_sight" then
+      -- FireFinal(Swim Suit), in place of WA's laser sight. The PX bundle
+      -- registers this as px.swim_suit; this standalone example replaces the
+      -- stock laser sight instead, so the weapon id is the stock one.
       local s = swimmer_of(worm)
       if not s.suit then
         wa.sound.play(worm, "sounds/swim_suit/putting_on_ssuit.wav")
@@ -9403,7 +2214,7 @@ wa.on.worm_message(function(worm, msg)
       elseif worm.y < wa.world.water() then
         suit_off(worm, s, false)
       end
-      worm:ammo("px.swim_suit", -1)
+      worm:ammo("stock.laser_sight", -1)
       return "eat"
     end
   end
@@ -9437,3574 +2248,18 @@ if wa.on.contact then
 end
 end
 `
-      },
-      {
-        path: 'weapons/valyrian_fire.lua',
-        name: 'weapons/valyrian_fire.lua',
-        language: 'lua',
-        content: `-- Highlander: Valyrian Fire (PX weapon_valyrianfire, rafa\`\`2's valyrianfire_s).
-local shared = require("lib/shared")
-local fires = shared.fires
-
--- PX's FireFinal: from a worm in the water nothing is thrown and the bottle
--- goes back into the team's ammo; otherwise the bottle starts 15 pixels
--- further along the aim. WA's own projectile from there, so WA flies, burns
--- and explodes it as its Petrol Bomb.
-local THROW_OUT = 15
-
-fires.valyrian_fire = function(fire)
-  local w = fire.worm
-  if w.y >= wa.world.water() then
-    -- Set, as the pack always writes ammo; infinite (-1) stays infinite.
-    local n = w:ammo("px.valyrian_fire")
-    if n >= 0 then w:ammo("px.valyrian_fire", { set = n + 1 }) end
-    return
-  end
-  -- Along the aim, which is the throw's direction. Not PX's cos and sin of
-  -- the aim angle: the start is simulation, and only sqrt is exact on
-  -- every machine.
-  local x, y = fire.x, fire.y
-  local speed = math.sqrt(fire.vx * fire.vx + fire.vy * fire.vy)
-  if speed > 0 then
-    x = x + (THROW_OUT * fire.vx / speed)
-    y = y + (THROW_OUT * fire.vy / speed)
-  end
-  wa.weapons.launch({ weapon = "px.valyrian_fire", owner = w, x = x, y = y, vx = fire.vx, vy = fire.vy })
-end
-
--- PX's ExplodeAt: 51 fires on a 3-pixel ring at the impact, besides WA's own
--- explosion (the record starts no fire of its own: its detonation is 0). Each
--- with PX's CFireDesc: count 0, duration 6000, no upward power, damage 0,
--- owned by the team of the worm whose turn it is. PX's worm handler makes
--- their hits 25% more damaging and knocks twice as hard (its M_GUNEXP,
--- WA's 0x4B from the fire): the engine scales them as it spawns them. PX
--- draws them green, SetColorMod(RGB(75, 225, 75)): \`tint\`, on the GPU.
---
--- PX places them at x +- 3 cos(360 - 7.2 i), y - 3 sin(360 - 7.2 i), the sign
--- of x alternating. Simulation, so not computed here: the offsets below are
--- that formula's, 16.16, worked out once (cos and sin need not agree to the
--- bit between machines; integers do).
-local RING_DX = {
-    -0.85107421875, -1.7654266357421875, 2.99908447265625, -1.8835601806640625, -0.7073516845703125, 2.7441864013671875, -2.6315155029296875, 0.45758056640625, 2.0747833251953125, -2.981964111328125,
-    1.5533905029296875, 1.091949462890625, -2.8819732666015625, 2.41455078125, -0.055816650390625, -2.3466339111328125, 2.910980224609375, -1.195159912109375, -1.4568328857421875, 2.967681884765625,
-    -2.153961181640625, -0.346954345703125, 2.5760955810546875, -2.787384033203125, 0.8153228759765625, 1.795379638671875, -2.9997711181640625, 1.8544464111328125, 0.7434539794921875, -2.7590179443359375,
-    2.6134490966796875, -0.4207611083984375, -2.10150146484375, 2.9776611328125, -1.5214385986328125, -1.12652587890625, 2.89208984375, -2.39227294921875, 0.0186004638671875, 2.3696441650390625,
-    -2.9017486572265625, 1.1609344482421875, 1.4892425537109375, -2.972900390625, 2.1278839111328125, 0.3838958740234375, -2.594970703125, 2.7734222412109375, -0.779449462890625, -1.8250579833984375,
-    3.0,
-}
-local RING_DY = {
-    -2.8767547607421875, -2.425537109375, -0.0744171142578125, 2.3350067138671875, 2.9154205322265625, 1.212188720703125, -1.4405364990234375, -2.96490478515625, -2.1668701171875, 0.3284759521484375,
-    2.5665130615234375, 2.794219970703125, 0.833221435546875, -1.7804412841796875, -2.999481201171875, -1.8690338134765625, 0.7254180908203125, 2.7516632080078125, 2.622528076171875, 0.439178466796875,
-    -2.0881805419921875, -2.9798736572265625, -1.537445068359375, 1.1092681884765625, 2.8870849609375, 2.4034576416015625, 0.0372161865234375, -2.358184814453125, -2.9064178466796875, -1.178070068359375,
-    1.4730682373046875, 2.9703521728515625, 2.140960693359375, -0.3654327392578125, -2.5855865478515625, -2.78045654296875, -0.7974090576171875, 1.8102569580078125, 2.99993896484375, 1.83978271484375,
-    -0.761474609375, -2.766265869140625, -2.6042633056640625, -0.40234375, 2.1147308349609375, 2.975341796875, 1.50537109375, -1.1437530517578125, -2.89697265625, -2.3809967041015625,
-    0.0,
-}
-local VALYRIAN_FIRE = {
-  count = 0, duration = 6000, up_power = 0, damage = 0, damage_scale = 1.25, knock_scale = 2,
-  tint = 0x4BE14B,
-}
-
-fires.valyrian_burst = function(ev)
-  local owner = shared.current_worm() or ev.worm
-  if not owner then return end
-  for i = 1, #RING_DX do
-    wa.fire.spawn({
-      owner = owner, x = ev.x + RING_DX[i], y = ev.y + RING_DY[i],
-      count = VALYRIAN_FIRE.count, duration = VALYRIAN_FIRE.duration,
-      up_power = VALYRIAN_FIRE.up_power, damage = VALYRIAN_FIRE.damage,
-      damage_scale = VALYRIAN_FIRE.damage_scale, knock_scale = VALYRIAN_FIRE.knock_scale,
-      tint = VALYRIAN_FIRE.tint,
-    })
-  end
-end
-`
-      },
-      {
-        path: 'weapons/weapon_crate.lua',
-        name: 'weapons/weapon_crate.lua',
-        language: 'lua',
-        content: `-- Highlander: Weapon Crate (PX utility_all_crates: allcrates_script.txt's
--- "Weapon Crate", by Steps and rafa\`\`2, animations by 0rang3), on the Freeze
--- slot as PX's Highlander scheme has it. Its record is PX's: placed as WA
--- places a mine (its take-out, placing and ammo), and the turn goes on. What
--- it places is one of WA's weapon crates, its contents WA's pick, teleported
--- in 40 px in front of the worm, for the worm to go and collect. Every worm
--- gets one each turn (scheme/rules.lua).
-local shared = require("lib/shared")
-local AHEAD = 40 -- px in front of the worm
-
-shared.fires.weapon_crate = function(fire)
-  local worm = fire.worm
-  wa.crates.spawn({ x = worm.x + worm.facing * AHEAD, y = worm.y, kind = "weapon", drop = "teleport" })
-end
-`
-      },
-      {
-        path: 'weapons/wind_gravity.lua',
-        name: 'weapons/wind_gravity.lua',
-        language: 'lua',
-        content: `-- Highlander: Wind Changer, Gravity Control. Split from rules.lua by tools/split_highlander.py.
-local shared = require("lib/shared")
-local current_worm = shared.current_worm
-local trunc = shared.trunc
-
--- ---------------------------------------------- Wind Changer, Gravity Control
-do
---
--- PX's wind_changer_script (ravander, improved by 0rang3) and
--- gravity_control_script (DabbyB, edited by 0rang3). Both records are one of
--- WA's turn utilities (subtype 19) with an index WA does not use (8), so WA
--- fires them as a utility that does nothing, spending the shot as usual, and
--- the script does the work.
---
--- Wind Changer, on the surrender's slot: while it is selected, 0..9 choose
--- the force; firing it sets the wind to force x 0.0317 towards where the
--- worm faces, through WA's own wind change, so the clouds and the wind bar
--- follow. Gravity Control, on low gravity's slot: 1..5 choose 0.3, 0.5, 1,
--- 1.7 or 2.4 times the match's gravity; firing it holds WA's gravity there
--- until the turn ends, or until the turn clock has stood still for 10 s (PX's
--- rule). Fired with nothing chosen it does not fire (PX gives the shot back).
---
--- The clock stands still while WA waits for everything to settle after a
--- shot, about 2.4 s, so shots land under the chosen gravity. Some things
--- never settle under a strong gravity: a grave vibrated in place for good at
--- 2.4x, WA waited for it, and the turn never went on. After 10 s the gravity
--- goes back and they come to rest.
---
--- Differences: a HUD line says which keys to press and what is chosen, in
--- place of PX's team messages.
-
-local WIND_STEP = 0.0317       -- wind per point of force (PX's), a turn's wind is up to about 0.29
-local GRAVITY_FACTORS = { 0.3, 0.5, 1.0, 1.7, 2.4 }
-local GRAVITY_NAMES = { "Very Low Gravity", "Low Gravity", "Normal Gravity", "High Gravity", "Very High Gravity" }
-
-local wind_force = 0          -- wf
-local gravity_choice          -- TransformedGravity's index, until fired
-local gravity_initial         -- InitialGravity: the match's
-local gravity_factor          -- ModulatedGravity while Gravity Control is on
-local SETTLE_LIMIT = 500      -- frames (10 s) the turn clock may stand still
-local clock_seen = {}         -- worm id -> { clock, frames }: each worm counts the frames itself
-local last_digit              -- KeyPressedNow: a digit counts when it goes down
-
-local function gravity_back()
-  gravity_factor, clock_seen = nil, {}
-  wa.world.set_gravity(gravity_initial)
-end
-
--- Every worm sees each frame once, so the first to count SETTLE_LIMIT frames
--- with the clock where it was marks 10 s, whichever worms are still alive.
-local function watch_clock(worm)
-  if not gravity_factor then
-    return
-  end
-  local clock = wa.world.turn_clock()
-  local seen = clock_seen[worm.id]
-  if not seen or seen.clock ~= clock then
-    clock_seen[worm.id] = { clock = clock, frames = 0 }
-    return
-  end
-  seen.frames = seen.frames + 1
-  if seen.frames >= SETTLE_LIMIT then
-    gravity_back()
-  end
-end
-
-local function world_physics_frame(worm)
-  gravity_initial = gravity_initial or wa.world.gravity()
-  watch_clock(worm)
-  if not worm.turn then
-    return
-  end
-  local digit = wa.world.keys().digit
-  local pressed = digit ~= nil and digit ~= last_digit
-  last_digit = digit
-  if not pressed then
-    return
-  end
-  if worm.weapon == "px.wind_changer" then
-    wind_force = digit
-    wa.sound.play(worm, 107)
-  elseif worm.weapon == "px.gravity_control" and digit >= 1 and digit <= 5 then
-    gravity_choice = digit
-    wa.sound.play(worm, 92)
-  end
-end
-
-wa.on.worm_message(function(worm, msg)
-  if msg == wa.msg.FRAME_FINISH then
-    world_physics_frame(worm)
-  elseif msg == wa.msg.FIRE_WEAPON and worm.weapon == "px.wind_changer" then
-    -- FireFinal(Wind Changer): breeze for none, a calm wind up to 5, strong
-    -- above; towards where the worm faces.
-    local f = wind_force
-    wa.sound.play(worm, f == 0 and "sounds/wind_changer/breeze.wav"
-      or f < 6 and "sounds/wind_changer/calm_wind.wav" or "sounds/wind_changer/strong_wind.wav")
-    wa.world.set_wind((f * WIND_STEP) * worm.facing)
-  elseif msg == wa.msg.FIRE_WEAPON and worm.weapon == "px.gravity_control" then
-    if not gravity_choice then
-      wa.sound.play(worm, "sounds/gravity_control/error.wav")
-      return "eat"
-    end
-    gravity_initial = gravity_initial or wa.world.gravity()
-    gravity_factor, gravity_choice = GRAVITY_FACTORS[gravity_choice], nil
-    clock_seen = {}
-    wa.sound.play(worm, "sounds/gravity_control/activate.wav")
-    wa.world.set_gravity(gravity_initial * gravity_factor)
-  end
-end, { msgs = { wa.msg.FRAME_FINISH, wa.msg.FIRE_WEAPON } })
-
--- Reset when this turn ends; doing it at the next turn start can softlock.
-wa.on.turn_end(function()
-  if gravity_factor then
-    gravity_back()
-  end
-  gravity_choice = nil
-end)
-
-if wa.on.hud then
-  wa.on.hud(function()
-    local worm = current_worm()
-    if not worm then
-      return
-    end
-    if worm.weapon == "px.wind_changer" then
-      wa.hud.line(string.format("Wind Changer: force %d (keys 0-9), then Space", wind_force))
-    elseif worm.weapon == "px.gravity_control" then
-      wa.hud.line("Gravity Control: " .. (gravity_choice and GRAVITY_NAMES[gravity_choice]
-        or "choose 1-5") .. ", then Space")
-    end
-  end)
-end
-end
-`
-      }
-    ],
-  },
-  {
-    id: 'example.tools',
-    name: 'Engine Tools',
-    version: '0.2.0',
-    author: 'wkLua',
-    category: 'utility',
-    description: 'The engine\'s own diagnostics harness: audit, perf, and a state logger. Uses `wa.audit.*`, which the engine only installs in a build with the `diagnostics` cargo feature.',
-    tags: ['example', 'utility', 'diagnostics'],
-    files: [
-      {
-        path: 'audit/audit.lua',
-        name: 'audit/audit.lua',
-        language: 'lua',
-        content: `-- All actions run on simulation callbacks. A hidden actor supplies the clock
--- across turn changes; render callbacks only display progress.
-local all_cases = require("audit/cases")
-return function(ctx)
-  local instant = { ["stock.damage_x2"] = true, ["stock.crate_spy"] = true,
-    ["stock.double_turn_time"] = true, ["stock.crate_shower"] = true }
-  local late = {}
-  for i = 62, #all_cases do late[all_cases[i]] = true end
-  local cases = all_cases
-  if ctx.options.scope == "sheep" then
-    cases = { "stock.sheep_launcher", "stock.sheep", "stock.super_sheep", "stock.aqua_sheep" }
-  elseif ctx.options.scope == "banana" then
-    cases = { "stock.banana_bomb" }
-  elseif ctx.options.scope == "utilities" then
-    cases = {}
-    for _, name in ipairs(all_cases) do
-      if name == "stock.jet_pack" or #cases > 0 and #cases < 9 then cases[#cases + 1] = name end
-    end
-  elseif ctx.options.scope == "followup" then
-    cases = {}
-    for _, name in ipairs(all_cases) do
-      if name == "stock.bungee" or instant[name] or late[name] then cases[#cases + 1] = name end
-    end
-  end
-  -- With \`copies\`, each case fires its plain copy past 70 (tools.copy_<name>,
-  -- \`custom_slots = "past_70"\`) in place of WA's own: a difference from a home
-  -- run is something WA ties to the slot id. Signals keep the stock name, so
-  -- the two runs compare.
-  local copies = ctx.options.copies
-  local function id_of(name) return copies and (name:gsub("^stock%.", "tools.copy_")) or name end
-  local function case_of(weapon) return weapon and (weapon:gsub("^tools%.copy_", "stock.")) end
-  -- WA consumes stock in these panel cells automatically, independently
-  -- of the weapon placed there. Profiles start them empty. Give the case's
-  -- weapon ammo explicitly, then clear these cells between cases;
-  -- native activation during that case remains an observed slot tie.
-  local automatic = { "stock.damage_x2", "stock.crate_spy", "stock.double_turn_time", "stock.crate_shower" }
-  local automatic_set = {}
-  for _, name in ipairs(automatic) do automatic_set[name] = true end
-  for _, placed in ipairs(ctx.placed) do
-    local pos = placed.position
-    if pos.row == "utility" and pos.column >= 6 and not automatic_set[placed.id] then
-      automatic[#automatic + 1] = placed.id
-      automatic_set[placed.id] = true
-    end
-  end
-  local function clear_automatic()
-    for _, worm in ipairs(wa.worms.all()) do
-      for _, name in ipairs(automatic) do worm:ammo(id_of(name), { set = 0 }) end
-    end
-  end
-
-  local now, index, current, pending, next_at = 0, 0, nil, nil, 50
-  local started, stopped, driver = false, false, nil
-  local startup_worm, initialize
-  local opening_worm
-  local pending_since = 0
-  local audit_worms, state, seen_missiles, seen_objects = {}, {}, {}, {}
-  local released, quiet, last_motion = false, 0, nil
-  local status = "Audit: waiting for first turn"
-
-  local function json_string(s)
-    return '"' .. s:gsub('[%z\\1-\\31\\\\"]', function(c)
-      if c == '"' then return '\\\\"' end
-      if c == '\\\\' then return '\\\\\\\\' end
-      return string.format('\\\\u%04x', string.byte(c))
-    end) .. '"'
-  end
-
-  -- Flat JSON objects only. Keys and hook payloads have stable order.
-  local function emit(event, fields)
-    fields = fields or {}
-    fields.event = event
-    if current then
-      fields.test = current.name
-      fields.frame = now - current.start
-    end
-    local parts = {}
-    for _, k in ipairs(wa.sorted(fields)) do
-      local v = fields[k]
-      if type(v) == "string" then v = json_string(v)
-      else v = tostring(v) end
-      parts[#parts + 1] = string.format('"%s":%s', k, v)
-    end
-    wa.log("audit: {" .. table.concat(parts, ",") .. "}")
-  end
-
-  local function station(n)
-    local i = n - 1
-    return (i % 10) * 768 + 384, (i // 10) * 768 + 500
-  end
-
-  -- Ray samples at eight-pixel intervals in the station's 512-square region.
-  -- Integer rolling hash: compare the baseline as well as the crater.
-  local function land_digest(x, y)
-    local hash = 1
-    for dx = -256, 256, 8 do
-      for dy = -128, 256, 8 do
-        local hit = wa.land.trace(x + dx, y + dy, x + dx, y + dy + 7)
-        local value = hit and (math.floor(hit.y * 16) % 65536 + 1) or 0
-        hash = (hash * 65599 + value) % 2147483647
-      end
-    end
-    return hash
-  end
-
-  local function live(id)
-    for _, w in ipairs(wa.worms.all()) do
-      if w.id == id and w.hp > 0 then return w end
-    end
-  end
-  local function active()
-    for _, w in ipairs(wa.worms.all()) do
-      if w.hp > 0 and w.turn then return w end
-    end
-  end
-  local function fail(reason)
-    emit("error", { reason = reason })
-    if wa.audit then pcall(wa.audit.finish) end
-    stopped = true
-    current, pending = nil, nil
-    status = "Audit stopped: " .. reason
-  end
-
-  local function mobility_active(w)
-    local s = w.state_id
-    return s == 0x78 or s == 0x7B or s == 0x7C or s == 0x7D
-  end
-
-  local function launcher_live()
-    return current.launcher_body and now - current.launcher_body.frame <= 2
-  end
-
-  local function finish(reason)
-    if not current then return end
-    local w = live(current.worm)
-    if current.name == "stock.bungee" then
-      emit("coverage", { action = "walk_off_edge", activated = current.bungee_seen == true,
-        detached = current.bungee_detached == true })
-    elseif current.name == "stock.sheep_launcher" then
-      emit("coverage", { action = "sheep_launcher", airborne_drop = current.launcher_air_drop == true,
-        airborne_explode = current.launcher_air_explode == true,
-        landed_explode = current.launcher_landed_explode == true })
-      if launcher_live() then fail("cannot advance: Sheep Launcher still has an active sheep"); return end
-    elseif current.name == "stock.select_worm" then
-      emit("coverage", { action = "select_worm", cycles = current.selection_cycles or 0,
-        locked = current.selection_locked == true })
-    end
-    if w and mobility_active(w) then
-      fail("cannot advance: worm is still using a mobility tool after " .. current.name)
-      return
-    end
-    emit("end", {
-      reason = reason, ammo = w and w:ammo(id_of(current.name)) or -999,
-      turn_ended = not w or not w.turn,
-      land = land_digest(current.x, current.y),
-    })
-    wa.audit.finish()
-    clear_automatic()
-    current, pending = nil, nil
-    next_at = now + 30
-  end
-
-  -- All audit worms are protected for the whole session. "eat" uses the
-  -- existing hurt contract (skips WA's hurt handler, including its push).
-  wa.on.hurt(function(hit)
-    if not started or stopped or not audit_worms[hit.worm.id] or hit.phase ~= "pre" then return end
-    if current then
-      emit("hurt", { worm = hit.worm.id, kind = hit.kind, amount = hit.amount,
-        source_weapon = case_of(hit.source_weapon) or "unknown", weapon = case_of(hit.weapon) or "unknown" })
-    end
-    return "eat"
-  end)
-
-  wa.on.worm_message(function(w, msg)
-    -- turn_start runs before WA handles START_TURN. Wait until that worm
-    -- has a live turn on a simulation frame before inspecting the round.
-    if startup_worm == w.id and w.turn then
-      startup_worm, started = nil, true
-      initialize(w)
-    end
-    if not current then return end
-    local s = w.state_id
-    if w.id == current.worm and current.name == "stock.bungee" and s == 0x7C and not current.bungee_seen then
-      current.bungee_seen = true
-      emit("activation", { action = "bungee_attach" })
-    end
-    if w.id == current.worm and current.name == "stock.bungee" and current.detach_requested
-        and not mobility_active(w) and not current.bungee_detached then
-      current.bungee_detached = true
-      emit("activation", { action = "bungee_detach" })
-    end
-    if state[w.id] ~= s then
-      state[w.id] = s
-      emit("state", { worm = w.id, state = s, msg = msg })
-    end
-  end, { msgs = { wa.msg.FRAME_FINISH } })
-
-  wa.on.missile_frame(function(m)
-    if not current then return end
-    if current.name == "stock.sheep_launcher" and case_of(m.weapon) == current.name and m.phase == "post" then
-      current.launcher_initial = current.launcher_initial or m.id
-      current.launcher_body = { id = m.id, x = m.x, y = m.y, vx = m.vx, vy = m.vy, frame = now }
-      -- A rocket promotes to a new sheep body on landing (or on the
-      -- airborne activation). Require that transition plus three samples
-      -- of near-zero vertical speed with terrain just below it.
-      local ground = wa.land.trace(m.x, m.y, m.x, m.y + 12)
-      local landed = m.id ~= current.launcher_initial and ground and math.abs(m.vy) < 0.25
-      current.launcher_grounded = landed and (current.launcher_grounded or 0) + 1 or 0
-    end
-    if m.phase ~= "pre" then return end
-    if not seen_missiles[m.id] then
-      seen_missiles[m.id] = true
-      emit("missile", { weapon = case_of(m.weapon) or "unknown", x = m.x, y = m.y, vx = m.vx, vy = m.vy })
-    end
-  end)
-
-  wa.on.turn_end(function(ev)
-    -- Tab hands control to another worm without ending this test. Let
-    -- the next simulation tick observe WA's active worm on the same team.
-    if current and current.selection_active and ev.worm.team == current.team then return end
-    if current and ev.worm.id == current.worm then finish("turn_end") end
-  end)
-
-  local cursor = { ["stock.homing_missile"] = true, ["stock.homing_pigeon"] = true,
-    ["stock.magic_bullet"] = true, ["stock.girder"] = true, ["stock.girder_pack"] = true,
-    ["stock.teleport"] = true }
-  local sheep = { ["stock.sheep"] = 2, ["stock.super_sheep"] = 3, ["stock.aqua_sheep"] = 3 }
-  -- Girders need open air: above the worm, halfway up the 576-pixel gap
-  -- between its platform and the underside of the one above. The Starter
-  -- Pack's girders go 20 pixels apart, centred on the worm.
-  local girders = { ["stock.girder"] = 1, ["stock.girder_pack"] = 5 }
-  local GIRDER_EVERY = 30
-  local function girder_target(n)
-    local first = -(girders[current.name] - 1) * 10
-    return current.x + first + (n - 1) * 20, current.y - 288
-  end
-  local animals = { ["stock.mole_bomb"] = true,
-    ["stock.salvation_army"] = true, ["stock.skunk"] = true, ["stock.old_woman"] = true }
-
-  local function begin(w)
-    if mobility_active(w) then fail("cannot begin a case while its worm is using a mobility tool"); return end
-    local name = cases[index]
-    local x, y = station(index)
-    clear_automatic()
-    if not instant[name] then w:ammo(id_of(name), { set = -1 }) end
-    current = { name = name, worm = w.id, team = w.team, x = x, y = y, start = now,
-      selection_active = name == "stock.select_worm" }
-    if name == "stock.sheep_launcher" then current.launcher_phase = "airborne" end
-    released, quiet, last_motion = false, 0, nil
-    seen_missiles, seen_objects, state = {}, {}, {}
-    emit("begin", { worm = w.id, station = index, x = x, y = y,
-      ammo = w:ammo(id_of(name)), land = land_digest(x, y) })
-    wa.audit.begin(20261015)
-    -- Every case gets the same, ample turn time: a turn running out part
-    -- way through a case cut it short, and Double Time's result depends
-    -- on the time left.
-    wa.world.set_turn_clock(60000)
-    local start_x = x
-    if name == "stock.bungee" then start_x = x + 244
-    elseif name == "stock.sheep_launcher" then start_x = x - 128 end
-    w:warp{ x = start_x, y = y - 12, vx = 0, vy = 0, facing = 1 }
-    if w.hp < 100 then w:heal(100 - w.hp) end
-    local ammo = w:equip(id_of(instant[name] and "stock.bazooka" or name))
-    if ammo == 0 then fail("equip refused for " .. name); return end
-    if not instant[name] then w:input{ aim = 45, fuse = 3, bounce = "min" } end
-    emit("setup", { ammo = w:ammo(id_of(name)), hp = w.hp })
-    status = string.format("Audit %d/%d: %s", index, #cases, name)
-  end
-
-  local function skip(w)
-    w:equip("stock.skip_go")
-    w:input{ fire = "press" }
-    if live(w.id) then w:input{ fire = "release" } end
-    next_at = now + 100
-  end
-
-  local function sample_motion(w)
-    local parts = { tostring(w.state_id), tostring(w.x), tostring(w.y), tostring(w.vx), tostring(w.vy) }
-    local busy = not (w.state_id == 0x65 or w.state_id == 0x67)
-    for _, m in ipairs(wa.missiles.all()) do
-      busy = true
-      parts[#parts + 1] = tostring(m.uid) .. ":" .. tostring(m.x) .. ":" .. tostring(m.y)
-    end
-    for _, a in ipairs(wa.actors.all()) do
-      if not driver or a.id ~= driver.id then busy = true end
-    end
-    for _, kind in ipairs({ "mines", "crates", "oil" }) do
-      for _, obj in ipairs(wa[kind].all()) do
-        local key = kind .. ":" .. tostring(obj.uid)
-        if not seen_objects[key] then
-          seen_objects[key] = true
-          emit("body", { kind = kind, x = obj.x, y = obj.y })
-        end
-        if obj.vx ~= 0 or obj.vy ~= 0 then busy = true end
-      end
-    end
-    return table.concat(parts, "/"), busy
-  end
-
-  local function tick()
-    now = now + 1
-    if stopped then return end
-    if current then
-      local age, name = now - current.start, current.name
-      local w = live(current.worm)
-      if current.selection_active then
-        local controlled = active()
-        if controlled and controlled.team == current.team then
-          w, current.worm = controlled, controlled.id
-        end
-      end
-      if not w then finish("removed"); return end
-      if age > 40 and not w.turn then finish("turn_changed"); return end
-      if instant[name] then
-        -- Stocking one utility exercises WA's normal per-turn consumption
-        -- after collection. Never equip or send fire for an instant utility.
-        if age == 40 then
-          w:ammo(id_of(name), { set = 1 })
-          current.clock_before = wa.world.turn_clock()
-          emit("utility_stock", { ammo = w:ammo(id_of(name)) })
-        elseif age == 55 then
-          released = true
-          emit("utility_result", { ammo = w:ammo(id_of(name)), clock_delta = wa.world.turn_clock() - current.clock_before })
-        end
-      elseif name == "stock.bungee" then
-        -- Bungee attaches on the walking-to-falling transition. A midair
-        -- warp bypasses that native cliff check, as does the Parachute path.
-        if age >= 40 and age < 90 then w:input{key = "right"}
-        elseif age == 110 and current.bungee_seen then
-          current.detach_requested = true
-          w:input{fire = "press"}
-        elseif age == 111 and current.bungee_seen then w:input{fire = "release"} end
-        if age == 55 then released = true end
-      elseif name == "stock.sheep_launcher" and current.launcher_phase == "landed" then
-        local phase_age = age - current.launcher_phase_start
-        if phase_age == 40 then
-          emit("activation", { phase = "landed", step = 1, action = "launch", aim = w.aim })
-          w:input{fire = "press"}
-        elseif phase_age == 55 then
-          w:input{fire = "release"}
-        elseif phase_age > 55 and not current.launcher_landed_explode
-            and launcher_live() and current.launcher_grounded >= 3 then
-          emit("activation", { phase = "landed", step = 2, action = "explode",
-            x = current.launcher_body.x, y = current.launcher_body.y, vy = current.launcher_body.vy })
-          current.launcher_landed_explode = true
-          current.launcher_release_at = age + 1
-          w:input{fire = "press"}
-        elseif age == current.launcher_release_at then
-          w:input{fire = "release"}
-        end
-      elseif age == 40 then
-        local data = wa.weapons.data(name)
-        if girders[name] then
-          local gx, gy = girder_target(1)
-          w:input{ click = { x = gx, y = gy } }
-        elseif cursor[name] or data.strike then
-          w:input{ click = { x = current.x + 160, y = current.y - 8 } }
-        end
-        if not current then return end
-        w = live(current.worm)
-        if not w then finish("removed"); return end
-        emit("aim", { aim = w.aim, state = w.state_id })
-        w:input{ fire = "press" }
-      elseif age == 55 then
-        w:input{ fire = "release" }
-        if not current then return end
-        released = true
-        emit("released", { ammo = w:ammo(id_of(name)), state = w.state_id })
-      elseif girders[name] and age > 40 and age < 40 + GIRDER_EVERY * girders[name] + 10 then
-        -- Each girder: click, press, release; then see whether WA put it
-        -- there (a rejected one leaves air at the click).
-        local n = (age - 40) // GIRDER_EVERY + 1
-        local step = (age - 40) % GIRDER_EVERY
-        local gx, gy = girder_target(n)
-        if step == 0 and n > 1 and n <= girders[name] then
-          w:input{ click = { x = gx, y = gy } }
-          if not current then return end
-          w = live(current.worm)
-          if not w then finish("removed"); return end
-          w:input{ fire = "press" }
-        elseif step == 15 and n > 1 and n <= girders[name] then
-          w:input{ fire = "release" }
-        elseif step == 25 and n <= girders[name] then
-          emit("girder", { n = n, placed = wa.land.solid(gx, gy) })
-        end
-      elseif name == "stock.sheep_launcher" then
-        if age == 90 and launcher_live() then
-          local body = current.launcher_body
-          if body.id == current.launcher_initial and not wa.land.trace(body.x, body.y, body.x, body.y + 12) then
-            emit("activation", { phase = "airborne", step = 2, action = "drop", x = body.x, y = body.y })
-            current.launcher_air_drop = true
-            w:input{fire = "press"}
-          end
-        elseif age == 91 and current.launcher_air_drop then
-          w:input{fire = "release"}
-        elseif age == 140 and current.launcher_air_drop and launcher_live()
-            and current.launcher_body.id ~= current.launcher_initial then
-          emit("activation", { phase = "airborne", step = 3, action = "explode" })
-          current.launcher_air_explode = true
-          w:input{fire = "press"}
-        elseif age == 141 and current.launcher_air_explode then
-          w:input{fire = "release"}
-        elseif age >= 200 and current.launcher_air_explode and not launcher_live() then
-          current.launcher_phase, current.launcher_phase_start = "landed", age
-          current.launcher_body, current.launcher_initial, current.launcher_grounded = nil, nil, 0
-          emit("launcher_phase", { phase = "landed", land = land_digest(current.x, current.y) })
-          -- A steep second launch lands on the station instead of crossing
-          -- the inter-platform gap. Its activation waits for observed land.
-          w:warp{x = current.x, y = current.y - 12, vx = 0, vy = 0, facing = 1}
-          w:equip(id_of(name))
-          w:input{aim = 85}
-        end
-      elseif name == "stock.select_worm" then
-        if age == 90 or age == 120 then
-          current.tab_from = w.id
-          w:input{key = "tab"}
-        elseif age == 91 or age == 121 then
-          local changed = w.id ~= current.tab_from
-          if changed then current.selection_cycles = (current.selection_cycles or 0) + 1 end
-          emit("selection", { step = age == 91 and 1 or 2, from = current.tab_from,
-            to = w.id, changed = changed })
-        elseif age == 150 then
-          emit("selection_confirm", { worm = w.id, key = "right" })
-          w:input{key = "right"}
-        elseif age == 170 then
-          current.tab_from = w.id
-          w:input{key = "tab"}
-        elseif age == 171 then
-          current.selection_locked = w.id == current.tab_from
-          current.selection_active = false
-          emit("selection_lock", { worm = w.id, locked = current.selection_locked })
-        end
-      elseif (name == "stock.shotgun" or name == "stock.longbow") and age == 100 then
-        w:input{ fire = "press" }
-      elseif (name == "stock.shotgun" or name == "stock.longbow") and age == 101 then
-        w:input{ fire = "release" }
-      elseif name == "stock.ninja_rope" then
-        if age >= 65 and age < 85 then w:input{key = "left"}
-        elseif age >= 85 and age < 105 then w:input{key = "up"}
-        elseif age == 110 then w:input{fire = "press"}
-        elseif age == 111 then w:input{fire = "release"} end
-      elseif name == "stock.jet_pack" then
-        if age >= 65 and age < 90 then w:input{key = "up"}
-        elseif age >= 90 and age < 110 then w:input{key = "right"}
-        elseif age == 115 then w:input{fire = "press"}
-        elseif age == 116 then w:input{fire = "release"} end
-      elseif name == "stock.parachute" then
-        if age == 65 then w:warp{x = current.x + 280, y = current.y - 80, vx = 1, vy = 1}
-        elseif age >= 70 and age < 95 then w:input{key = "right"}
-        elseif age == 110 then w:input{fire = "press"}
-        elseif age == 111 then w:input{fire = "release"} end
-      elseif sheep[name] then
-        if age == 90 then
-          emit("activation", { step = 2, action = sheep[name] == 2 and "explode" or "fly" })
-          w:input{fire = "press"}
-        elseif age == 91 then
-          w:input{fire = "release"}
-        elseif sheep[name] == 3 then
-          if age >= 95 and age < 110 then w:input{key = "left"}
-          elseif age >= 110 and age < 125 then w:input{key = "right"}
-          elseif age == 140 then
-            emit("activation", { step = 3, action = "release" })
-            w:input{fire = "press"}
-          elseif age == 141 then w:input{fire = "release"} end
-        end
-      elseif animals[name] and (age == 140 or age == 240) then
-        w:input{fire = "press"}
-      elseif animals[name] and (age == 141 or age == 241) then
-        w:input{fire = "release"}
-      end
-      -- Input can end the test reentrantly (turn_end, death). Never keep
-      -- touching that test's worm after it has done so.
-      if not current then return end
-      w = live(current.worm)
-      if not w then finish("removed"); return end
-      if released and age >= 280 and (name ~= "stock.sheep_launcher" or current.launcher_landed_explode) then
-        local motion, busy = sample_motion(w)
-        if not busy and motion == last_motion then quiet = quiet + 1 else quiet = 0 end
-        last_motion = motion
-        if quiet >= 25 then finish("settled") end
-      end
-      if current and age >= 1000 then finish("timeout") end
-      return
-    end
-    if now < next_at then return end
-    local w = active()
-    -- WA may choose any starting team. Reach a fixed first audit worm
-    -- through ordinary Skip Go turns instead of requiring lucky restarts.
-    if opening_worm then
-      if now > 30000 then fail("opening worm never received a normal turn"); return end
-      if w and w.id == opening_worm then
-        opening_worm = nil
-        wa.world.set_wind(0)
-      else
-        if w then skip(w) end
-        return
-      end
-    end
-    if pending and now - pending_since > 6000 then fail("fresh worm never received a normal turn"); return end
-    if pending then
-      if w and w.id == pending then begin(w)
-      elseif w then skip(w) end
-      return
-    end
-    if index == #cases then
-      emit("complete", { tests = #cases })
-      status, stopped = "Audit complete; save wkLua.log", true
-      return
-    end
-    local next_name = cases[index + 1]
-    if late[next_name] then
-      index = index + 1
-      local x, y = station(index)
-      -- Split fresh cases across teams 1/2 so a three-worm starting roster
-      -- never fills WA's eight-worm team limit. Keep team 3 for Surrender.
-      local fresh = wa.worms.spawn{ team = next_name == "stock.surrender" and 3 or (1 + (index - 62) % 2),
-        x = x, y = y - 12, health = 100, name = "Audit " .. index }
-      audit_worms[fresh.id], pending = true, fresh.id
-      pending_since = now
-      emit("waiting", { worm = fresh.id, weapon = next_name })
-      status = "Audit: waiting for fresh worm's normal turn"
-      if w then skip(w) end
-    elseif w then
-      index = index + 1
-      audit_worms[w.id] = true
-      begin(w)
-    end
-  end
-
-  initialize = function(first)
-    local size = wa.world.size()
-    local map_hash = 1
-    emit("session", { version = 11, seed = 20261015, copies = copies or false, tests = #cases,
-      rng = "fixture-v1", map = tostring(size.w) .. "x" .. tostring(size.h) })
-    if not wa.audit then fail("requires a DLL built with --features diagnostics"); return end
-    if wa.world.networked() then fail("offline only"); return end
-    if size.w ~= 7680 or size.h ~= 5376 then fail("load the generated Audit.png (7680x5376)"); return end
-    local teams = {}
-    -- Resolve through this round's entity, not the session pointer, which
-    -- can still be unpublished during the initial turn_start callback.
-    local all = wa.worms.all(first)
-    for _, w in ipairs(all) do teams[w.team] = (teams[w.team] or 0) + 1 end
-    if #all ~= 9 or #wa.sorted(teams) ~= 3 or teams[1] ~= 3 or teams[2] ~= 3 or teams[3] ~= 3 then
-      fail("use three human teams with three worms each; team 3 is reserved for Surrender")
-      return
-    end
-    for _, w in ipairs(all) do
-      if w.hp ~= 100 then fail("set scheme worm health to 100"); return end
-    end
-    for i, w in ipairs(all) do
-      audit_worms[w.id] = true
-      if w.team == 1 and not opening_worm then opening_worm = w.id end
-      -- Nine centres, twelve pixels apart, fit the existing reserve strip.
-      w:warp{x = 24 + (i - 1) * 12, y = 5288, vx = 0, vy = 0, facing = 1}
-    end
-    for n = 1, #cases do
-      local x, y = station(n)
-      local hit = wa.land.trace(x, y - 40, x, y + 40)
-      if not hit or math.abs(hit.y - y) > 2 then fail("audit station terrain does not match at " .. n); return end
-      map_hash = (map_hash * 65599 + land_digest(x, y)) % 2147483647
-    end
-    emit("map", { digest = map_hash })
-    status = "Audit: waiting for team 1's first worm's normal turn"
-    -- Remove wind as a variable across the two independently started rounds.
-    wa.world.set_wind(0)
-    driver = wa.actors.spawn{
-      owner = first, sprite = false, gravity = false, collide = false, persist = true,
-      x = 64, y = 64,
-      on = function()
-        local ok, err = pcall(tick)
-        if not ok then fail(tostring(err)) end
-      end,
-    }
-  end
-  wa.on.turn_start(function(ev)
-    if started or startup_worm then return end
-    startup_worm = ev.worm.id
-  end)
-  wa.on.hud(function() wa.hud.line(status, 14, 10) end)
-end
-`
-      },
-      {
-        path: 'audit/cases.lua',
-        name: 'audit/cases.lua',
-        language: 'lua',
-        content: `-- Stable audit order, independent of panel placement. Destructive tests last.
-return {
-  "stock.bazooka",
-  "stock.homing_missile",
-  "stock.mortar",
-  "stock.homing_pigeon",
-  "stock.sheep_launcher",
-  "stock.grenade",
-  "stock.cluster_bomb",
-  "stock.banana_bomb",
-  "stock.battle_axe",
-  "stock.shotgun",
-  "stock.handgun",
-  "stock.uzi",
-  "stock.minigun",
-  "stock.longbow",
-  "stock.fire_punch",
-  "stock.dragon_ball",
-  "stock.prod",
-  "stock.dynamite",
-  "stock.mine",
-  "stock.sheep",
-  "stock.super_sheep",
-  "stock.aqua_sheep",
-  "stock.mole_bomb",
-  "stock.air_strike",
-  "stock.napalm_strike",
-  "stock.mail_strike",
-  "stock.mine_strike",
-  "stock.mole_squadron",
-  "stock.blow_torch",
-  "stock.pneumatic_drill",
-  "stock.girder",
-  "stock.baseball_bat",
-  "stock.girder_pack",
-  "stock.ninja_rope",
-  "stock.bungee",
-  "stock.parachute",
-  "stock.teleport",
-  "stock.scales_of_justice",
-  "stock.super_banana",
-  "stock.holy_grenade",
-  "stock.flame_thrower",
-  "stock.salvation_army",
-  "stock.mb_bomb",
-  "stock.petrol_bomb",
-  "stock.skunk",
-  "stock.ming_vase",
-  "stock.sheep_strike",
-  "stock.carpet_bomb",
-  "stock.mad_cow",
-  "stock.old_woman",
-  "stock.donkey",
-  "stock.magic_bullet",
-  "stock.jet_pack",
-  "stock.low_gravity",
-  "stock.fast_walk",
-  "stock.laser_sight",
-  "stock.invisibility",
-  "stock.damage_x2",
-  "stock.crate_spy",
-  "stock.double_turn_time",
-  "stock.crate_shower",
-  "stock.kamikaze",
-  "stock.suicide_bomber",
-  "stock.skip_go",
-  "stock.select_worm",
-  "stock.freeze",
-  "stock.nuclear_test",
-  "stock.earthquake",
-  "stock.armageddon",
-  "stock.surrender",
-}
-`
-      },
-      {
-        path: 'audit/copy.lua',
-        name: 'audit/copy.lua',
-        language: 'lua',
-        content: `-- A plain copy of one of WA's weapons, for the audit's \`copies\` run: its id
--- names the weapon (tools.copy_<name>), and nothing of it is changed.
-return {
-  install = function(ctx)
-    wa.weapons.replace({ copy_from = "stock." .. ctx.id:gsub("^tools%.copy_", "") })
-  end,
-}
-`
-      },
-      {
-        path: 'audit/test_audit.lua',
-        name: 'audit/test_audit.lua',
-        language: 'lua',
-        content: `-- Scheduler regression, including synchronous turn_end during input and
--- fresh worms waiting for WA's normal turn rotation. Does not simulate WA.
-local root = arg[0]:match("^(.*)/[^/]+$") or "."
-package.path = root .. "/../?.lua;" .. package.path
-local hooks, logs, worms, clock, selected, fixture = {}, {}, {}, nil, nil, false
-local began, ended, fresh = {}, {}, {}
-local turns = 0
-local clock_sets = 0
-local girder_clicks, girder_checks = { ["stock.girder"] = {}, ["stock.girder_pack"] = {} }, 0
-local scope = arg[1] or "all"
-local scenario = arg[3] or "valid"
-local invalid_setup = scenario == "one" or scenario == "uneven" or scenario == "health"
-local roster_ready, roster_reads, errors = false, 0, {}
-local opening_skips, first_began = 0, false
-local current_test, current_frame = nil, 0
-local activations, steering = {}, {}
-local utilities = { ["stock.damage_x2"] = true, ["stock.crate_spy"] = true,
-  ["stock.double_turn_time"] = true, ["stock.crate_shower"] = true }
-local utility_grants, bungee_steps, bungee_warps, bungee_fires = {}, 0, 0, 0
-local selecting, select_tabs, select_changes, select_confirmed = false, 0, 0, false
-local launcher_phase, launcher_phase_start, launcher_body, launcher_seq = 'airborne', 0, nil, 0
-local launcher_presses = { airborne = {}, landed = {} }
-local launcher_land_after = scenario == 'launcher_late_land' and 160 or 80
-local instant = { "stock.damage_x2", "stock.crate_spy", "stock.double_turn_time", "stock.crate_shower" }
-local shift = tonumber(arg[2]) or 0
-if shift == 1 then instant = { "stock.invisibility", "stock.damage_x2", "stock.crate_spy", "stock.double_turn_time" } end
-if shift == 35 then instant = { "stock.blow_torch", "stock.pneumatic_drill", "stock.girder", "stock.baseball_bat" } end
-local cleared, physical = {}, {}
-for _, name in ipairs(instant) do cleared[name], physical[name] = true, true end
-for name in pairs(utilities) do cleared[name] = true end
-local function register(name)
-  return function(fn) hooks[name] = fn end
-end
-local function sorted(t)
-  local keys = {}; for k in pairs(t) do keys[#keys+1] = k end
-  table.sort(keys); return keys
-end
-local function rotate()
-  if selected then
-    local old = selected
-    old.turn = false
-    if hooks.turn_end then hooks.turn_end{worm=old} end
-  end
-  turns = turns + 1
-  local living = {}
-  for _, w in ipairs(worms) do
-    if w.hp > 0 and not (scenario == "unscheduled" and fresh[w.id]) then living[#living+1] = w end
-  end
-  selected = living[(turns - 1) % #living + 1]
-  selected.turn = true
-end
-local function make(team, health)
-  local n = 0; for _, w in ipairs(worms) do if w.team == team then n = n+1 end end
-  local w = {id=team*16+n+1,team=team,hp=health or 100,turn=false,state_id=0x67,x=0,y=0,vx=0,vy=0,aim=0.75}
-  local ammo = {}
-  for name in pairs(cleared) do ammo[name] = 0 end
-  function w:ammo(name, change)
-    if change and change.set == 1 and utilities[name] then
-      assert(current_test == name and current_frame == 40, 'utility stocked outside its activation step')
-      utility_grants[name] = (utility_grants[name] or 0) + 1
-    end
-    if change then ammo[name] = change.set end
-    return ammo[name] == nil and -1 or ammo[name]
-  end
-  function w:heal(v) self.hp=self.hp+v end
-  function w:warp(p)
-    if current_test == 'stock.bungee' then
-      bungee_warps = bungee_warps + 1
-      assert(current_frame == 0 and p.vx == 0 and p.vy == 0, 'bungee must walk off the edge, not warp into a fall')
-    end
-    self.x,self.y=p.x,p.y;self.vx,self.vy=p.vx or 0,p.vy or 0;return true
-  end
-  function w:equip(name)
-    assert(self.turn);assert(not utilities[name], 'instant utility cannot be equipped')
-    self.weapon=name;return -1
-  end
-  function w:input(p)
-    assert(not utilities[current_test], 'instant utility cannot receive input')
-    if p.click and (current_test == 'stock.girder' or current_test == 'stock.girder_pack') then
-      local clicks = girder_clicks[current_test]
-      clicks[#clicks + 1] = { x = p.click.x - self.x, y = p.click.y - self.y, frame = current_frame }
-    end
-    if current_test == 'stock.sheep_launcher' and p.fire == 'press' then
-      local presses = launcher_presses[launcher_phase]
-      presses[#presses + 1] = current_frame
-      if #presses == 1 then
-        assert(current_frame == launcher_phase_start + 40, 'launcher fires after aiming')
-        launcher_seq = launcher_seq + 1
-        launcher_body = { id=launcher_seq, uid=launcher_seq, x=384, y=420, vx=8, vy=-3,
-          weapon='stock.sheep_launcher', born=current_frame, kind='rocket' }
-      elseif launcher_phase == 'airborne' and #presses == 2 then
-        assert(current_frame == 90 and launcher_body.kind == 'rocket', 'second press must happen in the air')
-        launcher_seq = launcher_seq + 1
-        launcher_body.id, launcher_body.uid, launcher_body.kind = launcher_seq, launcher_seq, 'sheep'
-      elseif launcher_phase == 'airborne' and #presses == 3 then
-        assert(current_frame == 140 and launcher_body.kind == 'sheep', 'third airborne-path press detonates the walking sheep')
-        launcher_body = nil
-      elseif launcher_phase == 'landed' and #presses == 2 then
-        assert(launcher_body and launcher_body.kind == 'sheep' and launcher_body.vy == 0,
-          'second landed-path press waits for the sheep to land')
-        assert(current_frame >= launcher_body.born + launcher_land_after + 3, 'wait for stable ground observations')
-        launcher_body = nil
-      else error('unexpected extra launcher shot') end
-    end
-    if current_test == 'stock.select_worm' then
-      assert(self.turn, 'Select Worm inputs must follow the currently controlled worm')
-      if p.fire == 'press' then
-        selecting = true
-      elseif p.key == 'tab' then
-        select_tabs = select_tabs + 1
-        if selecting then
-          local team, at = {}, nil
-          for _,other in ipairs(worms) do
-            if other.team == self.team and other.hp > 0 then
-              team[#team + 1] = other
-              if other == self then at = #team end
-            end
-          end
-          self.turn = false
-          hooks.turn_end{worm=self} -- handover is synchronous, not a case end
-          selected = team[at % #team + 1]
-          hooks.turn_start{worm=selected}
-          selected.turn = true
-          select_changes = select_changes + 1
-        end
-      elseif p.key == 'right' then
-        assert(select_changes == 2 and current_frame == 150, 'confirm follows both Tab changes')
-        selecting, select_confirmed = false, true
-      end
-    end
-    if current_test == 'stock.bungee' then
-      if p.key == 'right' then
-        bungee_steps = bungee_steps + 1
-        if bungee_steps == 20 then self.state_id = 0x7C end
-      elseif p.fire == 'press' then
-        assert(current_frame == 110 and self.state_id == 0x7C, 'bungee only fires to detach after attachment')
-        bungee_fires = bungee_fires + 1
-        if scenario ~= 'stuck_bungee' then self.state_id = 0x67 end
-      end
-    end
-    if current_test and current_test:match("sheep$") then
-      if p.fire == "press" then
-        activations[current_test] = activations[current_test] or {}
-        table.insert(activations[current_test], current_frame)
-      elseif p.key then
-        steering[current_test] = (steering[current_test] or 0) + 1
-      end
-    end
-    if p.fire == 'press' and self.weapon == 'stock.skip_go' then
-      if not first_began then opening_skips = opening_skips + 1 end
-      rotate()
-    elseif p.fire == 'press' and self.weapon == 'stock.surrender' then
-      for _, other in ipairs(worms) do if other.team == self.team then other.hp = 0 end end
-      rotate()
-    end
-  end
-  worms[#worms+1]=w;return w
-end
-local counts = scenario == "one" and {1,1,1} or scenario == "uneven" and {2,3,4} or {3,3,3}
-for t=1,3 do for _=1,counts[t] do make(t) end end
-if scenario == "health" then worms[#worms].hp = 99 end
-wa = {
-  sorted=sorted, math={}, msg={FRAME_FINISH=2},
-  audit={begin=function() assert(not fixture);fixture=true end,finish=function() fixture=false end},
-  log=function(line)
-    logs[#logs+1]=line
-    local event=line:match('"event":"([^"]+)"')
-    local test=line:match('"test":"([^"]+)"')
-    if event == 'error' then
-      errors[#errors + 1] = line
-      assert(invalid_setup or scenario == "unscheduled" or scenario == "stuck_bungee"
-        or scenario == 'launcher_no_land' or scenario == 'launcher_early_land', line)
-    end
-    if event=='begin' then
-      if not first_began then
-        assert(tonumber(line:match('"worm":(%d+)')) == 17, 'first audit case must use team 1 worm 1')
-        if scenario:match('^starter') then assert(opening_skips > 0, 'opening turns were not skipped normally') end
-        first_began = true
-      end
-      assert(not began[test]);began[test]=true
-      current_test, current_frame = test, 0
-    end
-    if event == 'launcher_phase' then
-      assert(not launcher_body, 'previous launched sheep must be gone before the next path')
-      launcher_phase, launcher_phase_start = 'landed', current_frame
-    end
-    if event=='end' then assert(began[test]);assert(not ended[test]);ended[test]=true;current_test=nil end
-    if event == 'coverage' and test == 'stock.bungee' then
-      assert(line:find('"activated":true',1,true), 'bungee attachment must be observed')
-      assert(line:find('"detached":' .. tostring(scenario ~= 'stuck_bungee'),1,true), 'detach result must be observed')
-    end
-    if event == 'coverage' and test == 'stock.select_worm' then
-      assert(line:find('"cycles":2',1,true) and line:find('"locked":true',1,true), 'Select Worm must observe two handovers and a locked choice')
-    end
-    if event == 'coverage' and test == 'stock.sheep_launcher' then
-      local air = tostring(scenario ~= 'launcher_early_land')
-      assert(line:find('"airborne_drop":' .. air,1,true) and line:find('"airborne_explode":' .. air,1,true), 'airborne launcher chain follows observed flight')
-      assert(line:find('"landed_explode":' .. tostring(scenario ~= 'launcher_no_land' and scenario ~= 'launcher_early_land'),1,true), 'landed result follows ground observations')
-    end
-  end,
-  world={size=function() return {w=7680,h=5376} end,networked=function() return false end,
-    set_wind=function() end,turn_clock=function() return 90000 end,
-    set_turn_clock=function(ms) assert(ms == 60000, 'every case starts with 60 s'); clock_sets = clock_sets + 1 end},
-  land={solid=function(x,y) girder_checks = girder_checks + 1; return true end,
-    trace=function(x,y,_,bottom)
-    local surface=(y//768)*768+500
-    if y<=surface and bottom>=surface then return {x=x,y=surface} end
-  end},
-  worms={all=function(from)
-      if not roster_ready then
-        assert(from == selected, 'startup roster must resolve through the new round worm')
-        roster_reads = roster_reads + 1
-      end
-      local a={};for _,w in ipairs(worms) do if w.hp>0 then a[#a+1]=w end end;return a
-    end,
-    spawn=function(p)
-      local living = 0;for _,w in ipairs(worms) do if w.team == p.team and w.hp > 0 then living = living + 1 end end
-      assert(living < 8, 'WA team capacity exceeded')
-      local w=make(p.team,p.health);fresh[w.id]=true;return w
-    end},
-  weapons={data=function() return {} end},
-  missiles={all=function() return launcher_body and { launcher_body } or {} end},
-  actors={all=function() return { {id=1} } end,spawn=function(p) clock=p.on;return {id=1} end},
-  mines={all=function() return {} end},crates={all=function() return {} end},oil={all=function() return {} end},
-  hud={line=function() end},
-  on={hurt=register('hurt'),worm_message=register('worm_message'),missile_frame=register('missile_frame'),
-      turn_end=register('turn_end'),turn_start=register('turn_start'),hud=register('hud')},
-}
-local install=assert(loadfile(root .. '/audit.lua'))()
-local placed = {}
-for i, name in ipairs(instant) do placed[i] = {id=name, position={row="utility",column=i+5}} end
-install{options={shift=shift,scope=scope},placed=placed}
-rotate()
-local first_index = ({starter=4, starter3=7, starter_worm=2})[scenario]
-if first_index then
-  selected.turn = false; selected = worms[first_index]; selected.turn = true
-  turns = first_index
-end
--- Native START_TURN has not yet set the active flag or published the
--- session. Neither that hook nor an inactive frame may validate the roster.
-selected.turn = false
-hooks.turn_start{worm=selected}
-assert(not clock and #logs == 0 and roster_reads == 0, 'startup ran inside START_TURN')
-hooks.worm_message(selected, wa.msg.FRAME_FINISH)
-assert(not clock and #logs == 0 and roster_reads == 0, 'startup ran before the turn became active')
-selected.turn = true
-hooks.worm_message(worms[#worms], wa.msg.FRAME_FINISH)
-assert(not clock and #logs == 0 and roster_reads == 0, 'another worm initialized the audit')
-hooks.worm_message(selected, wa.msg.FRAME_FINISH)
-assert(roster_reads == 1, 'new round roster was not read once through its worm')
-roster_ready = true
-if invalid_setup then
-  assert(not clock and #errors == 1, 'invalid setup must stop once before spawning the clock')
-  local expected = scenario == "health" and "set scheme worm health" or "three worms each"
-  assert(errors[1]:find(expected,1,true),errors[1])
-  hooks.turn_start{worm=selected}
-  hooks.worm_message(selected, wa.msg.FRAME_FINISH)
-  assert(#errors == 1, 'failed startup was retried')
-  print('Audit startup: rejected ' .. scenario .. ' setup after START_TURN')
-  return
-end
-assert(clock)
-local positions = {}
-for _,w in ipairs(worms) do
-  assert(w.x >= 22 and w.x <= 122 and w.y == 5288, 'waiting worm is outside reserve strip')
-  assert(not positions[w.x], 'waiting worms overlap')
-  positions[w.x] = true
-end
-assert(logs[1]:find('"version":11',1,true), 'girders placed in open air are a fresh protocol')
-for _=1,60000 do
-  if current_test then current_frame=current_frame+1 end
-  if utilities[current_test] and physical[current_test] and current_frame == 41 then
-    selected:ammo(current_test,{set=0}) -- native per-turn consumption
-  end
-  clock()
-  if launcher_body then
-    local lands = launcher_phase == 'landed' and current_frame >= launcher_body.born + launcher_land_after
-      and scenario ~= 'launcher_no_land'
-    if (lands or (scenario == 'launcher_early_land' and current_frame >= launcher_body.born + 20))
-        and launcher_body.kind == 'rocket' then
-      launcher_seq = launcher_seq + 1
-      launcher_body.id, launcher_body.uid, launcher_body.kind = launcher_seq, launcher_seq, 'sheep'
-      launcher_body.y, launcher_body.vy = 493, 0
-    end
-    launcher_body.phase = 'pre'; hooks.missile_frame(launcher_body)
-    launcher_body.phase = 'post'; hooks.missile_frame(launcher_body)
-  end
-  for _,w in ipairs(worms) do hooks.worm_message(w,wa.msg.FRAME_FINISH) end
-  for _, w in ipairs(worms) do
-    for name in pairs(cleared) do
-      local expected = 0
-      if current_test == name and w == selected then
-        if utilities[name] then
-          if current_frame >= 40 and (not physical[name] or current_frame == 40) then expected = 1 end
-        else expected = -1 end
-      end
-      assert(w:ammo(name) == expected,
-        "automatic utility stock leaked outside its own case: " .. name)
-    end
-  end
-  if logs[#logs]:find('"event":"complete"',1,true) then break end
-  if #errors > 0 then break end
-end
-if scenario == "unscheduled" then
-  assert(#errors == 1 and errors[1]:find('fresh worm never received a normal turn',1,true), 'missing turn must stop with a clear error')
-  assert(not fixture, 'stalled scheduler released the RNG fixture')
-  print('Audit scheduler: an unscheduled fresh worm stops after the bounded wait')
-  return
-end
-if scenario == 'stuck_bungee' then
-  assert(scope == 'followup', 'stuck fixture uses the Bungee-first followup scope')
-  assert(#errors == 1 and errors[1]:find('still using a mobility tool',1,true), 'stuck bungee must stop')
-  assert(began['stock.bungee'] and not ended['stock.bungee'] and not began['stock.damage_x2'], 'stuck bungee cannot contaminate later cases')
-  assert(not fixture, 'failed detach released the RNG fixture')
-  print('Audit scheduler: failed Bungee detach stops before the next case')
-  return
-end
-if scenario == 'launcher_no_land' or scenario == 'launcher_early_land' then
-  assert(scope == 'sheep', 'launcher watchdog fixture uses the sheep scope')
-  assert(#errors == 1 and errors[1]:find('Sheep Launcher still has an active sheep',1,true))
-  assert(not began['stock.sheep'] and not fixture, 'a surviving launcher sheep cannot contaminate the next case')
-  if scenario == 'launcher_no_land' then assert(#launcher_presses.landed == 1, 'no activation is guessed before landing')
-  else assert(#launcher_presses.airborne == 1 and #launcher_presses.landed == 0, 'no airborne drop is guessed after landing') end
-  print('Audit scheduler: missing launcher landing stops before the next case')
-  return
-end
-local count=0;for _ in pairs(ended) do count=count+1 end
-assert(count==(scope == "sheep" and 4 or scope == "followup" and 14 or scope == "utilities" and 9 or scope == "banana" and 1 or 70),'ended '..count..' tests')
-if scope == "banana" then
-  assert(ended["stock.banana_bomb"], "the Banana Bomb ran")
-elseif scope == "utilities" then
-  for name in pairs(utilities) do assert(utility_grants[name] == 1, name .. ': stock one utility once') end
-elseif scope ~= "sheep" then
-  assert(began['stock.surrender'] and ended['stock.surrender'],'last pending test ran')
-  assert(bungee_steps == 50 and bungee_warps == 1 and bungee_fires == 1, 'bungee cliff sequence')
-  assert(select_tabs == 3 and select_changes == 2 and select_confirmed and not selecting, 'Tab cycles until Right confirms the choice')
-  for name in pairs(utilities) do assert(utility_grants[name] == 1, name .. ': stock one utility once') end
-end
-if scope ~= "followup" and scope ~= "utilities" and scope ~= "banana" then
-assert(#launcher_presses.airborne == 3 and #launcher_presses.landed == 2, 'both launcher activation paths ran without an extra launch')
-for name, expected in pairs({['stock.sheep']={40,90},['stock.super_sheep']={40,90,140},['stock.aqua_sheep']={40,90,140}}) do
-  local got=assert(activations[name],name)
-  assert(#got==#expected,name .. ': incorrect activation count')
-  for i,frame in ipairs(expected) do assert(got[i]==frame,name .. ': incorrect activation timing') end
-end
-assert(not steering['stock.sheep'],'normal sheep is not flown')
-assert(steering['stock.super_sheep']==30 and steering['stock.aqua_sheep']==30,'both flying sheep are steered')
-end
-assert(clock_sets == count, 'every case set the turn clock')
-if scope == 'all' then
-  -- The worm stands 12 pixels above its station; the girders go 288 above
-  -- the station, in the open air of the gap, 20 pixels apart.
-  local g, p = girder_clicks['stock.girder'], girder_clicks['stock.girder_pack']
-  assert(#g == 1 and g[1].x == 0 and g[1].y == -276 and g[1].frame == 40, 'one girder above the worm')
-  assert(#p == 5, 'five Starter Pack girders')
-  for i, c in ipairs(p) do
-    assert(c.x == -40 + (i - 1) * 20 and c.y == -276 and c.frame == 40 + (i - 1) * 30, 'girder ' .. i)
-  end
-  assert(girder_checks == 6, 'each girder checked once, got ' .. girder_checks)
-end
-assert(not fixture,'RNG fixture released')
-print('Audit scheduler: '..count..' tests completed ('..scenario..'); opening turn, sheep controls and automatic utility stock passed')
-`
-      },
-      {
-        path: 'hello.lua',
-        name: 'hello.lua',
-        language: 'lua',
-        content: `return function()
-  wa.log("hello from example.hello")
-
-  -- Hurt is lockstep: blast / hit / percent / nonlethal / poison both peers already run.
-  wa.on.hurt(function(hit)
-    if hit.phase == "post" and hit.lost > 0 then
-      wa.log(hit.kind .. " -" .. tostring(hit.lost) .. " hp")
-    end
-  end)
-
-  -- Turn phases arrive in this order. With zero retreat they may share a frame.
-  wa.on.turn_retreat(function(event)
-    wa.log("retreat begins for worm " .. tostring(event.worm.id))
-  end)
-  wa.on.turn_end(function(event)
-    wa.log("movement ends for worm " .. tostring(event.worm.id))
-  end)
-  wa.on.turn_cleanup(function(event)
-    wa.log("turn cleaned up for worm " .. tostring(event.worm.id))
-  end)
-end
-`
-      },
-      {
-        path: 'perf.lua',
-        name: 'perf.lua',
-        language: 'lua',
-        content: `-- WormForge's FPS counter and profiler, on this machine.
---
--- counter: one line at the top right: the live frame rate, the average over
---   the last 2 s, and the longest frame in the last 5 s, in ms.
--- profile: every 10 s, a "perf:" line in wkLua.log with each part of a
---   rendered frame: its average and worst ms per frame, its share of the
---   frame, and how often it ran. A "perf lua:" line splits the Lua time by
---   call. A Lua call of 5 ms or more gets a "perf spike:" line of its own
---   right away: what it was for, the frame, and Lua's memory around it.
--- packs: with profile, that line also shows each pack's hook handler time.
---   Off by default: timing every handler makes each hook call slower.
--- spikes: with profile, each "perf spike:" line also names the Lua lines the
---   call spent its time on. Off by default: Lua runs slower while it samples.
---
--- Presentation only: no timing reaches the game, so it is safe online.
-return function()
-  wa.perf.enable({ counter = true, profile = true })
-end
-`
-      },
-      {
-        path: 'stress/stress.lua',
-        name: 'stress/stress.lua',
-        language: 'lua',
-        content: `-- Stress test: four batches of projectiles in the first turn of the match, to
--- measure WA's own projectiles against WormForge's, and to record into a
--- replay that can be played back again and again for sync and performance.
---
--- Nothing happens for START_DELAY frames after the first turn starts (a
--- second), so the match can fade in from black first.
---
--- First, START_DELAY frames into the first turn: MAGNETS of Highlander's Electromagnet
--- (its claim on the Baseball Bat slot), spread evenly across the map's
--- width, each dropped just above the ground under its point, each at random
--- repelling or attracting. Their fields push and pull everything the
--- batches below throw for the rest of the test (four of their owner's
--- turns). Fired through \`wa.weapons.fire\`, as a worm firing it would;
--- without Highlander no pack claims the slot, which is logged, not fatal.
---
--- Batch 1, with the magnets: STOCK. Real WA missiles
--- (wa.weapons.launch) that WA flies, draws and explodes itself: mortar shells
--- that burst into clustlets on impact (drawn by WormForge as particles), and
--- cluster bombs on a 3 s fuse.
--- Batch 2, BATCH_GAP frames later in the same turn: CUSTOM. Lua actors with
--- this pack's truecolor orb, falling under the actor physics and exploding
--- with WA's explosion where they hit, drawn on the GPU in four styles:
---
---   alpha    spun and tinted, normal blending
---   add      additive, at 1.6x
---   pulse    its scale breathing
---   behind   behind the terrain, so the land hides it where they overlap
---
--- and, every rendered frame (wa.on.draw), a large additive halo with a colour
--- per corner and a white-hot core, a trail of eight fading glows behind each
--- orb (one every fourth frame, so it lingers), and an additive flash, growing to about 320 pixels across, for a
--- second where each one explodes.
---
--- Batch 3, BATCH_GAP frames after batch 2: BOWLING_STRIKES of Highlander's
--- Bowling Ball Strike (its claim on the Sheep Strike slot), spread evenly
--- across the map's width, alternately from the left and the right, each on
--- the ground under its point: three balls each, rolling on Highlander's
--- physics, hitting what they meet. Fired through \`wa.weapons.click\`, as a
--- click there would; without Highlander no pack claims the slot, which is
--- logged, not fatal.
---
--- Batch 4, BATCH_GAP frames after batch 3: ELECTRIC_GRENADES of Highlander's
--- Electric Grenade (its claim on the Earthquake slot), launched as real WA
--- missiles at random open-air points across the map, with short staggered
--- fuses. Highlander's own hooks treat them as its grenades: its art draws
--- them and its chaining arc runs where each one blows. The Stress profile
--- places the three Highlander weapons it uses (the magnets and batches 3 and
--- 4), wherever on the panel; without them leave MAGNETS, BOWLING_STRIKES and
--- ELECTRIC_GRENADES at 0. A launch WA refuses (its object pool full) is
--- counted and logged, not fatal.
---
--- Batches 1 and 2 start from the same positions and speeds, so the two halves
--- of the turn compare like for like. Everything that decides what happens runs
--- in simulation callbacks, from a private generator with a fixed seed: the
--- same on every machine, and again in every replay of the match. The drawing
--- only reads it.
---
--- With PROFILE on, the pack also turns on the FPS counter and the profiler
--- (see mods/examples/perf). wkLua.log gets a "stress:" line when each batch
--- goes, between the profiler's "perf:" lines.
---
--- Its two sheets go into the GPU atlas as assets (\`wa.assets.load\`,
--- \`gpu_prefix\`): an add-on claims no weapon.
-return function()
-  local START_DELAY = 50  -- frames from the first turn's start to the magnets and batch 1: 1 s
-  local COUNT = 40        -- projectiles per batch
-  local BATCH_GAP = 400   -- frames from batch 1 to batch 2: 8 s at WA's 50 a second
-  local DAMAGE = 15       -- each explosion's damage
-  local BLAST = 40        -- each custom explosion's size (CreateExplosion's id)
-  local PROFILE = true
-  local SEED = 12345
-  local MAGNETS = 6            -- first; needs Highlander's Electromagnet placed
-  local MAGNET = "px.electromagnet"
-  local BOWLING_STRIKES = 7    -- batch 3; needs its Bowling Ball Strike placed
-  local BOWLING = "px.bowling_ball_strike"
-  local ELECTRIC_GRENADES = 50 -- batch 4; needs its Electric Grenade placed
-  local ELECTRIC = "px.electric_grenade"
-  local ELECTRIC_FUSE = 3000   -- ms, plus up to ELECTRIC_SPREAD
-  local ELECTRIC_SPREAD = 1500
-  local ORB, GLOW = "stress/sprites/orb", "stress/sprites/glow"
-  local TINTS = { 0xFF4040, 0xFFA030, 0xF0F040, 0x50E060, 0x40C0FF, 0xA070FF }
-  local STYLES = {
-    { name = "alpha", blend = "normal" },
-    { name = "add", blend = "add", scale = 1.6 },
-    { name = "pulse", blend = "normal", pulse = true },
-    { name = "behind", blend = "normal", depth = wa.depth.BEHIND_TERRAIN }, -- terrain is 0x180000
-  }
-  local TRAIL = 8         -- glows behind each orb
-  local TRAIL_EVERY = 4   -- frames between them, so the trail lingers
-  local FLASH = 50        -- frames an explosion's flash lasts
-
-  wa.assets.load({ sprites = { ORB, GLOW }, gpu_prefix = "stress/sprites/" })
-
-  if PROFILE then
-    wa.perf.enable({ counter = true, profile = true })
-  end
-
-  -- A linear congruential generator: the same numbers on every machine, and
-  -- without touching WA's RNG, so WA's own random draws are left as they were.
-  -- 0 to n - 1 from the seed's high bits: its low bits repeat in short cycles
-  -- (the lowest just alternates), so \`seed % n\` gave every magnet the same
-  -- polarity, two draws a magnet apart.
-  local seed = SEED
-  local function rand(n)
-    seed = (seed * 1103515245 + 12345) % 0x80000000
-    return seed * n // 0x80000000
-  end
-
-  -- Where each projectile starts, and how fast: spread across the map, from
-  -- the first open air under its top (on a cavern, under the roof).
-  local function plan()
-    local size = wa.world.size()
-    local shots = {}
-    for i = 1, COUNT do
-      local x = size.w * i // (COUNT + 1) + rand(41) - 20
-      local y = 20
-      while y < size.h and wa.land.solid(x, y) do
-        y = y + 8
-      end
-      shots[i] = {
-        x = x,
-        y = (y + 10 + rand(40)),
-        vx = (rand(9) - 4) * (1 / 2),
-        vy = rand(3),
-      }
-    end
-    return shots
-  end
-
-  -- Random open-air points across the whole map, above the water: a few tries
-  -- each, so a point inside land is drawn again.
-  local function electric_points()
-    local size = wa.world.size()
-    local water = wa.world.water() // 1
-    if water <= 0 then water = size.h end -- not known: the whole height
-    local points = {}
-    for i = 1, ELECTRIC_GRENADES do
-      for _ = 1, 20 do
-        local x = 20 + rand(math.max(1, size.w - 40))
-        local y = 20 + rand(math.max(1, math.min(size.h, water) - 40))
-        if not wa.land.solid(x, y) then
-          points[#points + 1] = { x = x, y = y }
-          break
-        end
-      end
-    end
-    return points
-  end
-
-  local function electric_batch(owner)
-    local launched, refused, reason = 0, 0, nil
-    for _, p in ipairs(electric_points()) do
-      local ok, err = pcall(wa.weapons.launch, {
-        weapon = ELECTRIC, owner = owner,
-        x = p.x, y = p.y, vx = (rand(5) - 2) * (1 / 2), vy = 0,
-        missile = { fuse = ELECTRIC_FUSE + rand(ELECTRIC_SPREAD) },
-      })
-      if ok then
-        launched = launched + 1
-      else
-        refused, reason = refused + 1, reason or tostring(err)
-      end
-    end
-    wa.log(string.format("stress: batch 4, %d of %d Electric Grenades launched%s", launched,
-      ELECTRIC_GRENADES, refused > 0 and (", " .. refused .. " refused: " .. reason) or ""))
-  end
-
-  -- The ground under x: the first land from the top (on a cavern, the roof's
-  -- underside is not ground, so the first land below open air).
-  local function ground(x)
-    local size = wa.world.size()
-    local y = 20
-    while y < size.h and wa.land.solid(x, y) do y = y + 4 end
-    while y < size.h and not wa.land.solid(x, y) do y = y + 4 end
-    return y
-  end
-
-  local function bowling_batch(owner)
-    local size = wa.world.size()
-    local fired, reason = 0, nil
-    for i = 1, BOWLING_STRIKES do
-      local x = size.w * i // (BOWLING_STRIKES + 1)
-      local ok, err = pcall(wa.weapons.click, {
-        weapon = BOWLING, worm = owner, x = x, y = ground(x),
-        vx = (i % 2 == 1) and 1 or -1, -- the strike's direction: odd ones from the left
-      })
-      if ok then fired = fired + 1 else reason = reason or tostring(err) end
-    end
-    wa.log(string.format("stress: batch 3, %d of %d Bowling Ball Strikes%s", fired, BOWLING_STRIKES,
-      reason and (", " .. reason) or ""))
-  end
-
-  -- The Electromagnets: evenly across the map, 30 pixels above the ground
-  -- under each point, each repelling or attracting at random.
-  local function magnet_batch(owner)
-    local size = wa.world.size()
-    local fired, attract, reason = 0, 0, nil
-    for i = 1, MAGNETS do
-      local x = size.w * i // (MAGNETS + 1) + rand(41) - 20
-      local polarity = rand(2) == 0 and 1 or -1
-      local ok, err = pcall(wa.weapons.fire, {
-        weapon = MAGNET, worm = owner, x = x, y = (ground(x) - 30), polarity = polarity,
-      })
-      if ok then
-        fired = fired + 1
-        if polarity < 0 then attract = attract + 1 end
-      else
-        reason = reason or tostring(err)
-      end
-    end
-    wa.log(string.format("stress: %d of %d Electromagnets (%d attracting)%s", fired, MAGNETS, attract,
-      reason and (", " .. reason) or ""))
-  end
-
-  local function stock_batch(owner, shots)
-    for i, s in ipairs(shots) do
-      local cluster = i % 2 == 0
-      wa.weapons.launch({
-        weapon = cluster and "stock.cluster_bomb" or "stock.mortar",
-        owner = owner,
-        x = s.x, y = s.y, vx = s.vx, vy = s.vy,
-        missile = { explosion = { power = DAMAGE }, fuse = cluster and 3000 or nil },
-      })
-    end
-  end
-
-  -- Simulation state the drawing reads: the frame count, the live orbs (with
-  -- their last positions) and the explosions still flashing.
-  local now = 0
-  local orbs = {}    -- actor id -> { a, id, tint, style, trail = { {x, y}, ... } }
-  local flashes = {} -- { x, y, tint, born }
-
-  local function orb_brain(o)
-    local spin = 0
-    return function(a)
-      a:gravity()
-      local hit = a:move({ terrain = true, worms = true })
-      if hit.terrain or hit.land or hit.worm then
-        flashes[#flashes + 1] = { x = a.x, y = a.y, tint = o.tint, born = now }
-        orbs[o.id] = nil
-        a:explode({ damage = DAMAGE, id = BLAST })
-        a:despawn()
-        return
-      end
-      if now % TRAIL_EVERY == 0 then
-        table.insert(o.trail, 1, { x = a.x, y = a.y })
-        o.trail[TRAIL + 1] = nil
-      end
-      spin = (spin + 12) % 360
-      local scale = o.style.scale or 1.0
-      if o.style.pulse then
-        scale = 1.0 + 0.6 * wa.math.sin(now / 6)
-      end
-      a:gfx({ angle = spin, tint = o.tint, blend = o.style.blend, scale = scale, depth = o.style.depth })
-      a:advance()
-      if a:in_water() then
-        orbs[o.id] = nil
-        a:despawn()
-      end
-    end
-  end
-
-  local function custom_batch(owner, shots)
-    for i, s in ipairs(shots) do
-      local o = { tint = TINTS[(i - 1) % #TINTS + 1], style = STYLES[(i - 1) % #STYLES + 1], trail = {} }
-      o.a = wa.actors.spawn({
-        sprite = ORB,
-        x = s.x, y = s.y, vx = s.vx, vy = s.vy,
-        gravity = false, collide = false, owner = owner,
-        on = orb_brain(o),
-      })
-      -- Registered here, not on its first tick: the clock may run first.
-      o.id = o.a.id
-      orbs[o.id] = o
-    end
-  end
-
-  -- A worm to fire batch 2 for: the first turn's, or any worm still alive.
-  local function live_owner(first)
-    if first and first.hp > 0 then
-      return first
-    end
-    for _, w in ipairs(wa.worms.all()) do
-      if w.hp > 0 then
-        return w
-      end
-    end
-  end
-
-  local started = false
-  wa.on.turn_start(function(ev)
-    if started then
-      return
-    end
-    started = true
-    local owner = ev.worm
-    local shots = plan()
-    -- The clock: an invisible actor whose brain counts frames, fires every
-    -- batch and lets the flashes go. It runs every frame whatever the worms
-    -- do, and in lockstep.
-    wa.actors.spawn({
-      sprite = false, x = shots[1].x, y = shots[1].y,
-      gravity = false, collide = false, owner = owner,
-      on = function(a)
-        now = now + 1
-        for i = #flashes, 1, -1 do
-          if now - flashes[i].born >= FLASH then
-            table.remove(flashes, i)
-          end
-        end
-        if now == START_DELAY then
-          local w = live_owner(owner)
-          if w then
-            if MAGNETS > 0 then magnet_batch(w) end
-            wa.log(string.format("stress: batch 1, %d stock projectiles (mortar, cluster bomb)", COUNT))
-            stock_batch(w, shots)
-          else
-            wa.log("stress: batch 1 skipped, no worm alive to fire it for")
-          end
-        end
-        if now == START_DELAY + BATCH_GAP then
-          local w = live_owner(owner)
-          if w then
-            wa.log(string.format("stress: batch 2, %d custom projectiles (Lua actors, GPU orbs)", COUNT))
-            custom_batch(w, shots)
-          else
-            wa.log("stress: batch 2 skipped, no worm alive to fire it for")
-          end
-        end
-        if now == START_DELAY + 2 * BATCH_GAP and BOWLING_STRIKES > 0 then
-          local w = live_owner(owner)
-          if w then
-            bowling_batch(w)
-          else
-            wa.log("stress: batch 3 skipped, no worm alive to fire it for")
-          end
-        end
-        if now == START_DELAY + 3 * BATCH_GAP and ELECTRIC_GRENADES > 0 then
-          local w = live_owner(owner)
-          if w then
-            electric_batch(w)
-          else
-            wa.log("stress: batch 4 skipped, no worm alive to fire it for")
-          end
-        end
-        local last = START_DELAY
-          + (ELECTRIC_GRENADES > 0 and 3 * BATCH_GAP or BOWLING_STRIKES > 0 and 2 * BATCH_GAP or BATCH_GAP)
-        if now > last and next(orbs) == nil and #flashes == 0 then
-          a:despawn()
-        end
-      end,
-    })
-  end)
-
-  -- Drawing: reads the state above, never writes it.
-  local function argb(alpha, rgb)
-    return (alpha << 24) | rgb
-  end
-
-  -- The engine copies each submission, so all glows share one refilled spec.
-  local QUAD = { sprite = GLOW, blend = "add", colors = {0, 0, 0, 0},
-    points = { {0, 0}, {0, 0}, {0, 0}, {0, 0} } }
-  local function glow(x, y, half, c1, c2, c3, c4)
-    local p, c = QUAD.points, QUAD.colors
-    p[1][1], p[1][2] = x - half, y - half
-    p[2][1], p[2][2] = x + half, y - half
-    p[3][1], p[3][2] = x + half, y + half
-    p[4][1], p[4][2] = x - half, y + half
-    c[1], c[2], c[3], c[4] = c1, c2, c3, c4
-    wa.draw.quad(QUAD)
-  end
-
-  wa.on.draw(function()
-    for _, o in pairs(orbs) do
-      local x, y, t = o.a.x, o.a.y, o.tint
-      -- The halo: a colour per corner, the orb's own at the top left, and a
-      -- white-hot core over it.
-      local c = TINTS[(o.a.id % #TINTS) + 1]
-      glow(x, y, 48, argb(0xFF, t), argb(0xFF, c), argb(0xFF, c), argb(0xFF, t))
-      glow(x, y, 16, argb(0xFF, 0xFFFFFF), argb(0xFF, 0xFFFFFF), argb(0xFF, 0xFFFFFF), argb(0xFF, 0xFFFFFF))
-      for i, p in ipairs(o.trail) do
-        local a = argb(0xFF - (i - 1) * 0x1C, t)
-        glow(p.x, p.y, (30 - i * 2), a, a, a, a)
-      end
-    end
-    for _, f in ipairs(flashes) do
-      local age = now - f.born
-      local alpha = 0xFF * (FLASH - age) // FLASH
-      local a, white = argb(alpha, f.tint), argb(alpha, 0xFFFFFF)
-      glow(f.x, f.y, (30 + age * 26 // 10), a, a, a, a)
-      glow(f.x, f.y, (16 + age), white, white, white, white)
-    end
-  end)
-end
-`
-      },
-      {
-        path: 'worm_state_logger.lua',
-        name: 'worm_state_logger.lua',
-        language: 'lua',
-        content: `-- Show one live state line for the active worm, and log transitions to file.
---
--- A debugging pack: it only reads. \`worm.state_id\` is WA's raw state number
--- and \`worm.state_label\` its name from the engine's one state table
--- (crates/game/src/worm_state.rs, which lists the evidence for each and
--- marks a provisional name with \`?\`). Name a state there, not here.
-return function()
-  local last = {}
-
-  local function describe(worm)
-    local state = worm.state_id
-    if state == nil then return nil end
-    return string.format("W%d 0x%02X %s", worm.id, state, worm.state_label or "?")
-  end
-
-  wa.log("worm_state_logger: enabled (HUD and wkLua.log)")
-
-  wa.on.worm_message(function(worm, msg)
-    local state = worm.state_id
-    if state == nil then return end
-
-    local id = worm.id
-    if last[id] == state then return end
-    last[id] = state
-
-    wa.log(string.format("worm_state: worm=%d state=0x%02X name=%s msg=0x%02X",
-      id, state, worm.state_label or "?", msg))
-  end)
-
-  wa.on.hud(function()
-    local line = "Worm state: ?"
-    for _, worm in ipairs(wa.worms.all()) do
-      if worm.turn then
-        line = "Worm state: " .. (describe(worm) or "?")
-        break
-      end
-    end
-    wa.hud.line(line, 14, 10)
-  end)
-end
-`
-      }
-    ],
-  },
-  {
-    id: 'example.labs',
-    name: 'Labs',
-    version: '0.2.0',
-    author: 'wkLua',
-    category: 'weapons',
-    description: 'One weapon per file, each isolating a single mechanic -- cut, panel icon, record, shuffle. Small and readable; a good set of starting points.',
-    tags: ['example', 'weapons'],
-    files: [
-      {
-        path: 'cut_lab/cut_lab.lua',
-        name: 'cut_lab/cut_lab.lua',
-        language: 'lua',
-        content: `-- Cut Lab: the Bazooka cuts a hole of the chosen shape where it lands.
--- + cycles the shape; 1-9 and 0 set the size (0 is the biggest).
-
--- Each shape, and how a size from 1 to 10 sizes it.
-return {
-  install = function()
-    local SHAPES = {
-      { name = "circle", cut = function(x, y, size)
-          wa.land.cut({ x = x, y = y, shape = "circle", radius = size * 8 })   -- 8..80 px
-        end },
-      { name = "drill", cut = function(x, y)
-          wa.land.cut({ x = x, y = y, shape = "drill" })                     -- WA's own; one size
-        end },
-      { name = "torch", cut = function(x, y, _, worm)
-          wa.land.cut({ x = x, y = y, shape = "torch", facing = worm and worm.facing or 1, angle = 0 })
-        end },
-      { name = "star", cut = function(x, y, size)
-          wa.land.cut({ x = x, y = y, shape = "sprite", sprite = "cut_lab/sprites/star", frame = size - 1 })
-        end },
-      { name = "ring", cut = function(x, y, size)                             -- its middle stays
-          wa.land.cut({ x = x, y = y, shape = "sprite", sprite = "cut_lab/sprites/ring", frame = size - 1 })
-        end },
-    }
-
-    local shape, size = 1, 5
-    local plus_was, digit_was = false, nil
-
-    -- The turn's worm reads the keys once a frame: synced keys, so every
-    -- player's game changes shape and size at the same moment.
-    wa.on.worm_message(function(worm)
-      if not worm.turn then return end
-      local keys = wa.world.keys()
-      if keys.plus_key and not plus_was then
-        shape = shape % #SHAPES + 1
-      end
-      plus_was = keys.plus_key
-      if keys.digit and keys.digit ~= digit_was then
-        size = keys.digit == 0 and 10 or keys.digit
-      end
-      digit_was = keys.digit
-    end, { msgs = { wa.msg.FRAME_FINISH } })
-
-    wa.weapons.replace({
-      copy_from = "stock.bazooka",
-      name = "Cut Lab",
-      missile = { explosion = { power = 1, push_pct = 1 } },  -- WA's own blast barely scratches
-      sprites = { "cut_lab/sprites/star", "cut_lab/sprites/ring" },
-      on_explode = function(ev)
-        SHAPES[shape].cut(ev.x, ev.y, size, ev.worm)
-        wa.log(("cut lab: %s, size %d at %d,%d"):format(SHAPES[shape].name, size, ev.x // 1, ev.y // 1))
-      end,
-    })
-
-    wa.on.hud(function()
-      wa.hud.line(("Cut Lab: %s, size %d   (+ shape, 1-9/0 size)"):format(SHAPES[shape].name, size), 14, 40)
-    end)
-  end,
-}
-`
-      },
-      {
-        path: 'echo_mine.lua',
-        name: 'echo_mine.lua',
-        language: 'lua',
-        content: `-- MineEntity stays the mine. Boom is a CLUSTER actor (fan, trail, impact).
-return {
-  install = function()
-    wa.weapons.replace({
-      name = "Echo Mine",
-      copy_from = "stock.mine",
-      panel_icon = "mine",
-      sprite = "crshairr",
-      mine = {
-        proximity = 25,
-        fuse = 10,
-      },
-      on_proximity = {
-        spawn = {
-          sprite = false,
-          explode = { damage = 0, id = 25, now = true },
-          damage_worms = false,
-          damage_terrain = true,
-        },
-        on = function(ev)
-          wa.log("echo proximity")
-        end,
-      },
-      on_explode = {
-        spawn = {
-          kind = "cluster",
-          sprite = "banana",
-          trail = "smklt25",
-          count = 5,
-          spread = 45,
-          power = 0,
-          impact = true,
-          bounce = false,
-          homing = false,
-          gravity = true,
-          collide = true,
-          persist = false,
-          explode = { damage = 30, id = 100 },
-        },
-        on = function(ev)
-          wa.log("echo explode")
-        end,
-      },
-    })
-  end,
-}
-`
-      },
-      {
-        path: 'hurt_lab.lua',
-        name: 'hurt_lab.lua',
-        language: 'lua',
-        content: `-- Ten: built on WA's Fire Punch, wherever it is placed. Space is lockstep
--- FIRE_WEAPON. "Eat" stops the stock punch and its animation, so a pack can
--- time its own fire path. It eats even with 0 ammo, as a scheme may give
--- the weapon none and this should still work.
-return {
-  install = function()
-    local line = "ten  Space = 10 hp each enemy"
-
-    local TEN = "labs.hurt_lab"
-
-    wa.weapons.replace({
-      copy_from = "stock.fire_punch",
-      name = "Ten",
-      is_weapon = true,
-    })
-
-    wa.on.worm_message(function(worm, msg)
-      if msg ~= wa.msg.FIRE_WEAPON then
-        return
-      end
-      if worm.weapon ~= TEN then
-        return
-      end
-      local ammo = worm:ammo(TEN)
-      if ammo == 0 then
-        return "eat"
-      end
-      if ammo > 0 then
-        worm:ammo(TEN, -1)
-      end
-      for _, w in ipairs(wa.worms.all()) do
-        if w.alliance ~= worm.alliance and w.hp > 0 then
-          w:hurt(10)
-        end
-      end
-      return "eat"
-    end, { msgs = { wa.msg.FIRE_WEAPON } })
-
-    wa.on.hurt(function(hit)
-      if hit.phase ~= "post" or hit.lost < 1 then
-        return
-      end
-      line = hit.kind .. " -" .. tostring(hit.lost) .. " hp"
-      wa.log(line)
-    end)
-
-    wa.on.hud(function()
-      wa.hud.line(line)
-    end)
-  end,
-}
-`
-      },
-      {
-        path: 'panel_icon/panel_icon.lua',
-        name: 'panel_icon/panel_icon.lua',
-        language: 'lua',
-        content: `-- A custom icon in the stock weapon panel.
---
--- \`panel_icon\` takes a pack PNG. A full 32x32 icon image -- every Project X
--- weapon icon is one -- is used as is: the panel shows its 24x24 centre, as it
--- does for WA's own icons. A smaller PNG is centred in that window instead.
--- Colours are matched to the ones WA's own icons use, and the greyed-out
--- frame is derived the way theirs is, so it looks native in both states.
---
--- This icon is PX's Hellish Hand Grenade, copied byte for byte, so replays
--- refer to it in the .WFAssets collection instead of embedding it.
-return {
-  install = function()
-    wa.weapons.replace({
-      copy_from = "stock.holy_grenade",
-      name = "Hellish Hand Grenade",
-      panel_icon = "panel_icon/hhh_ico.png",
-    })
-  end,
-}
-`
-      },
-      {
-        path: 'q_bazooka.lua',
-        name: 'q_bazooka.lua',
-        language: 'lua',
-        content: `-- Q selects WA's Bazooka (stock.bazooka), wherever the profile placed it.
--- Space hold = power bar, release = shoot (native StartFiring / ReleaseWeapon).
-return function()
-  local prev_q = {}
-
-  wa.on.worm_message(function(worm, msg)
-    if msg ~= wa.msg.FRAME_FINISH then
-      return
-    end
-    if not worm.turn then
-      prev_q[worm.id] = false
-      return
-    end
-    local q = wa.world.keys().q
-    if q and not prev_q[worm.id] then
-      if worm.weapon ~= "stock.bazooka" then
-        local ammo = worm:equip("stock.bazooka")
-        wa.log("Q equip bazooka ammo=" .. tostring(ammo))
-      end
-    end
-    prev_q[worm.id] = q
-  end, { msgs = { wa.msg.FRAME_FINISH } })
-end
-`
-      },
-      {
-        path: 'record_lab.lua',
-        name: 'record_lab.lua',
-        language: 'lua',
-        content: `-- Record Lab: WA's Bazooka (one: its Grenade) with one field of its weapon
--- record changed, one weapon per field, to settle what the field does before
--- it gets a name in the Lua API (docs/weapon-data-tables-proposal.md, "Field audit"). Fire
--- each beside WA's own Bazooka and compare; the HUD names the field and what
--- each reading would show, and every hurt is logged to wkLua.log.
---
--- The fields are written raw (\`raw = { [offset] = value }\`, the entry's
--- absolute offset), so nothing here depends on the names under test.
-
-local LABS = {
-  ["labs.rec_push"] = { field = 0x50, value = 0,
-    a = "push power: no knockback, damage as usual",
-    b = "damage: no damage" },
-  ["labs.rec_damage"] = { field = 0x54, value = 100,
-    a = "damage: 100 at the centre, a bigger crater",
-    b = "blast radius only" },
-  ["labs.rec_70"] = { field = 0x70, value = 0,
-    a = "gravity: flies straight",
-    b = "trail speed: the smoke trail changes" },
-  ["labs.rec_84"] = { field = 0x84, value = 300,
-    a = "gravity: drops three times as fast",
-    b = "friction: no change in flight" },
-  ["labs.rec_7c"] = { field = 0x7C, value = 0,
-    a = "wind on/off: ignores the wind (try with wind)",
-    b = "explosion response: other blasts no longer push it" },
-  ["labs.rec_64"] = { field = 0x64, value = 1,
-    a = "impact: bounces like a grenade, explodes on its fuse",
-    b = "animation type: spins, still explodes on contact" },
-  ["labs.rec_44"] = { field = 0x44, value = 1,
-    a = "grenade style: bounces, takes the fuse you set",
-    b = "PX's runAway: no visible change" },
-  ["labs.rec_48"] = { field = 0x48, value = 0,
-    a = "collision mask: flies through worms",
-    b = "collision radius: hits as usual" },
-  ["labs.rec_90"] = { field = 0x90, value = 0x10042,
-    a = "flight sound: hisses (WA's Fuse) in flight",
-    b = "alt sprite: a different shell" },
-  ["labs.rec_68"] = { field = 0x68, value = 0,
-    a = "trail sprite: no smoke trail",
-    b = "flight flags: something else changes" },
-  -- A Grenade: OpenWA's bounce %, PX's speed multiplier.
-  ["labs.rec_78"] = { field = 0x78, value = 17, base = "stock.grenade",
-    a = "bounce: bounces far less than WA's Grenade",
-    b = "PX's speed multiplier: flies at a sixth of the speed" },
-  -- What makes a missile wait for its fuse instead of exploding on
-  -- contact, and how much it bounces: the Bazooka has 0 at +0x88 (PX's
-  -- countdownFrom) and +0xB0, every grenade 5000 and 100.
-  ["labs.rec_88"] = { field = 0x88, value = 5000,
-    a = "timed: bounces and waits for its fuse, as a Grenade",
-    b = "no change: explodes on contact" },
-  ["labs.rec_b0"] = { field = 0xB0, value = 17, base = "stock.grenade",
-    a = "terrain friction: keeps only 17% of its speed on terrain (settled)",
-    b = "no visible change" },
-  -- wkJollyWorm's BounceAction names, with +0xA4 at Bounce (2, every
-  -- grenade): +0xAC "bounciness" (Grenade 0, Banana Bomb 60, Holy and
-  -- Dynamite 30), +0xD0 "number of bounces" (0 on every grenade).
-  ["labs.rec_ac"] = { field = 0xAC, value = 60, base = "stock.grenade",
-    a = "bounciness: bounces differently from WA's Grenade",
-    b = "something else: watch the spin, the fuse, the sound" },
-  ["labs.rec_d0"] = { field = 0xD0, value = 2, base = "stock.grenade",
-    a = "number of bounces: explodes on its second bounce",
-    b = "no visible change: waits for its fuse as usual" },
-}
-
-local shared_installed = false
-
--- The HUD line and the hurt log, once for all lab weapons.
-local function install_shared()
-  if shared_installed then return end
-  shared_installed = true
-  wa.on.hurt(function(hit)
-    if hit.phase == "post" and hit.lost > 0 then
-      wa.log(("record lab: %s -%d hp"):format(hit.kind, hit.lost))
-    end
-  end)
-  wa.on.hud(function()
-    local worm
-    for _, w in ipairs(wa.worms.all()) do
-      if w.turn then worm = w break end
-    end
-    local lab = worm and LABS[worm.weapon]
-    if lab then
-      wa.hud.line(("Record lab: +0x%X = %d"):format(lab.field, lab.value), 14, 40)
-      wa.hud.line("  if " .. lab.a, 14, 56)
-      wa.hud.line("  if " .. lab.b, 14, 72)
-    end
-  end)
-end
-
-return {
-  defaults = { ammo = { round_start = -1 }, delay = 0 },
-  install = function(ctx)
-    local lab = LABS[ctx.id]
-    install_shared()
-    wa.weapons.replace({
-      copy_from = lab.base or "stock.bazooka",
-      name = ("Lab +0x%X"):format(lab.field),
-      raw = { [lab.field] = lab.value },
-      on_explode = function(ev)
-        wa.log(("record lab: +0x%X = %d exploded at %d,%d"):format(lab.field, lab.value, ev.x // 1, ev.y // 1))
-      end,
-    })
-  end,
-}
-`
-      },
-      {
-        path: 'shuffle_panel.lua',
-        name: 'shuffle_panel.lua',
-        language: 'lua',
-        content: `-- Each turn, the weapons the profile placed swap places on the panel at
--- random: wa.panel.layout and wa.panel.set_layout. Only where a weapon shows
--- changes; F-keys and clicks pick from the new order at once.
-return function()
-  wa.on.turn_start(function()
-    local layout = wa.panel.layout()
-    -- By id first: a table's order isn't the same on every machine, and the
-    -- shuffle must be (wa.random is the game's own, the same everywhere).
-    local ids = {}
-    for id in pairs(layout) do ids[#ids + 1] = id end
-    table.sort(ids)
-    local places = {}
-    for i, id in ipairs(ids) do places[i] = layout[id] end
-    for i = #places, 2, -1 do
-      local j = wa.random(i)
-      places[i], places[j] = places[j], places[i]
-    end
-    local moves = {}
-    for i, id in ipairs(ids) do moves[id] = places[i] end
-    wa.panel.set_layout(moves)
-  end)
-end
-`
-      },
-      {
-        path: 'worm_toss.lua',
-        name: 'worm_toss.lua',
-        language: 'lua',
-        content: `-- Worm Toss: WA land-cursor MODE + wa.cursor actor + click eaten at source.
---
--- on_select.cursor = true -> WA enters land-cursor mode: the mouse moves the
---                   world cursor (World+0x7380/84), NOT the camera. Camera
---                   scrolls only at the screen edge. Any map point reachable.
--- eat_fire = true -> Rust eats the lockstep click (TeamEntity msg 0x32) for
---                   this slot: no X marker, no launch anim, no turn end, and
---                   the cursor keeps moving. WA's own cursor draw is skipped.
--- wa.cursor.spawn -> the only cursor on screen: a Lua actor wearing the stock
---                   team-colour cursor (what Teleport shows), snapped to
---                   wa.world.pointer() natively every frame before \`on\` runs.
---                   Grab/drag/throw use the actor position.
-return {
-  install = function()
-    local GRAB_R2 = 48 * 48
-
-    local owner_id
-    local live
-    local held
-    local hist = {}
-    local origin
-    local prev_down = false
-
-    local function nearest_target(x, y)
-      local best, best_d
-      for _, w in ipairs(wa.worms.all()) do
-        if w.id ~= owner_id then
-          local dx = w.x - x
-          local dy = w.y - y
-          local d = dx * dx + dy * dy
-          if d <= GRAB_R2 and (not best_d or d < best_d) then
-            best, best_d = w, d
-          end
-        end
-      end
-      return best
-    end
-
-    local function release()
-      if not held then
-        return
-      end
-      local vx, vy = 0, 0
-      if #hist >= 2 then
-        vx = hist[#hist].x - hist[1].x
-        vy = hist[#hist].y - hist[1].y
-      end
-      held:drop()
-      held.vx = vx
-      held.vy = vy
-      wa.log(string.format("worm_toss throw vx=%d vy=%d", vx // 1, vy // 1))
-      held = nil
-      origin = nil
-      hist = {}
-    end
-
-    local function try_grab(x, y)
-      if held then
-        return true
-      end
-      local w = nearest_target(x, y)
-      if not w then
-        return false
-      end
-      held = w
-      origin = { px = x, py = y, wx = w.x, wy = w.y }
-      hist = {}
-      wa.log(string.format("worm_toss grab id=%s", tostring(w.id)))
-      return true
-    end
-
-    -- a.x / a.y are already on the pointer (cursor actor); only the button is read.
-    local function tick(a)
-      local down = wa.world.pointer().down
-
-      if held then
-        hist[#hist + 1] = { x = a.x, y = a.y }
-        if #hist > 4 then
-          table.remove(hist, 1)
-        end
-        if not origin then
-          origin = { px = a.x, py = a.y, wx = held.x, wy = held.y }
-        end
-        held:carry(origin.wx + (a.x - origin.px), origin.wy + (a.y - origin.py))
-        if prev_down and not down then
-          release()
-        end
-      elseif down and not prev_down then
-        try_grab(a.x, a.y)
-      end
-
-      prev_down = down
-    end
-
-    wa.weapons.replace({
-      copy_from = "stock.battle_axe",
-      name = "Worm Toss",
-      is_weapon = true,
-      eat_fire = true,
-      on_select = {
-        -- Land-cursor MODE: mouse moves the world cursor, not the camera.
-        cursor = true,
-        on = function(sel)
-          owner_id = sel.worm.id
-          if live then
-            return
-          end
-          -- WA parked the land cursor on the worm at select; sel.x/y is that.
-          live = wa.cursor.spawn({
-            owner = sel.worm,
-            x = sel.x,
-            y = sel.y,
-            on = tick,
-          })
-          wa.log(string.format("worm_toss cursor actor at %#x,%#x", sel.x, sel.y))
-        end,
-      },
-      -- Lockstep click (eaten in Rust). Grab if free, throw if holding.
-      on_click = function(click)
-        if held then
-          release()
-        else
-          try_grab(click.x, click.y)
-        end
-      end,
-    })
-  end,
-}
-`
-      }
-    ],
-  },
-  {
-    id: 'core.utilities',
-    name: 'Core Utilities',
-    version: '0.4.0',
-    author: 'WormForge',
-    category: 'utility',
-    description: 'Feature components you can drop into a pack: agility, a collect viewer, live HP, turn-side examples.',
-    tags: ['example', 'utility'],
-    files: [
-      {
-        path: 'features/agility.lua',
-        name: 'features/agility.lua',
-        language: 'lua',
-        content: `-- From the Agility pack 1.1 (Zed / 0rang3, port by red), as it was.
--- Agility (air control), ported from Zed's RPG Wars mod, edited by 0rang3.
---
--- 1:1 port now that vx/vy are directly writable during jump and other
--- airborne states. No workaround needed -- this just nudges worm.vx/vy
--- per frame, the same as the original SpX/SpY increments.
---
--- Notes:
---   * PX's \`GetCurrentWorm() == this\` is \`worm.turn\`.
---   * PX's ModulatedGravity == 1 is worm.gravity == 1 (a plain factor).
---   * State check uses worm.state_id against the hex values from the state
---     logger, not the string names, since that's the precise source here.
---   * Keys follow the synchronized turn-player input in networked matches.
-
-local STEP      = 0.1   -- per-tick nudge, matches C's 0.1
-local STEP_LOWG = 0.03   -- up-nudge when gravity < 1.0
-local LIMIT     = 3                  -- matches C's SpX/SpY <= 3 cap
-
--- Allowed states, by worm.state_id, mirroring the C allowlist:
--- WS_JUMP, WS_SLIDING, WS_FLYING2, WS_POWERFLY, WS_DRILLING, WS_FLYING.
--- Only JUMP and DRILLING are a confident 1:1 match to the logger's names;
--- the rest are my best guess at which hex id corresponds to which C state.
--- Confirm with the state logger and correct any that are wrong.
-local ALLOWED = {
-  [0x6E] = true,  -- WS_DRILLING      
-  [0x73] = true,  -- WS_AFTERROPE     
-  [0x79] = true,  -- WS_JUMP      
-  --[0x7A] = true,  -- Landing Jump     
-  [0x7E] = true,  -- WS_JUMP   
-  [0x7F] = true,  -- WS_SLIDING
-  [0x80] = true,  -- WS_FLYING
-  [0x81] = true,  -- WS_POWERFLY
-}
-
--- Runs once per worm per frame: the msgs filter makes the engine skip Lua
--- for every other message a worm gets (thousands a frame in a busy match).
-wa.on.worm_message(function(worm)
-  if not worm.turn then return end
-
-  local state = worm.state_id
-  if not state or not ALLOWED[state] then return end
-
-  local k = worm.keys
-
-  if k.up then
-    local step = (worm.gravity or 1) == 1 and STEP or STEP_LOWG
-    if worm.vy >= -LIMIT then worm.vy = worm.vy - step end
-  end
-  if k.down and worm.vy <= LIMIT then
-    worm.vy = worm.vy + STEP
-  end
-  if k.left and worm.vx >= -LIMIT then
-    worm.vx = worm.vx - STEP
-  end
-  if k.right and worm.vx <= LIMIT then
-    worm.vx = worm.vx + STEP
-  end
-end, { msgs = { wa.msg.FRAME_FINISH } })
-`
-      },
-      {
-        path: 'features/collect_viewer.lua',
-        name: 'features/collect_viewer.lua',
-        language: 'lua',
-        content: `-- A presentation-only inventory acquisition viewer. No actors or physics.
-local CONFIG = {
-  debug = true,          -- targeted grant/preview/visibility diagnostics in wkLua.log
-  size = 24,             -- bounding square, world pixels; aspect preserved
-  rise = 48,             -- world pixels over one lifetime
-  amplitude = 6,         -- horizontal sine amplitude, world pixels
-  spacing = 28,          -- centres in a simultaneous grant's grid
-  columns = 4,
-  lifetime = 2,          -- simulation seconds, paused with the game
-  fade = 1.5,            -- final seconds fade linearly; lifetime - fade is opaque
-}
-local FPS, TAU = 50, 2 * math.pi
-local popups = {}
-local sequence = 0
-local visuals = {}
-local draw_started = false
-local function trace(message)
-  if CONFIG.debug then wa.log("collect_viewer: " .. message) end
-end
-trace("loaded; size=" .. CONFIG.size .. " lifetime=" .. CONFIG.lifetime .. " fade=" .. CONFIG.fade)
-local function art(weapon)
-  if visuals[weapon] then return visuals[weapon] end
-  local v = wa.weapons.visual(weapon)
-  if v then visuals[weapon] = v end
-  return v
-end
-wa.on.weapon_grant(function(event)
-  trace(string.format("grant source=%s worm=%s coalition=%s frame=%s origin=(%s,%s) items=%d",
-    tostring(event.source), tostring(event.worm_id), tostring(event.alliance), tostring(event.frame),
-    tostring(event.x), tostring(event.y), #event.items))
-  if event.alliance == nil then trace("grant skipped: active coalition unavailable"); return end
-  local copies = {}
-  for _, item in ipairs(event.items) do
-    local v = art(item.weapon)
-    trace(string.format("preview weapon=%s amount=%s sprite=%s kind=%s size=%s x %s",
-      item.weapon, tostring(item.amount), v and v.sprite or "MISSING", v and v.kind or "?",
-      v and tostring(v.width) or "?", v and tostring(v.height) or "?"))
-    if v then
-      for _ = 1, item.amount do copies[#copies + 1] = v end
-    end
-  end
-  local columns = math.min(CONFIG.columns, #copies)
-  if columns == 0 then trace("grant skipped: no drawable previews"); return end
-  trace("spawn copies=" .. #copies)
-  local rows = math.ceil(#copies / columns)
-  for n, v in ipairs(copies) do
-    local row = math.floor((n - 1) / columns)
-    local row_count = math.min(columns, #copies - row * columns)
-    local column = (n - 1) % columns
-    sequence = sequence + 1
-    local scale = CONFIG.size / math.max(v.width, v.height)
-    popups[#popups + 1] = {
-      x = event.x + (column - (row_count - 1) / 2) * CONFIG.spacing,
-      y = event.y + (row - (rows - 1) / 2) * CONFIG.spacing,
-      born = event.frame, alliance = event.alliance,
-      phase = (sequence % 4) * TAU / 4,
-      w = v.width * scale, h = v.height * scale, art = v,
-    }
-  end
-end)
-wa.on.draw(function()
-  local frame = wa.world.frame()
-  if not draw_started then trace("first draw frame=" .. tostring(frame)); draw_started = true end
-  if frame == nil then return end
-  local live, visibility = {}, {}
-  for _, p in ipairs(popups) do
-    local age = frame - p.born
-    if age >= 0 and age < CONFIG.lifetime * FPS then
-      live[#live + 1] = p
-      if visibility[p.alliance] == nil then
-        visibility[p.alliance] = wa.world.is_local_alliance(p.alliance)
-      end
-      if p.last_visible ~= visibility[p.alliance] then
-        trace(string.format("popup sprite=%s coalition=%s age=%s visible=%s", p.art.sprite,
-          tostring(p.alliance), tostring(age), tostring(visibility[p.alliance])))
-        p.last_visible = visibility[p.alliance]
-      end
-      if visibility[p.alliance] then
-        local u = age / (CONFIG.lifetime * FPS)
-        local x = p.x + CONFIG.amplitude * (math.sin(TAU * u + p.phase) - math.sin(p.phase))
-        local y = p.y - CONFIG.rise * u
-        -- Opaque until the final fade seconds, then linearly to zero.
-        local remaining = CONFIG.lifetime - age / FPS
-        local alpha = CONFIG.fade > 0
-          and math.floor(255 * math.min(1, remaining / CONFIG.fade) + 0.5) or 255
-        local left, right = (x - p.w / 2), (x + p.w / 2)
-        local top, bottom = (y - p.h / 2), (y + p.h / 2)
-        wa.draw.quad({
-          points = {{left, top}, {right, top}, {right, bottom}, {left, bottom}},
-          sprite = p.art.sprite, frame = p.art.frame,
-          color = alpha * 0x1000000 + 0xffffff, blend = "alpha", depth = wa.depth.FRONT,
-        })
-      end
-    else
-      trace("popup expired sprite=" .. p.art.sprite .. " age=" .. age)
-    end
-  end
-  popups = live
-end)
-`
-      },
-      {
-        path: 'features/ex_turn_side.lua',
-        name: 'features/ex_turn_side.lua',
-        language: 'lua',
-        content: `-- ExTurnSide, by red: left and right turn the worm during rope swings
--- and other actions. From red's ExTurnSide pack 1.0.1, as it was.
-
--- Allows manual facing direction changes during rope swings and action states.
-local prev_left = false
-local prev_right = false
-
--- Once per worm per frame: the msgs filter skips Lua for every other message.
-wa.on.worm_message(function(worm)
-  if not worm.turn then return end
-
-  local k = wa.world.keys()
-  
-  -- Left key pressed:
-  if k.left and not prev_left then
-    worm.facing = -1
-  end
-  
-  -- Right key pressed: 
-  if k.right and not prev_right then
-    worm.facing = 1
-  end
-  
-  prev_left = k.left
-  prev_right = k.right
-end, { msgs = { wa.msg.FRAME_FINISH } })`
-      },
-      {
-        path: 'features/live_hp.lua',
-        name: 'features/live_hp.lua',
-        language: 'lua',
-        content: `-- Live HP, by reddaz: a worm's health bar follows its damage as it
--- happens, not at the turn's end. From reddaz's LiveHP pack 2.0.1, as it was.
--- Live HP v9.0 (Final)
--- Per-frame HP snapshot polling with safe pulse routing.
--- Prevents 0 HP accidental deaths, 1 HP phantom healing, and net-damage loss.
-
-local RETRY_DELAY = 0   
-
-local pending = {}        -- worm.id -> { wait }
-local last_hp = {}        -- worm.id -> last seen hp
-local spawnedMapActor = false
-
--- The msgs filter makes the engine call this only on FRAME_FINISH, not on
--- every message every worm gets for the rest of the match.
-wa.on.worm_message(function(worm)
-  if worm.id ~= (1 * 16 + 1) then return end
-  if spawnedMapActor then return end
-  spawnedMapActor = true
-
-  wa.actors.spawn({
-    sprite = false, x = 0, y = 0, gravity = false, collide = false, owner = worm,
-    on = function()
-      local worms = wa.worms.all()
-
-      -- 1. Detection: compare current HP against last frame's snapshot
-      for _, w in ipairs(worms) do
-        if w.hp <= 0 then
-          pending[w.id] = nil
-          last_hp[w.id] = nil
-        else
-          local last = last_hp[w.id]
-          if last and w.hp < last and not pending[w.id] then
-            wa.log(string.format("livehp v9: worm %d hp %d -> %d, queuing commit",
-              w.id, last, w.hp))
-            pending[w.id] = { wait = RETRY_DELAY }
-          end
-        end
-      end
-
-      -- 2. Commit: execute safe hurt(1) -> heal(1) pulse
-      for _, w in ipairs(worms) do
-        local p = pending[w.id]
-        if p then
-          if w.hp <= 0 then
-            pending[w.id] = nil
-          else
-            p.wait = p.wait - 1
-            if p.wait <= 0 then
-              local vx, vy = w.vx, w.vy
-              local hp_before = w.hp
-
-              -- SAFETY GUARD: Skip commit pulse if current HP is <= 1.
-              -- Prevents accidental death on 1 HP survivors (Poison/Shotgun/Flame).
-              if hp_before <= 1 then
-                pending[w.id] = nil
-              else
-                w.vx, w.vy = 0, 0
-
-                -- Hurt first to force MSG_COMMIT_HEALTH
-                w:hurt(1)
-
-                if w.hp < hp_before then
-                  -- hurt(1) registered; restore the 1 HP test pulse
-                  w:heal(1)
-                  w:release(vx, vy, { tumble = true })
-                  wa.log(string.format("livehp v9: worm %d committed health safely", w.id))
-                  pending[w.id] = nil
-                else
-                  -- hurt(1) swallowed by same-frame hit cooldown; retry next frame
-                  w:release(vx, vy, { tumble = true })
-                  p.wait = 1
-                end
-              end
-            end
-          end
-        end
-      end
-
-      -- 3. Snapshot for next frame's diff
-      for _, w in ipairs(worms) do
-        last_hp[w.id] = w.hp
-      end
-    end,
-  })
-end, { msgs = { wa.msg.FRAME_FINISH } })
-`
-      },
-      {
-        path: 'features/utilities.lua',
-        name: 'features/utilities.lua',
-        language: 'lua',
-        content: `-- The utilities feature: match settings the lobby scheme doesn't have, and
--- some players' favourite packs as switches. Every setting is an option of
--- this one component, read once at install.
-
--- The packs, by option: each module installs its hooks when loaded, so only
--- a switched-on one is loaded.
-local PACKS = {
-  { "ex_turn_side", "features/ex_turn_side" },
-  { "agility", "features/agility" },
-  { "live_hp", "features/live_hp" },
-  { "collect_viewer", "features/collect_viewer" },
-}
-
-return function(ctx)
-  local heal = ctx.option("heal_per_turn")
-  if heal > 0 then
-    wa.on.turn_start(function(ev) ev.worm:heal(heal) end)
-  end
-
-  local on = {}
-  for _, pack in ipairs(PACKS) do
-    if ctx.option(pack[1]) then
-      require(pack[2])
-      on[#on + 1] = pack[1]
-    end
-  end
-
-  wa.log(("heal %d, packs %s"):format(
-    heal, #on > 0 and table.concat(on, " ") or "none"))
-end
-`
-      },
-      {
-        path: 'test_collect_viewer.lua',
-        name: 'test_collect_viewer.lua',
-        language: 'lua',
-        content: `-- Run from the checkout: lua mods/examples/utilities/test_collect_viewer.lua
-local path = 'mods/examples/utilities/features/collect_viewer.lua'
-local input = assert(io.open(path)):read('*a')
-local function near(a, b) assert(math.abs(a-b) < 1e-6, a .. ' ~= ' .. b) end
-local function setup(source)
-  local frame, owned, hooks, quads, reads = 10, true, {}, {}, 0
-  local env = setmetatable({ wa = {
-    depth = { FRONT = 0x10000, EFFECTS = 0xC0000, WORMS = 0xD0000, OBJECTS = 0xE0000, TERRAIN = 0x180000, BEHIND_TERRAIN = 0x190000 },
-    on = setmetatable({}, {__index = function(_, name)
-      assert(name == 'weapon_grant' or name == 'draw')
-      return function(fn) hooks[name] = fn end
-    end}),
-    weapons = { visual = function(weapon)
-      return {sprite='another-pack:'..weapon,frame=3,width=24,height=8}
-    end },
-    world = {
-      frame = function() return frame end,
-      is_local_alliance = function(a) assert(a == 4); reads=reads+1; return owned end,
-    },
-    draw = { quad = function(q) quads[#quads+1]=q end },
-    log = function() end,
-    random = function() error('gameplay RNG used') end,
-    actors = setmetatable({}, {__index=function() error('physics used') end}),
-  } }, {__index=_G})
-  assert(load(source or input, path, 't', env))()
-  return {
-    grant=function(amount)
-      hooks.weapon_grant({x=100,y=200,frame=frame,alliance=4,
-        items={{weapon='grenade',amount=amount},{weapon='jet_pack',amount=1}}})
-    end,
-    draw=function(f,visible)
-      frame=f; owned=visible; quads={}; reads=0; hooks.draw(); return quads,reads
-    end,
-  }
-end
-local function center(q)
-  return (q.points[1][1]+q.points[3][1])/(2), (q.points[1][2]+q.points[3][2])/(2)
-end
-local v=setup(); v.grant(4)
-local start,reads=v.draw(10,true)
-assert(#start==5 and reads==1)
--- Two rows, centred independently, with separate positions for every copy.
-local expected={58,86,114,142,100}
-for n,q in ipairs(start) do
-  local x,y=center(q); near(x,expected[n]); near(y,n<=4 and 186 or 214)
-  near((q.points[2][1]-q.points[1][1]),24)
-  near((q.points[3][2]-q.points[2][2]),8)
-  assert(q.sprite=='another-pack:'..(n<=4 and 'grenade' or 'jet_pack'))
-  assert(q.frame==3 and q.color==0xffffffff and q.blend=='alpha')
-end
-local again=v.draw(10,true)
-for n,q in ipairs(again) do local x,y=center(q);local a,b=center(start[n]);near(x,a);near(y,b) end
--- Origin stays at the recorded point; one complete sine cycle, deterministic phases.
-local opacity = {[24]=255, [25]=255, [26]=252, [50]=170, [75]=85, [99]=3}
-for _,age in ipairs({24,25,26,50,75,99}) do
-  local drawn=v.draw(10+age,true)
-  for n,q in ipairs(drawn) do
-    local x,y=center(q);local sx,sy=center(start[n]);local phase=(n%4)*math.pi/2
-    near(x,sx+6*(math.sin(2*math.pi*age/100+phase)-math.sin(phase)))
-    near(y,sy-48*age/100)
-    assert(q.color == opacity[age] * 0x1000000 + 0xffffff)
-  end
-end
-assert(#v.draw(60,false)==0) -- local opponent/spectator or hotseat switched
-assert(#v.draw(61,true)==5) -- hidden effects retain age and captured coalition
-assert(#v.draw(110,true)==0 and #v.draw(111,true)==0)
--- Configuration actually controls proportional size, motion, spacing, lifetime.
-local tuned=input:gsub('size = 24','size = 20'):gsub('rise = 48','rise = 80')
-  :gsub('amplitude = 6','amplitude = 3'):gsub('spacing = 28','spacing = 40')
-  :gsub('lifetime = 2','lifetime = 1'):gsub('fade = 1.5','fade = 0.5')
-local t=setup(tuned);t.grant(1)
-local a=t.draw(10,true); local ax,ay=center(a[1]);near(ax,80);near(ay,200)
-near((a[1].points[2][1]-a[1].points[1][1]),20)
-local b=t.draw(35,true);local bx,by=center(b[1]);near(bx,ax-6);near(by,ay-40)
-assert(b[1].color==0xffffffff) -- half of the tuned one-second lifetime
-assert(t.draw(36,true)[1].color==0xf5ffffff)
-assert(t.draw(59,true)[1].color==0x0affffff)
-assert(#t.draw(60,true)==0)
--- Zero fade is an opaque effect until expiration.
-local unfaded=setup(input:gsub('fade = 1.5','fade = 0'));unfaded.grant(1)
-assert(unfaded.draw(109,true)[1].color==0xffffffff)
-assert(#unfaded.draw(110,true)==0)
-print('collect_viewer: copies, origins, grid, phases, sizing, pause, visibility, fade and expiry passed')
-`
-      },
-      {
-        path: 'weapons/plus_ten.lua',
-        name: 'weapons/plus_ten.lua',
-        language: 'lua',
-        content: `-- +10 Seconds: an instant utility of our own, in place of Double Time. It
--- adds ten seconds to the turn going on, whoever's it is.
---
--- From a crate it does what the profile's \`on_collect\` says. \`use\` (the
--- default) takes it at once: the grant handler gives the copy WA stocked
--- back and adds the time. \`keep\` leaves it stocked, and firing it adds the
--- time, without ending the turn. It comes in utility crates by its own
--- crate type.
---
--- It's built on Double Time's record: a utility, no aim, and the worm holds
--- WA's utility pose (wutllnk), which WA picks by the record's subtype. Its
--- on_fire replaces WA's utility fire, so Double Time's own bit and icon stay
--- off; WA's effect for Double Time is tied to id 69 anyway.
-local SECONDS = 10
-local MAX_MS = 3600000 -- what wa.world.set_turn_clock accepts
-
-local function add_time(seconds)
-  local ms = math.min(wa.world.turn_clock() + seconds * 1000, MAX_MS)
-  wa.world.set_turn_clock(ms)
-end
-
-return {
-  defaults = {
-    ammo = { round_start = 0 },
-    delay = 0,
-    crate = { chance_pct = 40, type = "utility" },
-    on_collect = "use",
-    after_use = "continue",
-  },
-  install = function(ctx)
-    local id = ctx.id
-    wa.weapons.replace({
-      copy_from = "stock.double_turn_time",
-      name = "+10 Seconds",
-      panel_icon = "sprites/plus_ten.png",
-      on_fire = function(fire)
-        add_time(SECONDS)
-      end,
-    })
-    if ctx.data.on_collect == "keep" then
-      return
-    end
-    -- Used on pickup: undo the copy WA stocked, and add the time now.
-    wa.on.weapon_grant(function(ev)
-      for _, item in ipairs(ev.items) do
-        if item.weapon == id and item.amount > 0 then
-          for _, worm in ipairs(wa.worms.all()) do
-            if worm.id == ev.worm_id then
-              local held = worm:ammo(id)
-              if held >= 0 then
-                worm:ammo(id, { set = math.max(held - item.amount, 0) })
-              end
-              break
-            end
-          end
-          add_time(SECONDS * item.amount)
-        end
-      end
-    end)
-  end,
-}
-`
-      }
-    ],
-  },
-  {
-    id: 'example.wormcraft',
-    name: 'WormCraft',
-    version: '0.2.0',
-    author: 'wkLua',
-    category: 'weapons',
-    description: 'Engine pack: wormcraft. Embedded verbatim from WormForge-main-source/mods/wormcraft/.',
-    tags: ['example', 'weapons'],
-    files: [
-      {
-        path: 'weapons.lua',
-        name: 'weapons.lua',
-        language: 'lua',
-        content: `-- Cluster Bomb slot. Aiming keeps the stock cluster sprite / worm.
--- Shot: fullscreen cut-in, courier flies, then WormCraft is spelled letter by letter.
-return {
-  install = function()
-    local WORD = { "W", "o", "r", "m", "C", "r", "a", "f", "t" }
-    local STEP = 58
-    local LETTER_W, LETTER_H = 50, 70
-    local GAP = 50
-    local LETTER_WAIT = 22
-    local SEQ_FPS = 15
-    local FRAMES = {
-      ["sprites/absorb"] = 31,
-      ["sprites/burst"] = 18,
-      ["sprites/death"] = 50,
-      ["sprites/haste"] = 29,
-      ["sprites/heal"] = 16,
-    }
-
-    local function fx_brain(sprite)
-      local frames = FRAMES[sprite] or 1
-      local need = frames * 50 // SEQ_FPS
-      if need < 1 then
-        need = 1
-      end
-      local t = 0
-      return function(a)
-        a.vx = 0
-        a.vy = 0
-        t = t + 1
-        a:advance()
-        if t >= need then
-          a:despawn()
-        end
-      end
-    end
-
-    local function spawn_fx(sprite, x, y, owner)
-      wa.actors.spawn({
-        sprite = sprite,
-        x = x,
-        y = y,
-        vx = 0,
-        vy = 0,
-        gravity = false,
-        loop = false,
-        collide = false,
-        origin = "center",
-        owner = owner,
-        on = fx_brain(sprite),
-      })
-    end
-
-    local function surround(origin, left, y, n)
-      local right = left + (n - 1) * STEP
-      local mid = origin.x
-      local owner = origin.owner
-      local side = LETTER_W // 2 + GAP
-      local up = LETTER_H // 2 + GAP
-      spawn_fx("sprites/death", left - side, y, owner)
-      spawn_fx("sprites/death", right + side, y, owner)
-      spawn_fx("sprites/haste", mid, y - up, owner)
-      spawn_fx("sprites/heal", mid, y + up, owner)
-      spawn_fx("sprites/absorb", mid, y - up - GAP, owner)
-      spawn_fx("sprites/burst", left - side, y - up, owner)
-      spawn_fx("sprites/burst", right + side, y - up, owner)
-    end
-
-    local function letter_brain(delay, last, origin, left, y, n, dest_x, dest_y, i)
-      local t = 0
-      local shown = false
-      local falling = false
-      local boom = false
-      local word_done = 10 + (n - 1) * LETTER_WAIT + 20
-      local fall_at = word_done + 4 + (i - 1) * 11 + ((i - 1) % 3) * 5
-      local drop = 0.078125 + i * 0.0390625
-      return function(a)
-        t = t + 1
-        if t < delay then
-          a.x = dest_x
-          a.y = -2048
-          a.vx = 0
-          a.vy = 0
-          return
-        end
-        local age = t - delay
-        if age == 0 then
-          a.x = dest_x
-          a.y = dest_y
-          if last then
-            a:sound("sounds/emotional-damage.wav")
-          end
-        end
-        if last and not shown and age == 20 then
-          shown = true
-          surround(origin, left, y, n)
-        end
-        if not falling then
-          a.vx = 0
-          if age < 16 then
-            a.vy = -0.1875
-          else
-            a.vy = 0
-          end
-          a:move({ terrain = false, worms = false })
-          a.vx = 0
-          a.vy = 0
-          if t >= fall_at then
-            falling = true
-            a.vy = drop
-          end
-          return
-        end
-        a:gravity()
-        local hit = a:move({ terrain = true, worms = true })
-        if not boom and (hit.land or a:on_feet()) then
-          boom = true
-          a:explode({ damage = 35, id = 100, at = "below" })
-          a:despawn()
-          return
-        end
-        if a:in_water() then
-          a:despawn()
-        end
-      end
-    end
-
-    local function write_word(courier)
-      -- The courier despawns now, and a despawned actor's fields read as
-      -- nothing: the letters and the effects around them keep its place and
-      -- owner instead.
-      local origin = { x = courier.x, y = courier.y, owner = courier.owner }
-      local n = #WORD
-      local left = origin.x - (n - 1) * STEP / 2
-      local y = origin.y - 36
-      local feet_y = y + LETTER_H // 2
-      for i, ch in ipairs(WORD) do
-        local dest_x = left + (i - 1) * STEP
-        wa.actors.spawn({
-          sprite = "sprites/" .. ch .. ".png",
-          x = dest_x,
-          y = -2048,
-          vx = 0,
-          vy = 0,
-          gravity = false,
-          loop = false,
-          collide = false,
-          origin = "bottom",
-          owner = origin.owner,
-          on = letter_brain(10 + (i - 1) * LETTER_WAIT, i == n, origin, left, y, n, dest_x, feet_y, i),
-        })
-      end
-    end
-
-    local CUTIN = 42
-
-    local function cutout_brain()
-      local t = 0
-      return function(a)
-        t = t + 1
-        a.vx = 0
-        a.vy = 0
-        if t >= CUTIN then
-          a:despawn()
-        end
-      end
-    end
-
-    local function courier_brain()
-      local t = 0
-      return function(a)
-        t = t + 1
-        a:gravity()
-        local hit = a:move({ terrain = true, worms = true })
-        a:advance()
-        if hit.land or hit.worm or t >= 30 then
-          write_word(a)
-          a:despawn()
-        end
-      end
-    end
-
-    local function lines_brain(fire)
-      local t = 0
-      local fired = false
-      return function(a)
-        t = t + 1
-        a.vx = 0
-        a.vy = 0
-        a:advance()
-        if t >= CUTIN and not fired then
-          fired = true
-          wa.actors.spawn({
-            sprite = "sprites/absorb",
-            x = fire.x,
-            y = fire.y,
-            vx = fire.vx,
-            vy = fire.vy,
-            origin = "center",
-            owner = fire.worm,
-            on = courier_brain(),
-          })
-          a:despawn()
-        end
-      end
-    end
-
-    wa.weapons.replace({
-      copy_from = "stock.cluster_bomb",
-      name = "WormCraft",
-      is_weapon = true,
-      panel_icon = "sprites/icon.png",
-      sprites = {
-        "sprites/absorb",
-        "sprites/burst",
-        "sprites/death",
-        "sprites/haste",
-        "sprites/heal",
-        "sprites/W.png",
-        "sprites/o.png",
-        "sprites/r.png",
-        "sprites/m.png",
-        "sprites/C.png",
-        "sprites/a.png",
-        "sprites/f.png",
-        "sprites/t.png",
-        "sprites/shader",
-        "sprites/cutout.png",
-      },
-      sounds = {
-        "sounds/emotional-damage.wav",
-        "sounds/cutout.wav",
-      },
-      on_fire = function(fire)
-        local lines = wa.actors.spawn({
-          sprite = "sprites/shader",
-          x = 0,
-          y = 0,
-          vx = 0,
-          vy = 0,
-          gravity = false,
-          loop = true,
-          collide = false,
-          origin = "center",
-          screen = "fill",
-          owner = fire.worm,
-          on = lines_brain(fire),
-        })
-        wa.actors.spawn({
-          sprite = "sprites/cutout.png",
-          x = 0,
-          y = 0,
-          vx = 0,
-          vy = 0,
-          gravity = false,
-          loop = false,
-          collide = false,
-          origin = "center",
-          screen = "front",
-          owner = fire.worm,
-          on = cutout_brain(),
-        })
-        lines:sound("sounds/cutout.wav")
-      end,
-    })
-  end,
-}
-`
-      }
-    ],
-  },
-  {
-    id: 'example.turret',
-    name: 'Turret',
-    version: '0.2.0',
-    author: 'wkLua',
-    category: 'weapons',
-    description: 'Engine pack: turret. Embedded verbatim from WormForge-main-source/mods/turret/.',
-    tags: ['example', 'weapons'],
-    files: [
-      {
-        path: 'weapons.lua',
-        name: 'weapons.lua',
-        language: 'lua',
-        content: `-- Dynamite slot, mine placement. Space plants a persist LuaActor.
--- LOS with wa.land.trace, hitscan with worm:hurt. No stock blast.
-return {
-  install = function()
-    local SENSOR_PX = 360
-    local AMMO = 20
-    local DAMAGE = 2
-    local SHOT_FRAMES = 6
-    local ARM_FRAMES = 30
-    local BEEP_FRAMES = 60
-    local ROT_IDLE = 3
-    local ROT_ACTIVE = 8
-    local AIM_TOLERANCE = 1.5
-    local HIT_PX = 10
-    local KNOCK = 1.75
-    local STEPS = 120
-    local SINK_PX = 8
-    local MUZZLE_UP = 25
-    local MUZZLE_OUT = 11
-    local SPARK_LIFE = 10
-
-    local SPREAD = { 0.0, 1.5, -1.0, 2.0, -2.0, 1.0, -1.5, 0.5 }
-
-    local state = {}
-    local sparks = {}
-
-    local function turret_sheet(team, pose)
-      return "sprites/turret_t" .. team .. "_p" .. pose .. ".gif"
-    end
-
-    local IMPACT = "sprites/uzihit.png"
-
-    local SPRITES = { IMPACT }
-    for t = 1, 6 do
-      for pose = 0, 2 do
-        SPRITES[#SPRITES + 1] = turret_sheet(t, pose)
-      end
-    end
-
-    local function step_index(angle, steps)
-      return math.floor((angle % 360) / (360 / steps) + 0.5) % steps
-    end
-
-    -- 0 = down, 90 = right: source art faces right, screen y grows down.
-    local function angle_to(ax, ay, tx, ty)
-      local dx = (tx - ax) // 1
-      local dy = (ty - ay) // 1
-      local deg = math.deg(wa.math.atan(dx, dy))
-      if deg < 0 then
-        deg = deg + 360
-      end
-      return deg
-    end
-
-    local function turn_toward(cur, want, speed)
-      local d = (want - cur + 540) % 360 - 180
-      if d > speed then
-        d = speed
-      elseif d < -speed then
-        d = -speed
-      end
-      return (cur + d) % 360
-    end
-
-    local function angle_gap(a, b)
-      local d = (a - b + 540) % 360 - 180
-      return d < 0 and -d or d
-    end
-
-    local function enemy(s, w)
-      if not w or w.hp <= 0 or w.visible == false then
-        return false
-      end
-      return w.alliance ~= s.alliance
-    end
-
-    -- WA walks by stepping position with vx/vy still 0, so motion is last-tick pos.
-    local function note_motion(s, w)
-      local p = s.seen[w.id]
-      if p then
-        p.moving = (p.x ~= w.x or p.y ~= w.y or w.vx ~= 0 or w.vy ~= 0)
-        p.x, p.y = w.x, w.y
-      else
-        s.seen[w.id] = { x = w.x, y = w.y, moving = (w.vx ~= 0 or w.vy ~= 0) }
-      end
-    end
-
-    local function moving(s, w)
-      local p = s.seen[w.id]
-      return p ~= nil and p.moving
-    end
-
-    local function sees(a, s, w)
-      if not enemy(s, w) or not moving(s, w) then
-        return false
-      end
-      local ex, ey = a.x, a.y - MUZZLE_UP
-      local dx = (w.x - ex) // 1
-      local dy = (w.y - ey) // 1
-      if dx * dx + dy * dy > SENSOR_PX * SENSOR_PX then
-        return false
-      end
-      return not wa.land.trace(ex, ey, w.x, w.y)
-    end
-
-    local function acquire(a, s)
-      local ex, ey = a.x, a.y - MUZZLE_UP
-      local best, best_d
-      for _, w in ipairs(wa.worms.all()) do
-        if sees(a, s, w) then
-          local dx = (w.x - ex) // 1
-          local dy = (w.y - ey) // 1
-          local d = dx * dx + dy * dy
-          if not best_d or d < best_d or (d == best_d and w.id < best.id) then
-            best, best_d = w, d
-          end
-        end
-      end
-      return best
-    end
-
-    local function held(a, s)
-      if not s.tid then
-        return nil
-      end
-      for _, w in ipairs(wa.worms.all()) do
-        if w.id == s.tid then
-          return sees(a, s, w) and w or nil
-        end
-      end
-      return nil
-    end
-
-    local function spark_brain(a)
-      local n = sparks[a.id] or 0
-      a:frame(n)
-      n = n + 1
-      sparks[a.id] = n
-      if n >= SPARK_LIFE then
-        sparks[a.id] = nil
-        a:despawn()
-      end
-    end
-
-    local function spark_at(x, y)
-      wa.actors.spawn({
-        sprite = IMPACT,
-        x = x,
-        y = y,
-        vx = 0,
-        vy = 0,
-        gravity = false,
-        collide = false,
-        drown = false,
-        loop = false,
-        origin = "center",
-        on = spark_brain,
-      })
-    end
-
-    local function start_firing(a, s)
-      if s.firing then return end
-      s.firing = true
-      s.anim = 0
-      s.fire_sound = 35
-      a:sound("sounds/sentryfireloop.wav")
-    end
-
-    local function stop_firing(a, s)
-      if not s.firing then return end
-      s.firing = false
-      s.anim = 0
-      a:sound("sounds/sentryfireend.wav")
-    end
-
-    local function fire(a, s)
-      s.shots = s.shots + 1
-      local dev = 0
-      if s.shots % 5 ~= 0 then
-        dev = SPREAD[(s.shots % #SPREAD) + 1]
-      end
-
-      local rad = math.rad(s.angle + dev)
-      local dx, dy = wa.math.sin(rad), wa.math.cos(rad)
-      local mx = a.x + (dx * MUZZLE_OUT)
-      local my = a.y - MUZZLE_UP + (dy * MUZZLE_OUT)
-      local reach = SENSOR_PX
-      local ex = mx + (dx * reach)
-      local ey = my + (dy * reach)
-
-      local hit = wa.land.trace(mx, my, ex, ey)
-      local hx, hy = ex, ey
-      if hit then
-        hx, hy = hit.x, hit.y
-      end
-      local rx, ry = (hx - mx) // 1, (hy - my) // 1
-      local hit_px = rx * rx + ry * ry
-      local victim
-      for _, w in ipairs(wa.worms.all()) do
-        if enemy(s, w) then
-          local wx = (w.x - mx) // 1
-          local wy = (w.y - my) // 1
-          local along = wx * dx + wy * dy
-          if along > 0 and along * along < hit_px then
-            local off = wx * dy - wy * dx
-            if off * off <= HIT_PX * HIT_PX then
-              hx = mx + (dx * along)
-              hy = my + (dy * along)
-              hit_px = along * along
-              victim = w
-            end
-          end
-        end
-      end
-
-      if victim then
-        victim:hurt(DAMAGE)
-        victim.vx = victim.vx + (dx * KNOCK)
-        victim.vy = victim.vy + (dy * KNOCK)
-      end
-      spark_at(hx, hy)
-
-      s.ammo = s.ammo - 1
-    end
-
-    local function think(a, s)
-      if s.px then
-        a.x, a.y = s.px, s.py
-      end
-      a.vx, a.vy = 0, 0
-
-      for _, w in ipairs(wa.worms.all()) do
-        note_motion(s, w)
-      end
-
-      local can_shoot = s.arm <= 0 and s.ammo > 0
-      local target
-      if can_shoot then
-        target = held(a, s)
-        if not target then
-          target = acquire(a, s)
-          s.tid = target and target.id or nil
-        end
-      end
-
-      local want
-      if target then
-        if not s.had_target then
-          if s.beep <= 0 then
-            a:sound("sounds/sentrybeeps2.wav")
-            s.beep = BEEP_FRAMES
-          end
-        end
-        s.had_target = true
-        want = angle_to(a.x, a.y - MUZZLE_UP, target.x, target.y)
-        s.angle = turn_toward(s.angle, want, ROT_ACTIVE)
-      else
-        s.had_target = false
-        s.tid = nil
-        s.angle = (s.angle + ROT_IDLE) % 360
-      end
-
-      if s.beep > 0 then s.beep = s.beep - 1 end
-      if s.arm > 0 then s.arm = s.arm - 1 end
-      if s.cooldown > 0 then s.cooldown = s.cooldown - 1 end
-      if s.fire_sound > 0 then s.fire_sound = s.fire_sound - 1 end
-
-      local aligned = target and angle_gap(s.angle, want) <= AIM_TOLERANCE
-      if target and aligned then
-        start_firing(a, s)
-        if s.fire_sound <= 0 then
-          s.fire_sound = 35
-          a:sound("sounds/sentryfireloop.wav")
-        end
-        if s.cooldown <= 0 then
-          fire(a, s)
-          s.cooldown = SHOT_FRAMES
-        end
-      else
-        stop_firing(a, s)
-      end
-    end
-
-    local function sync(a, s)
-      local pose = s.firing and (1 + ((s.anim // 3) % 2)) or 0
-      local step = step_index(s.angle, STEPS)
-      if pose ~= s.pose then
-        a:look(turret_sheet(s.team, pose))
-        s.pose = pose
-        s.at = nil
-      end
-      if step ~= s.at then
-        a:frame(step)
-        s.at = step
-      end
-    end
-
-    local function brain(a, ev)
-      local s = state[a.id]
-      if not s then
-        return
-      end
-      ev = ev or {}
-      if (ev.damage or 0) > 0 then
-        s.health = s.health - ev.damage
-        if s.health <= 0 then
-          state[a.id] = nil
-          a:despawn()
-          return
-        end
-      end
-      s.frames = s.frames + 1
-      if s.firing then s.anim = s.anim + 1 end
-
-      if not s.planted then
-        a:gravity()
-        local hit = a:move({ terrain = true, worms = false })
-
-        if hit.land then
-          a.vx, a.vy = 0, 0
-          s.planted = true
-          s.px, s.py = a.x, a.y + SINK_PX
-          s.arm = ARM_FRAMES
-          a:sound("sounds/sentryplace.wav")
-          sync(a, s)
-          return
-        end
-
-        a:advance()
-
-        if a:in_water() then
-          state[a.id] = nil
-          a:despawn()
-          return
-        end
-      else
-        think(a, s)
-      end
-
-      sync(a, s)
-    end
-
-    wa.weapons.replace({
-      copy_from = "stock.mine",
-      name = "Sentry Gun",
-      is_weapon = true,
-      worm_sprites = {
-        weaponlnk = "sprites/equip", weaponlnku = "sprites/equipu", weaponlnkd = "sprites/equipd",
-        wthrow = "sprites/unequip", wthrowu = "sprites/unequipu", wthrowd = "sprites/unequipd",
-      },
-      params = {
-        sprite_columns = 1,
-      },
-      sprites = SPRITES,
-      sounds = {
-        "sounds/sentryplace.wav", "sounds/sentrybeeps2.wav",
-        "sounds/sentryfireloop.wav", "sounds/sentryfireend.wav",
-      },
-      on_fire = function(fire_ev)
-        local worm = fire_ev.worm
-        local team = (worm and worm.team) or 1
-        if team < 1 or team > 6 then
-          team = 1
-        end
-        local facing = worm.facing
-        local idle = facing < 0 and 270 or 90
-
-        local body = wa.actors.spawn({
-          sprite = turret_sheet(team, 0),
-          x = worm.x,
-          y = worm.y,
-          vx = (worm.vx / 2) + facing * 0.3000030517578125,
-          vy = (worm.vy / 2) - 0.149993896484375,
-          loop = false,
-          origin = "bottom",
-          owner = worm,
-          kind = "sentry",
-          persist = true,
-          on = brain,
-        })
-
-        state[body.id] = {
-          team = team,
-          alliance = worm.alliance,
-          owner_id = worm.id,
-          planted = false,
-          ammo = AMMO,
-          health = 50,
-          angle = idle,
-          idle = idle,
-          frames = 0,
-          shots = 0,
-          firing = false,
-          anim = 0,
-          fire_sound = 0,
-          beep = 0,
-          arm = 0,
-          cooldown = 0,
-          had_target = false,
-          seen = {},
-        }
-        sync(body, state[body.id])
-      end,
-    })
-
-    wa.on.worm_message(function(worm, msg)
-      if msg ~= wa.msg.START_TURN then
-        return
-      end
-      for _, s in pairs(state) do
-        if s.owner_id == worm.id then
-          s.ammo = AMMO
-        end
-      end
-    end, { msgs = { wa.msg.START_TURN } })
-  end,
-}
-`
       }
     ],
   },
   {
     id: 'example.pooz',
-    name: 'Pooz',
+    name: 'POOZ',
     version: '0.2.0',
     author: 'wkLua',
     category: 'weapons',
-    description: 'Engine pack: pooz. Embedded verbatim from WormForge-main-source/mods/pooz/.',
+    description: 'A weapon-as-actor: selecting POOZ turns the worm into a controllable runner and drops it back out on a weapon switch.',
     tags: ['example', 'weapons'],
     files: [
-      {
-        path: 'test_motion.lua',
-        name: 'test_motion.lua',
-        language: 'lua',
-        content: `-- Exercise real POOZ movement through a pixel-valued host mock.
-local claim, actor, keys
-keys = {}
-wa = {
-  weapons = { replace = function(spec) claim = spec end },
-  actors = { spawn = function(spec)
-    actor = { x = spec.x, y = spec.y, vx = spec.vx, vy = spec.vy,
-      in_water = function() return false end, look = function() end,
-      advance = function() end, despawn = function() end }
-    actor.tick = spec.on
-  end },
-  world = { keys = function() return keys end },
-  land = { solid = function(_, y) return y > 100 end },
-}
-local source = debug.getinfo(1, 'S').source:sub(2):match('^(.*[/\\\\])') or ''
-dofile(source .. 'weapons.lua').install()
-local worm = { id = 1, weapon = 'pooz.runner', x = 50.25, y = 100, keys = {},
-  carry = function(self, x, y) self.x, self.y = x, y end, drop = function() end }
-claim.on_select({ worm = worm })
-keys = { right = true }
-actor.tick(actor)
-assert(actor.vx > 0.08 and actor.vx < 0.10, 'ground acceleration must remain subpixel')
-assert(actor.x > 50.25 and actor.x < 50.35, 'origin and motion retain their fractions')
-keys = {}
-local speed = actor.vx
-actor.tick(actor)
-assert(actor.vx > 0 and actor.vx < speed, 'ground friction slows gradually')
-keys = { jump = true, right = true }
-speed = actor.vx
-actor.tick(actor)
-assert(actor.vy < -5 and actor.vy > -6, 'jump speed remains pixels/frame')
-assert(actor.vx > speed and actor.vx < 0.2, 'air acceleration remains subpixel')
-assert(worm.x == actor.x and worm.y == actor.y, 'carried worm follows the actor')
-print('POOZ: fractional acceleration, friction, jump and carry passed')
-`
-      },
       {
         path: 'weapons.lua',
         name: 'weapons.lua',
@@ -13451,7 +2706,7 @@ return {
     version: '1.1.0',
     author: 'WormForge Porting Engine',
     category: 'gameplay',
-    description: 'Engine pack: KillTheKing. Embedded verbatim from WormForge-main-source/mods/KillTheKing/.',
+    description: 'A complete game mode as a component pack: destroy the defenders\' king before the round timer expires.',
     tags: ['example', 'gameplay'],
     files: [
       {
@@ -13754,251 +3009,6 @@ return function()
     end
   end)
 end
-`
-      }
-    ],
-  },
-  {
-    id: 'example.gif_donkey',
-    name: 'GIF Donkey',
-    version: '0.2.0',
-    author: 'wkLua',
-    category: 'weapons',
-    description: 'Engine pack: gif_donkey. Embedded verbatim from WormForge-main-source/mods/gif_donkey/.',
-    tags: ['example', 'weapons'],
-    files: [
-      {
-        path: 'flags.lua',
-        name: 'flags.lua',
-        language: 'lua',
-        content: `-- Growth Hormones, the flags way: a donkey GIF falls from the sky where you
--- click and explodes on landing. Native code runs these statuses each
--- FRAME_FINISH; a later editor generates this table from dropdowns. No Lua
--- brain. lua.lua is the same weapon written in Lua.
-return {
-  install = function()
-    wa.weapons.replace({
-      copy_from = "stock.donkey",
-      name = "Growth Hormones",
-      is_weapon = true,
-      panel_icon = "sprites/icon.png",
-
-      on_select = {
-        cursor = true,
-      },
-
-      on_click = {
-        spawn = {
-          sprite = "sprites/200w.gif",
-          loop = true,
-          from = "sky",
-          origin = "bottom",
-          gravity = true,
-          collide_terrain = true,
-          damage_terrain = true,
-          collide_worms = true,
-          damage_worms = true,
-          persist = false,
-          drown = true,
-          explode = {
-            damage = 250,
-            id = 100,
-            below = true,
-          },
-        },
-      },
-    })
-  end,
-}
-`
-      },
-      {
-        path: 'lua.lua',
-        name: 'lua.lua',
-        language: 'lua',
-        content: `-- Growth Hormones, the Lua way: the same weapon as flags.lua, with no status
--- flags. Click and tick are both Lua; native code only runs the verbs you
--- call. Both can be placed at once, each on its own slot.
---
--- Land/explode use the GIF's bottom opaque row as the platform (stock donkey
--- collides on the horizontal rectangle in gfx.dir masks.bmp, not the sprite).
--- a:explode is stock CreateExplosion; bounce is that impulse. Do not zero vy.
--- a.vx = 0 is this weapon's policy: no sideways speed from radial blasts.
---
--- A second after the click the donkey goes off for good: a huge electric
--- blast that shocks every worm near it, with arcs crackling out to them, and
--- WA's petrol fires in the colours of the rainbow. It survives its landing
--- blasts until then (\`persist\`); the flags version is gone after its first.
-local FUSE = 50           -- frames from the click: a second, 50 a second
-local SHOCK_RADIUS = 320  -- pixels: worms this near take the shock
-local SHOCK_DAMAGE = 15
-local ARC_FRAMES = 60     -- how long the arcs crackle after the blast
-local RAINBOW = { 0xFF2A2A, 0xFF8C1A, 0xFFE81A, 0x3CFF4A, 0x2E8CFF, 0x8A3CFF, 0xFF3CD2 }
-local ARC = "sprites/fx/arc.png"
-
-return {
-  install = function()
-    -- Actor id -> the frame it fell from the sky (the click).
-    local born = {}
-    -- The blasts still crackling, for the draw: where, until when, and the
-    -- worms the arcs reach.
-    local blasts = {}
-
-    local function go_off(a)
-      local x, y = a.x, a.y
-      a:explode({ damage = 80, id = 160, at = "center" })
-      local reached = {}
-      for _, worm in ipairs(wa.worms.all()) do
-        local dx, dy = worm.x - x, worm.y - y
-        if worm.hp > 0 and dx * dx + dy * dy <= SHOCK_RADIUS * SHOCK_RADIUS then
-          worm:hurt(SHOCK_DAMAGE)
-          reached[#reached + 1] = { worm.x, worm.y }
-        end
-      end
-      -- Fires that don't spread (count and damage 0, as Valyrian Fire's): a
-      -- fire with damage spreads into new fires in other slots, and those
-      -- burn untinted. They still burn worms. Five of each colour, sprayed
-      -- up and out.
-      for i, tint in ipairs(RAINBOW) do
-        local side = i - (#RAINBOW + 1) / 2
-        for k = -2, 2 do
-          wa.fire.spawn({
-            owner = a, x = x + side * 8 + k * 3, y = y - 6,
-            vx = side * 0.8 + k * 0.4, vy = -3 - (k + 2) * 0.5,
-            count = 0, duration = 6000, damage = 0, tint = tint,
-          })
-        end
-      end
-      blasts[#blasts + 1] = { x = x, y = y, until_frame = wa.world.frame() + ARC_FRAMES, reached = reached }
-      born[a.id] = nil
-      a:despawn()
-    end
-
-    local function brain(a)
-      local now = wa.world.frame()
-      born[a.id] = born[a.id] or now
-      if now - born[a.id] >= FUSE then
-        go_off(a)
-        return
-      end
-      a.vx = 0
-      a:gravity()
-      local hit = a:move({ terrain = true, worms = true })
-      if hit.land then
-        a:explode({ damage = 50, id = 100, at = "below" })
-      end
-      a.vx = 0
-      a:advance()
-      if a:in_water() then
-        born[a.id] = nil
-        a:despawn()
-      end
-    end
-
-    wa.weapons.replace({
-      copy_from = "stock.grenade",
-      name = "Growth Hormones (Lua)",
-      is_weapon = true,
-      panel_icon = "sprites/icon_lua.png",
-      sprite = "sprites/200w.gif",
-      sprites = { ARC },
-      params = { gpu_prefix = "sprites/fx/" },
-
-      on_select = {
-        cursor = true,
-      },
-
-      on_click = function(click)
-        wa.actors.spawn({
-          sprite = "sprites/200w.gif",
-          x = click.x,
-          y = click.sky,
-          origin = "bottom",
-          owner = click.worm,
-          persist = true,
-          on = brain,
-        })
-      end,
-    })
-
-    -- The arcs: a look, so their jitter is wa.draw.random, never WA's.
-    local arc_sprite = wa.sprites.key(ARC)
-    local function arc(x0, y0, x1, y1, life)
-      local points, steps = {}, 12
-      local nx, ny = -(y1 - y0), x1 - x0
-      local len = math.sqrt(nx * nx + ny * ny)
-      if len == 0 then return end
-      nx, ny = nx / len, ny / len
-      local alpha = math.floor(255 * life) << 24
-      for i = 0, steps do
-        local t = i / steps
-        local kick = (i == 0 or i == steps) and 0 or (wa.draw.random() * 2 - 1) * 18
-        points[#points + 1] = {
-          x = x0 + (x1 - x0) * t + nx * kick, y = y0 + (y1 - y0) * t + ny * kick,
-          width = 14, u = t, color = alpha | 0xB8D0FF,
-        }
-      end
-      wa.draw.ribbon({ points = points, sprite = arc_sprite, blend = "add", depth = wa.depth.EFFECTS })
-    end
-    wa.on.draw(function()
-      local now = wa.world.frame()
-      for i = #blasts, 1, -1 do
-        local b = blasts[i]
-        if now >= b.until_frame then
-          table.remove(blasts, i)
-        else
-          local life = (b.until_frame - now) / ARC_FRAMES
-          for _, target in ipairs(b.reached) do
-            arc(b.x, b.y, target[1], target[2], life)
-          end
-          -- A few strays into the air around it.
-          for _ = 1, 5 do
-            local angle = wa.draw.random() * 2 * math.pi
-            local reach = 80 + wa.draw.random() * 160
-            arc(b.x, b.y, b.x + math.cos(angle) * reach, b.y + math.sin(angle) * reach, life)
-          end
-        end
-      end
-    end)
-  end,
-}
-`
-      }
-    ],
-  },
-  {
-    id: 'example.gravler_strike',
-    name: 'Gravler Strike',
-    version: '0.2.0',
-    author: 'wkLua',
-    category: 'weapons',
-    description: 'Engine pack: gravler_strike. Embedded verbatim from WormForge-main-source/mods/gravler_strike/.',
-    tags: ['example', 'weapons'],
-    files: [
-      {
-        path: 'weapons.lua',
-        name: 'weapons.lua',
-        language: 'lua',
-        content: `-- PX's script replaces these four stock mole digging sprites. WA still owns
--- the mole strike's movement, terrain cuts, sounds, damage and stop conditions.
--- PX's Gravler has no underwater art, so a gravler that dives into water sinks
--- as its dive frame under PX's sinking tint (no \`mole\` key needed here).
-return {
-  install = function()
-    wa.weapons.replace({
-      name = "Gravler Strike",
-      copy_from = "stock.mole_squadron",
-      panel_icon = "mole_squadron",
-      mole_dig_rotation = {
-        moledive = "sprites/gravlerdive.png",
-        moledig1 = "sprites/gravlerdiga.png",
-        moledig2 = "sprites/gravlerdigb.png",
-        moledig3 = "sprites/gravlerdigc.png",
-      },
-      is_weapon = true,
-    })
-  end,
-}
 `
       }
     ],

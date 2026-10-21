@@ -1,0 +1,12 @@
+id = "example.highlander_pure_lua"
+name = "Highlander Rules"
+version = "0.1.0"
+author = "wkLua"
+api_version = 4
+kind = "gameplay"
+entry = "rules.lua"
+
+# Educational original: inventory/death/turn bookkeeping is written in Lua.
+[weapons]
+register = []
+replace = []
