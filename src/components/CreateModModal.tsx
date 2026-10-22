@@ -120,16 +120,41 @@ export const CreateModModal: React.FC<CreateModModalProps> = ({
     }
   };
 
-  const setChoices = (index: number, raw: string) => {
-    const choices = raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+  const setChoiceValue = (index: number, choiceIndex: number, value: string) => {
     const current = options[index];
+    const choices = [...(current.choices ?? [])];
+    const previous = choices[choiceIndex];
+    choices[choiceIndex] = value;
+    const defaultValue =
+      current.defaultValue === previous
+        ? value
+        : typeof current.defaultValue === 'string' && choices.includes(current.defaultValue)
+          ? current.defaultValue
+          : choices[0] ?? '';
+    updateOption(index, { choices, defaultValue });
+  };
+
+  const addChoice = (index: number) => {
+    const current = options[index];
+    const choices = [...(current.choices ?? [])];
+    let n = choices.length + 1;
+    while (choices.includes(`choice_${n}`)) n++;
+    choices.push(`choice_${n}`);
     const defaultValue =
       typeof current.defaultValue === 'string' && choices.includes(current.defaultValue)
         ? current.defaultValue
-        : choices[0] ?? '';
+        : choices[0];
+    updateOption(index, { choices, defaultValue });
+  };
+
+  const removeChoice = (index: number, choiceIndex: number) => {
+    const current = options[index];
+    const removed = current.choices?.[choiceIndex];
+    const choices = (current.choices ?? []).filter((_, i) => i !== choiceIndex);
+    const defaultValue =
+      current.defaultValue === removed || typeof current.defaultValue !== 'string' || !choices.includes(current.defaultValue)
+        ? choices[0] ?? ''
+        : current.defaultValue;
     updateOption(index, { choices, defaultValue });
   };
 
@@ -238,7 +263,8 @@ export const CreateModModal: React.FC<CreateModModalProps> = ({
               <div>
                 <div className="font-semibold text-[11.5px]">Parameters</div>
                 <div className={`text-[10.5px] ${muted}`}>
-                  Declared in <span className="font-mono">mod.toml</span> and read with{' '}
+                  Add as many as the mod needs. Each is declared in{' '}
+                  <span className="font-mono">mod.toml</span> and read with{' '}
                   <span className="font-mono">ctx.option("key")</span>.
                 </div>
               </div>
@@ -281,7 +307,7 @@ export const CreateModModal: React.FC<CreateModModalProps> = ({
                       isLight ? 'bg-white border-slate-200' : 'bg-[#1b2028] border-[#2b3340]'
                     }`}
                   >
-                    <div className="grid grid-cols-[1fr_1fr_9rem_auto] gap-2 items-end">
+                    <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_9rem_auto] gap-2 items-end">
                       <label className="flex flex-col gap-0.5">
                         <span className={`text-[10px] ${muted}`}>Key</span>
                         <input
@@ -320,92 +346,124 @@ export const CreateModModal: React.FC<CreateModModalProps> = ({
                         type="button"
                         onClick={() => setOptions((prev) => prev.filter((_, j) => j !== i))}
                         title="Remove parameter"
-                        className={`p-1.5 rounded border transition-colors ${isLight ? 'bg-white hover:bg-rose-50 border-slate-300 text-slate-500 hover:text-rose-600' : 'bg-[#202631] hover:bg-rose-500/10 border-[#2e3745] text-[#7e8fa3] hover:text-rose-300'}`}
+                        className={`justify-self-end p-1.5 rounded border transition-colors ${isLight ? 'bg-white hover:bg-rose-50 border-slate-300 text-slate-500 hover:text-rose-600' : 'bg-[#202631] hover:bg-rose-500/10 border-[#2e3745] text-[#7e8fa3] hover:text-rose-300'}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-[1fr_auto] gap-2 items-start">
-                      <label className="flex flex-col gap-0.5">
+                    {o.type === 'bool' ? (
+                      <label className={`flex items-center gap-2 text-[11px] ${isLight ? 'text-slate-700' : 'text-[#b9cadb]'}`}>
                         <span className={`text-[10px] ${muted}`}>Default</span>
-                        {o.type === 'bool' ? (
-                          <span className={`flex items-center gap-2 text-[11px] ${isLight ? 'text-slate-700' : 'text-[#b9cadb]'}`}>
-                            <input
-                              type="checkbox"
-                              checked={o.defaultValue === true}
-                              onChange={(e) => updateOption(i, { defaultValue: e.target.checked })}
-                              className="accent-amber-500"
-                            />
-                            {o.defaultValue === true ? 'On by default' : 'Off by default'}
-                          </span>
-                        ) : o.type === 'int' ? (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              value={typeof o.defaultValue === 'number' ? o.defaultValue : 0}
-                              onChange={(e) =>
-                                updateOption(i, {
-                                  defaultValue: Number.isFinite(Number(e.target.value))
-                                    ? Number(e.target.value)
-                                    : 0,
-                                })
-                              }
-                              className={inputClass}
-                            />
-                            <span className={`text-[10px] shrink-0 ${muted}`}>min</span>
-                            <input
-                              type="number"
-                              value={o.min ?? 0}
-                              onChange={(e) =>
-                                updateOption(i, {
-                                  min: Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 0,
-                                })
-                              }
-                              className={`${inputClass} w-20`}
-                            />
-                            <span className={`text-[10px] shrink-0 ${muted}`}>max</span>
-                            <input
-                              type="number"
-                              value={o.max ?? 100}
-                              onChange={(e) =>
-                                updateOption(i, {
-                                  max: Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 100,
-                                })
-                              }
-                              className={`${inputClass} w-20`}
-                            />
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={(o.choices ?? []).join(', ')}
-                              onChange={(e) => setChoices(i, e.target.value)}
-                              placeholder="alternate, facing, random"
-                              className={inputClass}
-                            />
-                            <select
-                              value={typeof o.defaultValue === 'string' ? o.defaultValue : ''}
-                              onChange={(e) => updateOption(i, { defaultValue: e.target.value })}
-                              className={`${inputClass} w-36 shrink-0`}
-                            >
-                              {(o.choices ?? []).length === 0 && <option value="">(add choices)</option>}
-                              {(o.choices ?? []).map((c) => (
-                                <option key={c} value={c}>
-                                  {c}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
+                        <input
+                          type="checkbox"
+                          checked={o.defaultValue === true}
+                          onChange={(e) => updateOption(i, { defaultValue: e.target.checked })}
+                          className="accent-amber-500"
+                        />
+                        {o.defaultValue === true ? 'On by default' : 'Off by default'}
                       </label>
-                      {o.type !== 'bool' && (
-                        <span className={`text-[10px] ${muted} pt-4`}>
-                          {o.type === 'int' ? 'Whole number' : 'Default must match'}
-                        </span>
-                      )}
-                    </div>
+                    ) : o.type === 'int' ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <label className="flex flex-col gap-0.5">
+                          <span className={`text-[10px] ${muted}`}>Default</span>
+                          <input
+                            type="number"
+                            value={typeof o.defaultValue === 'number' ? o.defaultValue : 0}
+                            onChange={(e) =>
+                              updateOption(i, {
+                                defaultValue: Number.isFinite(Number(e.target.value))
+                                  ? Number(e.target.value)
+                                  : 0,
+                              })
+                            }
+                            className={inputClass}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-0.5">
+                          <span className={`text-[10px] ${muted}`}>Min</span>
+                          <input
+                            type="number"
+                            value={o.min ?? 0}
+                            onChange={(e) =>
+                              updateOption(i, {
+                                min: Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 0,
+                              })
+                            }
+                            className={inputClass}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-0.5">
+                          <span className={`text-[10px] ${muted}`}>Max</span>
+                          <input
+                            type="number"
+                            value={o.max ?? 100}
+                            onChange={(e) =>
+                              updateOption(i, {
+                                max: Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : 100,
+                              })
+                            }
+                            className={inputClass}
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-1">
+                          <span className={`text-[10px] ${muted}`}>Choices</span>
+                          {(o.choices ?? []).length === 0 ? (
+                            <p className={`text-[10.5px] ${muted}`}>Add at least one choice.</p>
+                          ) : (
+                            (o.choices ?? []).map((choice, ci) => (
+                              <div key={ci} className="flex items-center gap-1">
+                                <input
+                                  type="text"
+                                  value={choice}
+                                  onChange={(e) => setChoiceValue(i, ci, e.target.value)}
+                                  placeholder="e.g. alternate"
+                                  className={inputClass}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeChoice(i, ci)}
+                                  title="Remove choice"
+                                  className={`p-1.5 rounded border shrink-0 transition-colors ${isLight ? 'bg-white hover:bg-rose-50 border-slate-300 text-slate-500 hover:text-rose-600' : 'bg-[#202631] hover:bg-rose-500/10 border-[#2e3745] text-[#7e8fa3] hover:text-rose-300'}`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => addChoice(i)}
+                            className={`self-start px-2 py-1 rounded border text-[10.5px] transition-colors ${isLight ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700' : 'bg-[#202631] hover:bg-[#2b3341] border-[#2e3745] text-[#b9cadb]'}`}
+                          >
+                            + Add choice
+                          </button>
+                        </div>
+
+                        <label className="flex flex-col gap-0.5">
+                          <span className={`text-[10px] ${muted}`}>Default</span>
+                          <select
+                            value={typeof o.defaultValue === 'string' ? o.defaultValue : ''}
+                            onChange={(e) => updateOption(i, { defaultValue: e.target.value })}
+                            disabled={(o.choices ?? []).length === 0}
+                            className={`${inputClass} disabled:opacity-50`}
+                          >
+                            {(o.choices ?? []).length === 0 && <option value="">(add a choice)</option>}
+                            {(o.choices ?? []).map((c) => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <p className={`text-[10px] ${muted}`}>
+                          The default is one of the choices. Add more choice rows above for a longer list.
+                        </p>
+                      </div>
+                    )}
 
                     <label className="flex flex-col gap-0.5">
                       <span className={`text-[10px] ${muted}`}>Description (optional)</span>

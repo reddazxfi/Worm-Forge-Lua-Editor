@@ -439,6 +439,32 @@ describe('new mod parameters and the code/ + profiles/ layout', () => {
     expect(built.files['profiles/Live HP.toml']).not.toContain('[weapons]');
   });
 
+  it('writes every choice in a choice option, not just the default', () => {
+    // The utilities damage_numbers add-on has a bool switch plus a choice with
+    // three values. The dialog must be able to express that same shape.
+    const built = buildNewMod({
+      name: 'Damage Numbers',
+      author: 'me',
+      kind: 'feature',
+      options: [
+        { key: 'damage_numbers', label: 'Damage numbers', type: 'bool', defaultValue: false },
+        {
+          key: 'damage_numbers_side',
+          label: 'Damage number side',
+          type: 'choice',
+          defaultValue: 'alternate',
+          choices: ['alternate', 'facing', 'random'],
+        },
+      ],
+    });
+    expect(built.files['mod.toml']).toContain('choices = ["alternate", "facing", "random"]');
+    expect(built.files['profiles/Damage Numbers.toml']).toContain('[options."damage_numbers.main"]');
+    expect(built.files['profiles/Damage Numbers.toml']).toContain('damage_numbers = false');
+    expect(built.files['profiles/Damage Numbers.toml']).toContain('damage_numbers_side = "alternate"');
+    expect(built.files['code/mod.lua']).toContain('ctx.option("damage_numbers")');
+    expect(built.files['code/mod.lua']).toContain('ctx.option("damage_numbers_side")');
+  });
+
   it('places a weapon and writes its numeric parameter into the starter profile', () => {
     const weaponSpec: NewModSpec = {
       name: 'Heli Test',
