@@ -326,13 +326,127 @@ export function tomlString(value: string): string {
   return `"${escaped}"`;
 }
 
+export type NewModKind = 'feature' | 'weapon';
+export type NewModOptionType = 'bool' | 'int' | 'choice';
+
+/**
+ * One `[[components.options]]` declaration. The engine accepts these on both
+ * feature and weapon components; the Lua reads them through `ctx.option(key)`.
+ */
+export interface NewModOption {
+  key: string;
+  label: string;
+  type: NewModOptionType;
+  defaultValue: boolean | number | string;
+  description?: string;
+  /** Inclusive bounds, for `int`. */
+  min?: number;
+  max?: number;
+  /** Allowed values, for `choice`. The default must be one of them. */
+  choices?: string[];
+}
+
+/** What the Create Mod dialog sends to the disk writer. */
+export interface NewModSpec {
+  name: string;
+  author: string;
+  kind: NewModKind;
+  options: NewModOption[];
+}
+
+// The engine's valid_key(): lowercase ASCII letters, digits and underscore,
+// up to 64 characters. It is stricter than a Lua identifier, so validate the
+// engine's rule here rather than emitting a manifest it will refuse.
+const OPTION_KEY = /^[a-z0-9_]{1,64}$/;
+
+/**
+ * Checks the dialog's values before anything is written.
+ *
+ * The engine validates manifests too, but a mod that the editor created and the
+ * engine refuses is a bad first five seconds. This catches the mistakes the
+ * dialog can actually make: an empty key, a duplicate key, a default outside an
+ * int's bounds, or a choice whose default is not in its list.
+ */
+export function validateNewModSpec(spec: NewModSpec): string | null {
+  if (!spec.name?.trim()) return 'Mod name is required.';
+  if (!spec.author?.trim()) return 'Author is required.';
+  if (spec.kind !== 'feature' && spec.kind !== 'weapon') return 'Pick behavior or weapon.';
+  const slug = slugifyModName(spec.name);
+  if (slug.length > 57) {
+    return 'Mod name is too long; shorten it so the component id fits the engine\'s 64-character limit.';
+  }
+  const seen = new Set<string>();
+  for (let i = 0; i < (spec.options ?? []).length; i++) {
+    const o = spec.options[i];
+    const where = `Parameter ${i + 1}`;
+    if (!o.key?.trim()) return `${where}: key is required.`;
+    if (!OPTION_KEY.test(o.key)) {
+      return `${where}: key "${o.key}" must use lowercase letters, digits and _, up to 64 characters.`;
+    }
+    if (seen.has(o.key)) return `${where}: key "${o.key}" is used twice.`;
+    seen.add(o.key);
+    if (!o.label?.trim()) return `${where}: label is required.`;
+    if (o.type === 'bool') {
+      if (typeof o.defaultValue !== 'boolean') return `${where}: a switch default must be true or false.`;
+    } else if (o.type === 'int') {
+      if (!Number.isInteger(o.defaultValue)) return `${where}: the default must be a whole number.`;
+      const min = o.min ?? 0;
+      const max = o.max ?? 100;
+      if (!Number.isInteger(min) || !Number.isInteger(max)) return `${where}: min and max must be whole numbers.`;
+      if (min > max) return `${where}: min cannot be greater than max.`;
+      if ((o.defaultValue as number) < min || (o.defaultValue as number) > max) {
+        return `${where}: the default must be between ${min} and ${max}.`;
+      }
+    } else if (o.type === 'choice') {
+      const choices = o.choices ?? [];
+      if (choices.length === 0) return `${where}: add at least one choice.`;
+      if (new Set(choices).size !== choices.length) return `${where}: choices must be unique.`;
+      if (typeof o.defaultValue !== 'string' || !choices.includes(o.defaultValue)) {
+        return `${where}: the default must be one of the choices.`;
+      }
+    } else {
+      return `${where}: unsupported option type.`;
+    }
+  }
+  return null;
+}
+
+function tomlValue(value: string | number | boolean): string {
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '0';
+  return tomlString(value);
+}
+
+function optionBlocks(options: NewModOption[]): string {
+  return options
+    .map((o) => {
+      const lines = [
+        '[[components.options]]',
+        `key = ${tomlString(o.key)}`,
+        `type = ${tomlString(o.type)}`,
+        `default = ${tomlValue(o.defaultValue)}`,
+      ];
+      if (o.type === 'int') {
+        lines.push(`min = ${o.min ?? 0}`);
+        lines.push(`max = ${o.max ?? 100}`);
+      }
+      if (o.type === 'choice') {
+        lines.push(`choices = [${(o.choices ?? []).map(tomlString).join(', ')}]`);
+      }
+      lines.push(`label = ${tomlString(o.label)}`);
+      if (o.description?.trim()) lines.push(`description = ${tomlString(o.description.trim())}`);
+      return `\n${lines.join('\n')}\n`;
+    })
+    .join('');
+}
+
 /**
  * Writes the bundle manifest for a new mod.
  *
- * `format_version = 2` plus one `[[components]]` feature, because that is the
- * only shape a profile can select. A v1 manifest (`entry = "mod.lua"`) has no
- * component id, so a profile could not reference it and the "create a mod"
- * flow could not ship one.
+ * `format_version = 2` plus one `[[components]]` component, because that is the
+ * only shape a profile can select. A v1 manifest (top-level `entry`) has no
+ * component id, so a profile could not reference it and the "create a mod" flow
+ * could not ship one.
  *
  * `api_version = 4` is not cosmetic: the engine rejects anything else
  * (`crates/weapons/src/components.rs:340`, "api_version {n} is not supported").
@@ -341,15 +455,22 @@ export function tomlString(value: string): string {
  * `#[serde(deny_unknown_fields)]`, so those v1 keys make the whole bundle fail
  * to parse rather than being ignored.
  *
+ * `[[components.options]]` is where the dialog's parameters become the form the
+ * loader shows. On a weapon they appear in Weapons settings; on a feature they
+ * appear under the add-on. `ctx.option(key)` reads the chosen value.
+ *
  * Exported so the tests can pin the exact text a new mod gets.
  */
 export function buildModManifest(
   id: string,
   name: string,
   author: string,
-  entryLuaName: string
+  entryLuaName: string,
+  kind: NewModKind = 'feature',
+  options: NewModOption[] = []
 ): string {
-  const componentId = `${id}.main`;
+  const componentId = `${id}.${kind === 'weapon' ? 'weapon' : 'main'}`;
+  const position = kind === 'weapon' ? '\ndefault_position = { row = "F1", column = 1 }' : '';
   return `id = ${tomlString(id)}
 name = ${tomlString(name)}
 version = "0.1.0"
@@ -359,66 +480,178 @@ format_version = 2
 debug_worm_state = false
 
 [[components]]
-id = "${componentId}"
-type = "feature"
+id = ${tomlString(componentId)}
+type = ${tomlString(kind === 'weapon' ? 'weapon' : 'feature')}
 name = ${tomlString(name)}
-description = ${tomlString(`${name} entry point.`)}
-entry = "${entryLuaName}"
-`;
+description = ${tomlString(
+    kind === 'weapon' ? `${name} weapon entry point.` : `${name} behavior entry point.`
+  )}
+entry = ${tomlString(entryLuaName)}${position}
+${optionBlocks(options)}`;
+}
+
+export interface BuildModProfileOptions {
+  kind?: NewModKind;
+  options?: NewModOption[];
 }
 
 /**
  * Writes the bundled profile that switches a new mod on.
  *
- * `features` names the component from `buildModManifest`; with no `[weapons]`
- * table the profile keeps the resolved scheme's own weapon panel, which is the
- * right default for an add-on. The engine copies this file into
- * `WormForge/Profiles/` when the pack is installed
- * (`adopt_profiles`, `crates/weapons/src/components.rs:1446`) and never
- * overwrites an existing profile of the same name.
+ * A feature uses `features = [...]`, so the profile keeps the resolved scheme's
+ * own weapon panel. A weapon also needs a `[weapons]` table: a profile with a
+ * weapon set owns the whole panel, so the starter profile places the new weapon
+ * on F1 and adds a small stock kit instead of leaving every other slot empty.
+ *
+ * The chosen parameter values are written to `[options."<component id>"]`.
+ * The engine copies this file into `WormForge/Profiles/` when the pack is
+ * installed (`adopt_profiles`, `crates/weapons/src/components.rs:1446`) and
+ * never overwrites an existing profile of the same name.
  */
-export function buildModProfile(name: string, componentId: string): string {
-  return `description = ${tomlString(
-    `${name}: ${componentId}, over the scheme's own weapons.`
-  )}
-features = ["${componentId}"]
-`;
+export function buildModProfile(
+  name: string,
+  componentId: string,
+  spec: BuildModProfileOptions = {}
+): string {
+  const kind = spec.kind ?? 'feature';
+  const options = spec.options ?? [];
+  const description =
+    kind === 'weapon'
+      ? `${name}: a weapon with a starter panel.`
+      : `${name}: ${componentId}, over the scheme's own weapons.`;
+  let out = `description = ${tomlString(description)}\n`;
+
+  if (kind === 'weapon') {
+    out += `features = []\n\n[weapons]\n`;
+    out += `${tomlString(componentId)} = { row = "F1", column = 1 }\n`;
+    out += `"stock.grenade" = { row = "F2", column = 1 }\n`;
+    out += `"stock.shotgun" = { row = "F3", column = 1 }\n`;
+    out += `"stock.ninja_rope" = { row = "F8", column = 1 }\n`;
+    out += `"stock.teleport" = { row = "F8", column = 4 }\n`;
+    out += `"stock.skip_go" = { row = "F12", column = 1 }\n`;
+    out += `"stock.surrender" = { row = "F12", column = 2 }\n`;
+  } else {
+    out += `features = [${tomlString(componentId)}]\n`;
+  }
+
+  if (options.length > 0) {
+    out += `\n[options.${tomlString(componentId)}]\n`;
+    for (const o of options) out += `${o.key} = ${tomlValue(o.defaultValue)}\n`;
+  }
+  return out;
 }
 
-/** The install function every feature component's entry file must return. */
-export function buildModEntryLua(name: string, author: string, componentId: string): string {
+/** The install function every component entry file must return. */
+export function buildModEntryLua(
+  name: string,
+  author: string,
+  componentId: string,
+  kind: NewModKind = 'feature',
+  options: NewModOption[] = []
+): string {
   // A newline in the mod name would end the `--` comment and turn the rest of
   // the name into Lua source, so both free-text fields are flattened to one line.
   const oneLine = (s: string) => s.replace(/[\r\n]+/g, ' ').replace(/--/g, ' - ');
-  return `-- ${oneLine(name)}
+  const reads =
+    options.length > 0
+      ? `${options
+          .map(
+            (o) =>
+              `    local opt_${o.key} = ctx.option(${JSON.stringify(o.key)})`
+          )
+          .join('\n')}\n`
+      : '';
+  const header = `-- ${oneLine(name)}
 -- by ${oneLine(author)}
--- Entry file for this mod. mod.toml declares it as the ${componentId} feature,
--- and the bundled profile in profiles/ switches that feature on.
+-- Entry file for this mod. mod.toml declares it as the ${componentId} component,
+-- and the bundled profile in profiles/ switches that component on.
 --
--- A feature's file is loaded with require() and MUST return its install
--- function, or a table { install = ... }. Nothing calls this by itself: the
+`;
+  const values =
+    options.length > 0
+      ? `    -- Values from profiles/<name>.toml; defaults live in mod.toml's
+    -- [[components.options]] blocks. Edit either, or change them in the loader.
+${reads}`
+      : '';
+
+  if (kind === 'weapon') {
+    return `${header}-- A weapon's file is loaded with require() and MUST return a table with
+-- defaults and install. Nothing calls it by itself: the engine calls install()
+-- once per round when the profile places this component.
+return {
+  defaults = {
+    ammo = { round_start = -1 },
+    delay = 0,
+  },
+  install = function(ctx)
+${values}    -- TODO: this is the weapon's behavior. Read the parameters above and
+    -- replace this log with the actual click/fire logic.
+    wa.log("${componentId} installed")
+  end,
+}
+`;
+  }
+
+  return `${header}-- A feature's file is loaded with require() and MUST return its install
+-- function, or a table { install = ... }. Nothing calls it by itself: the
 -- engine calls it once per round when the profile selects the component.
 return function(ctx)
-  -- ctx.options holds this feature's values from the profile. Declare them in
-  -- mod.toml under [[components.options]] to have the loader show a form for it.
-  wa.log("${componentId} installed")
+${values}    -- TODO: this is the behavior. Read the parameters above and replace this
+    -- log with the actual behavior.
+    wa.log("${componentId} installed")
 end
 `;
 }
 
+/** The fixed folder for a new mod's Lua. */
+export const NEW_MOD_ENTRY = 'code/mod.lua';
+
+export interface BuiltNewMod {
+  slug: string;
+  componentId: string;
+  entry: string;
+  profilePath: string;
+  files: Record<string, string>;
+}
+
+/**
+ * The pure half of "create mod": validate the dialog values and produce every
+ * file, leaving the disk write to createModFolder(). Keeping this separate lets
+ * tests pin the layout (`code/` and `profiles/`) without touching Tauri.
+ */
+export function buildNewMod(spec: NewModSpec): BuiltNewMod {
+  const error = validateNewModSpec(spec);
+  if (error) throw new Error(error);
+
+  const name = spec.name.trim();
+  const author = spec.author.trim();
+  const slug = slugifyModName(name);
+  const options = spec.options ?? [];
+  const componentId = `${slug}.${spec.kind === 'weapon' ? 'weapon' : 'main'}`;
+  const profilePath = `profiles/${profileFileName(name, slug)}.toml`;
+  const files: Record<string, string> = {
+    'mod.toml': buildModManifest(slug, name, author, NEW_MOD_ENTRY, spec.kind, options),
+    [NEW_MOD_ENTRY]: buildModEntryLua(name, author, componentId, spec.kind, options),
+    [profilePath]: buildModProfile(name, componentId, { kind: spec.kind, options }),
+  };
+  return { slug, componentId, entry: NEW_MOD_ENTRY, profilePath, files };
+}
+
 export async function createModFolder(
   rootPath: string,
-  modName: string,
-  author: string
+  spec: NewModSpec | string,
+  legacyAuthor = ''
 ): Promise<string> {
   const clean = cleanFolderPath(rootPath);
   if (!clean) throw new Error('No mods folder configured.');
 
-  const slug = slugifyModName(modName);
-  // The manifest's `entry` field and the file on disk must agree, so the name
-  // is defined once and used for both.
-  const entryLuaName = 'mod.lua';
-  const componentId = `${slug}.main`;
+  // Keep the old string call working for any caller that has not moved to the
+  // dialog's spec object yet.
+  const normalized: NewModSpec =
+    typeof spec === 'string'
+      ? { name: spec, author: legacyAuthor, kind: 'feature', options: [] }
+      : spec;
+  const built = buildNewMod(normalized);
 
   const isWin = clean.includes('\\') || /^[a-zA-Z]:/.test(clean);
   const sep = isWin ? '\\' : '/';
@@ -426,18 +659,11 @@ export async function createModFolder(
     ? clean.replace(/\//g, '\\').replace(/\\+$/, '')
     : clean.replace(/\\/g, '/').replace(/\/+$/, '');
 
-  const manifest = buildModManifest(slug, modName, author, entryLuaName);
-  const entryLua = buildModEntryLua(modName, author, componentId);
-  const profile = buildModProfile(modName, componentId);
-  const profileRel = `profiles/${profileFileName(modName, slug)}.toml`;
+  for (const [rel, content] of Object.entries(built.files)) {
+    await saveModFile(normalizedRoot, `${built.slug}/${rel}`, content);
+  }
 
-  await saveModFile(normalizedRoot, `${slug}/mod.toml`, manifest);
-  await saveModFile(normalizedRoot, `${slug}/${entryLuaName}`, entryLua);
-  // The profile is what makes the component run; without it the bundle installs
-  // and nothing is ever selected.
-  await saveModFile(normalizedRoot, `${slug}/${profileRel}`, profile);
-
-  return `${normalizedRoot}${sep}${slug}`;
+  return `${normalizedRoot}${sep}${built.slug}`;
 }
 
 // ---------------------------------------------------------------------------

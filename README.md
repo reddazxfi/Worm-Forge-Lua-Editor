@@ -23,6 +23,7 @@ WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully cr
 - 🧠 **Scope-Aware Suggestions** — Autocomplete is ranked by *where you actually are*. A local declared two lines up always outranks the entire engine API, and a name from an unrelated function never shows up at all. 🎯
 - 🧹 **Structure-Aware Format** — Re-indents Lua by blocks and brackets, not by regex guesswork. Strings and comments can't fool it, and it tells you when a chunk doesn't balance instead of silently mangling it. ✨
 - 🧩 **Example Mods & Templates** — **7 focused packs** bundled in: Agility, Sentry Gun, Spawn Bees, Highlander Rules, Swim Suit, POOZ, and Kill The King. One clear idea per pack, not a copy of the engine's whole example tree. 🔫
+- 🧰 **Parameterized New Mods** — Create Mod asks for behavior switches or weapon values, writes the Lua under `code/`, and ships a profile under `profiles/` with the chosen defaults. The loader shows the same fields, and `ctx.option("key")` reads them in Lua.
 - 🖥️ **Native Desktop App** — Powered by Tauri for a **lightweight**, **lightning-quick** Windows executable. No bloated Chromium bundle required! 🪶
 
 ---
@@ -114,8 +115,22 @@ That starts the local server and opens the desktop window. The dev server exists
 serve the window during development; **it is not a supported way to run the app.** 🪄
 
 > **This is a desktop-only tool.** Folder open/save, the real Lua compiler, the mods
-> list and Create Mod all need the desktop app — the browser build of the frontend is
+> list and Create Mod all need the desktop app - the browser build of the frontend is
 > not a supported target. There are no filesystem endpoints on the dev server.
+
+### New mod layout
+Create Mod writes a bundle in the same shape the loader installs:
+
+```
+my_mod/
+  mod.toml                  # one component + [[components.options]]
+  code/mod.lua              # returns install(ctx) (or { defaults, install })
+  profiles/My Mod.toml      # selects the component and stores the chosen values
+```
+
+Behavior mods default to bool options, which the loader shows as checkmarks. Weapon
+mods default to numeric options for values such as `ctx.option("bullets")`, and their
+starter profile places the weapon on F1 with a small stock kit.
 
 ### Build the Windows `.exe`
 ```bat

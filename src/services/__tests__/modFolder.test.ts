@@ -21,9 +21,13 @@ import {
   buildModManifest,
   buildModProfile,
   buildModEntryLua,
+  buildNewMod,
+  validateNewModSpec,
+  NEW_MOD_ENTRY,
   profileFileName,
   isSafeModRelativePath,
   saveModFile,
+  type NewModSpec,
 } from '../modFolder';
 
 const MANIFEST =
@@ -393,6 +397,110 @@ describe('a new mod is a bundle plus a profile', () => {
     const lua = buildModEntryLua('a\nos.exit()', 'b\r\nc', 'bee.main');
     expect(lua.split('\n')[0]).toBe('-- a os.exit()');
     expect(lua.split('\n')[1]).toBe('-- by b c');
+  });
+});
+
+describe('new mod parameters and the code/ + profiles/ layout', () => {
+  const featureSpec: NewModSpec = {
+    name: 'Live HP',
+    author: 'me',
+    kind: 'feature',
+    options: [
+      {
+        key: 'live_hp',
+        label: 'Live HP',
+        type: 'bool',
+        defaultValue: true,
+        description: 'Health bars follow damage immediately.',
+      },
+    ],
+  };
+
+  it('puts Lua in code/ and the profile in profiles/', () => {
+    const built = buildNewMod(featureSpec);
+    expect(NEW_MOD_ENTRY).toBe('code/mod.lua');
+    expect(built.files['code/mod.lua']).toBeTruthy();
+    expect(built.files['mod.lua']).toBeUndefined();
+    expect(built.profilePath).toBe('profiles/Live HP.toml');
+    expect(built.files['mod.toml']).toContain('entry = "code/mod.lua"');
+    expect(built.files['profiles/Live HP.toml']).toContain('features = ["live_hp.main"]');
+  });
+
+  it('turns a behavior switch into components.options and a profile value', () => {
+    const built = buildNewMod(featureSpec);
+    expect(built.files['mod.toml']).toContain('[[components.options]]');
+    expect(built.files['mod.toml']).toContain('key = "live_hp"');
+    expect(built.files['mod.toml']).toContain('type = "bool"');
+    expect(built.files['mod.toml']).toContain('default = true');
+    expect(built.files['mod.toml']).toContain('label = "Live HP"');
+    expect(built.files['profiles/Live HP.toml']).toContain('[options."live_hp.main"]');
+    expect(built.files['profiles/Live HP.toml']).toContain('live_hp = true');
+    expect(built.files['code/mod.lua']).toContain('ctx.option("live_hp")');
+    expect(built.files['profiles/Live HP.toml']).not.toContain('[weapons]');
+  });
+
+  it('places a weapon and writes its numeric parameter into the starter profile', () => {
+    const weaponSpec: NewModSpec = {
+      name: 'Heli Test',
+      author: 'me',
+      kind: 'weapon',
+      options: [
+        {
+          key: 'bullets',
+          label: 'Bullets per strafe',
+          type: 'int',
+          defaultValue: 17,
+          min: 1,
+          max: 1000,
+          description: 'How many rounds the helicopter fires.',
+        },
+      ],
+    };
+    const built = buildNewMod(weaponSpec);
+    expect(built.componentId).toBe('heli_test.weapon');
+    expect(built.files['mod.toml']).toContain('type = "weapon"');
+    expect(built.files['mod.toml']).toContain('default_position = { row = "F1", column = 1 }');
+    expect(built.files['mod.toml']).toContain('min = 1');
+    expect(built.files['mod.toml']).toContain('max = 1000');
+    expect(built.files['profiles/Heli Test.toml']).toContain('[weapons]');
+    expect(built.files['profiles/Heli Test.toml']).toContain(
+      '"heli_test.weapon" = { row = "F1", column = 1 }'
+    );
+    expect(built.files['profiles/Heli Test.toml']).toContain('[options."heli_test.weapon"]');
+    expect(built.files['profiles/Heli Test.toml']).toContain('bullets = 17');
+    expect(built.files['code/mod.lua']).toContain('install = function(ctx)');
+    expect(built.files['code/mod.lua']).toContain('ctx.option("bullets")');
+  });
+
+  it('rejects keys the loader could not read back', () => {
+    expect(validateNewModSpec(featureSpec)).toBeNull();
+    expect(
+      validateNewModSpec({
+        ...featureSpec,
+        options: [{ ...featureSpec.options[0], key: 'not a key' }],
+      })
+    ).toContain('lowercase');
+    expect(
+      validateNewModSpec({
+        ...featureSpec,
+        options: [featureSpec.options[0], { ...featureSpec.options[0] }],
+      })
+    ).toContain('used twice');
+    expect(
+      validateNewModSpec({
+        ...featureSpec,
+        options: [
+          {
+            key: 'bullets',
+            label: 'Bullets',
+            type: 'int',
+            defaultValue: 99,
+            min: 1,
+            max: 10,
+          },
+        ],
+      })
+    ).toContain('between 1 and 10');
   });
 });
 

@@ -55,7 +55,7 @@ import {
 import { formatLua } from './services/formatLua';
 import { compileWithEngine, parseWithAst, mergeExtractedSymbols, CheckEngine } from './services/luaCompiler';
 import { mergeDiagnostics, countSeverities } from './services/diagnostics';
-import { openModFolder, saveModFile, saveFileAs, cleanFolderPath, loadFolderFromPath, isDesktop, baseName, listModEntries, createModFolder, pickStartupFile, isLuaFile, type OpenedFolder } from './services/modFolder';
+import { openModFolder, saveModFile, saveFileAs, cleanFolderPath, loadFolderFromPath, isDesktop, baseName, listModEntries, createModFolder, pickStartupFile, isLuaFile, type OpenedFolder, type NewModSpec } from './services/modFolder';
 import { buildWorkspaceModel, openMode } from './services/workspaceTree';
 import type { WorkspaceModel } from './services/workspaceTree';
 import {
@@ -1103,7 +1103,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   );
 
   const handleCreateMod = useCallback(
-    async (modName: string, author: string) => {
+    async (spec: NewModSpec) => {
       const root = cleanFolderPath(config.modsRootPath);
       if (!root) {
         setCreateError('No mods folder configured. Set one in Config.');
@@ -1112,7 +1112,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       setIsCreating(true);
       setCreateError(null);
       try {
-        const modPath = await createModFolder(root, modName, author);
+        const modPath = await createModFolder(root, spec);
         const res = await loadFolderFromPath(modPath);
         if (res && Object.keys(res.files).length > 0) {
           applyOpenedFolder(res);
@@ -1120,7 +1120,12 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
         setIsCreateOpen(false);
         setShowModsList(false);
         setModFilesView(null);
-        addLog(`Created mod "${modName}" in ${root}.`, 'success');
+        const parameterCount = (spec.options ?? []).length;
+        addLog(
+          `Created ${spec.kind === 'weapon' ? 'weapon' : 'behavior'} mod "${spec.name}" in ${root}` +
+            `${parameterCount ? ` with ${parameterCount} parameter${parameterCount === 1 ? '' : 's'}` : ''}.`,
+          'success'
+        );
         await refreshMods();
       } catch (e: any) {
         setCreateError(e?.message ?? String(e));
