@@ -1,7 +1,7 @@
-# wfcheck — check WormForge mods without the game
+# wfcheck: check WormForge mods without the game
 # SUPPORTS 0.9.11 API 4.0 - LATER VERSIONS WILL WARN A LOT
 Catch the mistakes that break a mod pack **before** you load it: syntax errors,
-typos in engine calls, names that read as `nil`, and — the important ones — the
+typos in engine calls, names that read as `nil`, and ~ the important ones ~ the
 desync traps that make one player's game disagree with everyone else's.
 
 It runs the **real Lua 5.4 compiler** (the same one the game uses) plus the
@@ -62,7 +62,7 @@ at a folder from a stranger with no risk.
 | **warning** | Almost certainly a mistake, but it may be intentional. |
 | **note** | Advisory. The code runs; it is just not deterministic across players. |
 
-Only **errors** fail the run. Notes never do, even with `--strict` — a pack full
+Only **errors** fail the run. Notes never do, even with `--strict`, a pack full
 of `pairs()` advice is still a pack worth playing.
 
 ## The desync ones worth knowing
