@@ -17,7 +17,7 @@ const rulesOf = (src: string): string[] =>
 const typoFor = (src: string) =>
   parseAndValidate(src).diagnostics.find((d) => d.rule === 'wa-namespace-typo');
 
-describe('Lua API 4 surface (WormForge 0.9.1/0.9.11)', () => {
+describe('Lua API 4 surface (WormForge 0.9.1/0.9.4)', () => {
   // Exact snippets the Rust checker pins (checks.rs: api4_* tests). Both engines
   // must agree or __sweep.ts reports drift on every API 4 file.
   const silent = [
@@ -52,7 +52,7 @@ describe('Lua API 4 surface (WormForge 0.9.1/0.9.11)', () => {
   });
 
   it('still documents every callable wa.* verb from the release list', () => {
-    // The drift guard: spec/verbs 9.11 api 4.0.txt is the release page for 0.9.11.
+    // The drift guard: spec/verbs 9.11 api 4.0.txt is the release page for 0.9.4.
     // A wa.* key it lists that no TS table knows would be flagged by
     // wa-namespace-typo = a FALSE POSITIVE on valid code. Reading the file from
     // disk keeps the definitions honest against the source the user shipped.
@@ -104,7 +104,7 @@ describe('Lua API 4 additions in 0.9.11 (fog of war)', () => {
     'local function f(a) a.light = { kind = "dark", circle = { radius = 120 } } end',
   ];
 
-  it.each(silent)('%s is real 0.9.11 API and produces no finding', (src) => {
+  it.each(silent)('%s is real 0.9.4 API and produces no finding', (src) => {
     expect(rulesOf(src)).toEqual([]);
   });
 

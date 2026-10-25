@@ -403,7 +403,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
     },
     {
       time: new Date().toLocaleTimeString(),
-      text: 'Loaded WormForge API definitions (0.9.11 engine specifications).',
+      text: 'Loaded WormForge API definitions (0.9.4 engine specifications).',
       type: 'success',
     },
   ]);

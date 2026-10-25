@@ -134,7 +134,7 @@ export const RECEIVER_REGISTRY: ReceiverRow[] = [
     note: 'In-flight missile tables provide properties: id, weapon, sprite, collision_mask, x, y, vx, vy, damp, wind_scale, gravity_scale',
   },
   {
-    // Free fog light (0.9.11): `local light = wa.fog.light{...}`.
+    // Free fog light (0.9.4): `local light = wa.fog.light{...}`.
     //
     // AUTOCOMPLETE ONLY. `light` is a natural local name for anything a pack
     // lights up, and the handle has just three methods, so diagnosing by name
