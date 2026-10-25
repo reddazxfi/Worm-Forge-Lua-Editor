@@ -293,7 +293,7 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
               </p>
               <p className={`text-[11px] mt-1 ${isLight ? 'text-amber-800' : 'text-amber-100/80'}`}>
                 It gets wiped and reinstalled every update so the official files stay hash-identical.
-                You can open and edit these packs — when you save a change, the editor will offer to
+                You can open and edit these packs; when you save a change, the editor will offer to
                 move the whole mod into your normal <span className="font-mono">Mods</span> folder
                 first. That copy is the one updates can&apos;t touch. Nothing moves without a second
                 yes.
