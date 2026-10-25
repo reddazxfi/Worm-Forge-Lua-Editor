@@ -29,6 +29,13 @@ describe('Lua API 4 surface (WormForge 0.9.1/0.9.11)', () => {
     'local function f(worm) wa.weapons.fire_bullet({ weapon = "stock.shotgun", owner = worm, x = 1, y = 2, dx = 1, dy = 0, damage = 25 }) end',
     'wa.weapons.panel_icon("px.javelin", 1)',
     'wa.weapons.set_selectable({ weapon = "px.javelin", team = 2, selectable = false })',
+    'local function f(worm) return wa.mines.spawn({ owner = worm, x = 1, y = 2 }) end',
+    'local function f(worm) return wa.arrows.spawn({ owner = worm, x = 1, y = 2 }) end',
+    'local drum = wa.oil.spawn({ x = 1, y = 2 })',
+    'wa.world.set_retreat(1000)',
+    'local function f(a) local field = wa.magnetism.field({ source = a }) field:remove() end',
+    'local function f(a) local fx, fy, inside, waking = wa.magnetism.sample(1, 2, a) end',
+    'wa.on.oil_explode(function(ev) ev:replace() end)',
   ];
   it.each(silent)('%s is real API and produces no finding', (src) => {
     expect(rulesOf(src)).toEqual([]);

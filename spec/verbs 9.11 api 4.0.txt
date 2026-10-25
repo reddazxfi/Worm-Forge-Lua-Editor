@@ -3,7 +3,7 @@ Verbs from release page.
 {
  "engine": "WormForge 0.9.11, 2026-10-19",
  "api_version": 4,
- "updated": "2026-10-19",
+ "updated": "2026-10-24",
  "units": "Lua speaks pixels: positions and sizes in pixels, speeds in pixels per frame, with fractions. The engine converts to WA's 16.16 once.",
  "sections": [
   {
@@ -276,6 +276,26 @@ Verbs from release page.
      ]
     },
     {
+     "key": "data.placement_range",
+     "sig": "placement_range = 300",
+     "desc": "While the worm aims it, WA's cursor is held within this many pixels of the worm, as Project X's girder restrictor holds Highlander's girders. A weapon's own option may set it: an int option with data = true is the weapon data field of its key.",
+     "units": "px",
+     "aliases": [
+      "placement_range"
+     ]
+    },
+    {
+     "key": "data.cursor",
+     "sig": "cursor = { flip = true, dy = 20 }",
+     "desc": "WA's team cursor while the weapon aims: drawn upside down and dy pixels lower, for this weapon only, as Project X's Submarine Attack draws it.",
+     "units": "dy px",
+     "aliases": [
+      "cursor",
+      "cursor.flip",
+      "cursor.dy"
+     ]
+    },
+    {
      "key": "data.aims_straight_up",
      "sig": "aims_straight_up = true | false",
      "desc": "false keeps the aim a little short of straight up, as WA's Mortar.",
@@ -337,7 +357,7 @@ Verbs from release page.
     {
      "key": "worm.readonly",
      "sig": "Worm fields (read only)",
-     "desc": "id, team, alliance, ammo_group, hp, kind, weapon (its id), turn, aim, aiming, drilling, state, state_id, state_label, keys, taken.",
+     "desc": "id, team, alliance, ammo_group, hp, kind, weapon (its id), turn, aim, aiming, drilling, state (standing, prefiring, firing, fired, punching, drilling, teleporting, jetpacking, parachuting, sliding, bungee, tumbling, frozen, kamikaze, jump_prepare, jumping, blasted, hit; nil for any other WA state), state_id, state_label, keys, taken.",
      "units": "aim 0 (down) to 1 (up)",
      "aliases": [
       "worm.id",
@@ -520,7 +540,7 @@ Verbs from release page.
     {
      "key": "actor.fields",
      "sig": "Actor fields",
-     "desc": "x, y, vx, vy and facing read and write; id, kind and owner read only.",
+     "desc": "x, y, vx, vy and facing read and write; id, kind and owner read only; magnetic is the automatic field response, 0 opting out.",
      "units": "x, y px · vx, vy px/frame",
      "aliases": [
       "a.x",
@@ -530,7 +550,8 @@ Verbs from release page.
       "a.facing",
       "a.id",
       "a.kind",
-      "a.owner"
+      "a.owner",
+      "a.magnetic"
      ]
     },
     {
@@ -701,6 +722,29 @@ Verbs from release page.
      "aliases": []
     },
     {
+     "key": "wa.mines.spawn",
+     "sig": "wa.mines.spawn{ owner, x, y, vx, vy, fuse, arm, damage, radius, dud_proof }",
+     "desc": "Builds one of WA's mines, as Project X's new CMine: WA flies, arms, triggers and explodes it as its own. A worm owner's team lays it; an actor's mine is the map's.",
+     "units": "position px · speed px/frame · fuse, arm ms · radius px",
+     "aliases": []
+    },
+    {
+     "key": "wa.arrows.spawn",
+     "sig": "wa.arrows.spawn{ owner, x, y, vx, vy, damage, gravity_pct }",
+     "desc": "Builds one of WA's arrows, as Project X's new CArrow; nil when WA makes none (its object pool full, or inside land).",
+     "units": "position px · speed px/frame",
+     "aliases": []
+    },
+    {
+     "key": "wa.oil.spawn",
+     "sig": "wa.oil.spawn{ x, y, snap = true }",
+     "desc": "Builds one of WA's oil drums, as the level's hazardous objects are made. snap drops it until it lands; snap = false starts it where it is put.",
+     "units": "position px",
+     "aliases": [
+      "wa.oil.all"
+     ]
+    },
+    {
      "key": "wa.fire.spawn",
      "sig": "wa.fire.spawn{ owner, x, y, vx, vy, count, duration, damage, up_power, damage_scale, knock_scale, tint }",
      "desc": "Starts one of WA's fires.",
@@ -720,7 +764,7 @@ Verbs from release page.
     {
      "key": "object.fields",
      "sig": "Object fields",
-     "desc": "x, y, vx, vy read and write; id, uid, kind, team, alliance read only; fuse on mines, worm_id on graves.",
+     "desc": "x, y, vx, vy read and write; id, uid, kind, team, alliance read only; fuse on mines, worm_id on graves; damage and max_damage on oil drums, and visible (false: WA stops drawing that drum, so a pack can draw its own).",
      "units": "x, y px · vx, vy px/frame · fuse ms",
      "aliases": [
       "object.x",
@@ -733,7 +777,10 @@ Verbs from release page.
       "object.team",
       "object.alliance",
       "mine.fuse",
-      "grave.worm_id"
+      "grave.worm_id",
+      "drum.damage",
+      "drum.max_damage",
+      "drum.visible"
      ]
     },
     {
@@ -854,12 +901,13 @@ Verbs from release page.
     },
     {
      "key": "wa.world.retreat",
-     "sig": "wa.world.retreat() / wa.world.turn_clock() / wa.world.set_turn_clock(ms)",
-     "desc": "Retreat countdown and turn clock left; set_turn_clock sets the turn clock (simulation only).",
+     "sig": "wa.world.retreat() / wa.world.set_retreat(ms) / wa.world.turn_clock() / wa.world.set_turn_clock(ms)",
+     "desc": "Retreat countdown and turn clock left; set_retreat changes a running retreat only and returns whether it applied, set_turn_clock sets the turn clock (simulation only).",
      "units": "ms",
      "aliases": [
       "wa.world.turn_clock",
-      "wa.world.set_turn_clock"
+      "wa.world.set_turn_clock",
+      "wa.world.set_retreat"
      ]
     },
     {
@@ -916,6 +964,22 @@ Verbs from release page.
      "sig": "wa.world.electrical_nearby(x, y, radius, graves)",
      "desc": "The objects an arc can strike within a radius.",
      "units": "px",
+     "aliases": []
+    },
+    {
+     "key": "wa.magnetism.field",
+     "sig": "wa.magnetism.field{ source = actor, ... }",
+     "desc": "Registers a match-wide magnetic field on an actor; fields sum across packs from one simulation-step snapshot and disappear with their source. Actors opt in with magnetic = 1.",
+     "units": "px",
+     "aliases": [
+      "magnetic"
+     ]
+    },
+    {
+     "key": "wa.magnetism.sample",
+     "sig": "wa.magnetism.sample(x, y [, actor])",
+     "desc": "The fields' force at a point, for custom movement; with an actor, as that actor feels it. Point-only sampling is read-only.",
+     "units": "position px",
      "aliases": []
     },
     {
@@ -1070,6 +1134,17 @@ Verbs from release page.
      "desc": "Each rendered frame, for HUD lines. Read only.",
      "units": "",
      "aliases": []
+    },
+    {
+     "key": "wa.on.oil_explode",
+     "sig": "wa.on.oil_explode(fn)",
+     "desc": "When WA is about to blow up an oil drum, in the simulation. ev:replace() stands in for WA's blast, fires and sound, as Project X's COilDrum::Explosion; WA frees the drum either way.",
+     "units": "ev.x, ev.y px",
+     "aliases": [
+      "ev.drum",
+      "ev.team",
+      "ev:replace"
+     ]
     },
     {
      "key": "wa.msg",

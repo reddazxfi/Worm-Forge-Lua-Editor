@@ -62,6 +62,7 @@ const HANDLE_CLASSES = new Set([
   'MissileEntity',
   'InventoryStore',
   'LightHandle',
+  'MagneticField',
 ]);
 
 lines.push('/// (class name, method names) for the handle classes the checker resolves.');

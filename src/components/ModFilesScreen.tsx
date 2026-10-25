@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ArrowLeft, Code2, FileCode, FileText, Package, Sliders, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Code2, FileCode, FileText, Package, Sliders, Zap } from 'lucide-react';
 import type { WorkspaceFile, WorkspaceModel } from '../services/workspaceTree';
 import { listModFiles } from '../services/workspaceTree';
 
@@ -10,6 +10,8 @@ interface ModFilesScreenProps {
   modId: string | null;
   /** The mod's own display name, for bundles that declare one. */
   modName: string | null;
+  /** True when this pack lives on the managed wf-lib shelf. */
+  official?: boolean;
   model: WorkspaceModel;
   isLight?: boolean;
   onOpenFile: (path: string) => void;
@@ -33,6 +35,7 @@ export const ModFilesScreen: React.FC<ModFilesScreenProps> = ({
   folderName,
   modId,
   modName,
+  official = false,
   model,
   isLight = false,
   onOpenFile,
@@ -156,10 +159,17 @@ export const ModFilesScreen: React.FC<ModFilesScreenProps> = ({
 
         <div className="min-w-0">
           <h1
-            className={`font-bold text-sm truncate ${isLight ? 'text-slate-900' : 'text-[#e4edf7]'}`}
+            className={`font-bold text-sm truncate flex items-center gap-1.5 ${
+              isLight ? 'text-slate-900' : 'text-[#e4edf7]'
+            }`}
             title={modName ? `${folderName} — ${modName}` : folderName}
           >
-            {modId || folderName}
+            <span className="truncate">{modId || folderName}</span>
+            {official && (
+              <span className="shrink-0 rounded bg-amber-500 px-1 py-0.5 text-[8px] font-bold tracking-wide text-slate-950">
+                WF-LIB
+              </span>
+            )}
           </h1>
           <p className={`text-[11px] truncate ${isLight ? 'text-slate-500' : 'text-[#7e8fa3]'}`}>
             {model.lua.length} Lua file{model.lua.length === 1 ? '' : 's'}
@@ -186,6 +196,24 @@ export const ModFilesScreen: React.FC<ModFilesScreenProps> = ({
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-5">
+        {official && (
+          <div
+            className={`rounded border px-3 py-2 mb-4 flex items-start gap-2 text-[11px] ${
+              isLight
+                ? 'bg-amber-50 border-amber-300 text-amber-900'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-100'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+            <p>
+              This is an official <span className="font-mono">wf-lib</span> pack. Read and edit all
+              you like — the first save with changes will offer to move the whole mod into your
+              normal <span className="font-mono">Mods</span> folder before anything is written, so an
+              update can&apos;t erase your work.
+            </p>
+          </div>
+        )}
+
         {listing.lua.length > 0 && (
           <>
             {sectionLabel(`Lua files (${listing.lua.length})`)}

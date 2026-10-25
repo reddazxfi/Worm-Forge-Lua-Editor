@@ -32,7 +32,8 @@ export type HandleClassName =
   | 'WorldHandle'
   | 'MissileEntity'
   | 'InventoryStore'
-  | 'LightHandle';
+  | 'LightHandle'
+  | 'MagneticField';
 
 /**
  * returnType strings in wormforgeDefinitions.ts use the ENGINE's vocabulary
@@ -50,6 +51,8 @@ export const HANDLE_ALIASES: Record<string, HandleClassName> = {
   MissileHandle: 'MissileEntity',
   InventoryStore: 'InventoryStore',
   LightHandle: 'LightHandle',
+  MagneticField: 'MagneticField',
+  FieldHandle: 'MagneticField',
 };
 
 /** Every class the union check may consult. */
@@ -60,6 +63,7 @@ export const ALL_HANDLE_CLASSES: HandleClassName[] = [
   'MissileEntity',
   'InventoryStore',
   'LightHandle',
+  'MagneticField',
 ];
 
 export interface ReceiverRow {
@@ -140,6 +144,14 @@ export const RECEIVER_REGISTRY: ReceiverRow[] = [
     diagnose: [],
     className: 'LightHandle',
     rule: 'light-api',
+  },
+  {
+    // Magnetic field handle (0.9.11): `local field = wa.magnetism.field{...}`.
+    // Same policy as LightHandle: the trace is confident, the local name is not.
+    prefixes: ['field'],
+    diagnose: [],
+    className: 'MagneticField',
+    rule: 'magnetic-api',
   },
 ];
 

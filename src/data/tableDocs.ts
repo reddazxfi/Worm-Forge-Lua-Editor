@@ -453,6 +453,7 @@ const SPAWN: TableDoc = {
     { name: 'screen', kind: 'enum', type: '"fill" | "front" | "world"', values: [['fill', 'fill'], ['front', 'front'], ['world', 'world']], description: 'Screen-space drawing. Default "world"; `true` means "front".' },
     { name: 'visible', kind: 'bool', description: 'Default true.' },
     { name: 'gravity', kind: 'bool', description: 'Apply gravity. Defaults to on for an automatic, visible actor.' },
+    { name: 'magnetic', kind: 'number', type: '0..1000', description: 'Automatic magnetic response multiplier. Default 0 (opted out); fields are summed in creation order and applied before movement.' },
     { name: 'loop', kind: 'bool', description: 'Loop the animation. Defaults to on for an automatic, visible actor.' },
     { name: 'collide', kind: 'bool', description: 'Umbrella for the three collide flags.' },
     { name: 'collide_terrain', kind: 'bool', description: 'Default: the `collide` value.' },

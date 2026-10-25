@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Package, Plus, RefreshCw, FolderOpen } from 'lucide-react';
+import { AlertTriangle, Package, Plus, RefreshCw, FolderOpen } from 'lucide-react';
 
 export interface ModsListTile {
   folderName: string;
   path: string;
+  /** True when this pack lives on the managed `wf-lib` shelf. */
+  official?: boolean;
   id: string;
   author: string;
   version: string;
@@ -62,6 +64,83 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
     return copy;
   }, [mods, sortBy]);
 
+  const officialMods = useMemo(() => sorted.filter((m) => m.official), [sorted]);
+  const localMods = useMemo(() => sorted.filter((m) => !m.official), [sorted]);
+
+  const sectionLabel = (text: string) => (
+    <h2
+      className={`text-[11px] font-semibold uppercase tracking-wide mb-2 ${
+        isLight ? 'text-slate-500' : 'text-[#7e8fa3]'
+      }`}
+    >
+      {text}
+    </h2>
+  );
+
+  const gridClass = 'grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3';
+
+  const tile = (mod: ModsListTile) => (
+    <button
+      key={mod.path}
+      onDoubleClick={() => onOpenMod(mod)}
+      disabled={!!openingPath}
+      title={
+        mod.official
+          ? `Open ${mod.id} (official wf-lib mod)`
+          : `Open ${mod.id}`
+      }
+      className={`flex flex-col items-center gap-2 p-3 rounded-lg border transition-colors text-center ${
+        openingPath === mod.path
+          ? isLight
+            ? 'bg-amber-50 border-amber-400'
+            : 'bg-[#1d222b] border-amber-500/60'
+          : isLight
+          ? 'bg-white border-slate-300 hover:bg-slate-50'
+          : 'bg-[#171b21] border-[#242b35] hover:bg-[#1d222b]'
+      } ${openingPath && openingPath !== mod.path ? 'opacity-50' : ''}`}
+    >
+      <div
+        className={`relative flex items-center justify-center rounded border overflow-hidden shrink-0 ${
+          isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0e1115] border-[#242b35]'
+        }`}
+        style={{ width: `${ICON_PX}px`, height: `${ICON_PX}px` }}
+      >
+        {mod.iconUrl ? (
+          <img
+            src={mod.iconUrl}
+            alt=""
+            // Fit, never upscale beyond the tile box.
+            className="w-full h-full object-contain"
+          />
+        ) : (
+          <Package
+            className={`w-7 h-7 ${isLight ? 'text-slate-400' : 'text-[#4d5c6e]'}`}
+          />
+        )}
+        {mod.official && (
+          <span
+            className="absolute top-0 left-0 px-1 py-0.5 bg-amber-500 text-slate-950 text-[8px] font-bold tracking-wide rounded-br"
+            title="Official WormForge library mod"
+          >
+            WF
+          </span>
+        )}
+      </div>
+
+      <span
+        className={`text-[11px] font-semibold w-full truncate ${
+          isLight ? 'text-slate-900' : 'text-[#dce7f3]'
+        }`}
+      >
+        {mod.id}
+      </span>
+      <span className={`text-[10px] w-full truncate ${isLight ? 'text-slate-500' : 'text-[#7e8fa3]'}`}>
+        {mod.official ? 'Official · ' : ''}
+        {mod.author} &middot; {mod.version}
+      </span>
+    </button>
+  );
+
   return (
     <div
       className={`h-full flex flex-col select-none transition-colors ${
@@ -84,7 +163,9 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
               ? `Reading ${mods.find((m) => m.path === openingPath)?.id ?? 'mod'}…`
               : isLoading
               ? 'Scanning mods folder...'
-              : `${mods.length} mod${mods.length === 1 ? '' : 's'} found`}
+              : `${mods.length} mod${mods.length === 1 ? '' : 's'} found${
+                  officialMods.length > 0 ? ` · ${officialMods.length} official` : ''
+                }`}
           </p>
         </div>
 
@@ -196,57 +277,44 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
           </div>
         )}
 
-        {/* Flat icon grid: wraps to whatever fits the width. */}
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
-          {sorted.map((mod) => (
-            <button
-              key={mod.path}
-              onDoubleClick={() => onOpenMod(mod)}
-              disabled={!!openingPath}
-              title={`Open ${mod.id}`}
-              className={`flex flex-col items-center gap-2 p-3 rounded-lg border transition-colors text-center ${
-                openingPath === mod.path
-                  ? isLight
-                    ? 'bg-amber-50 border-amber-400'
-                    : 'bg-[#1d222b] border-amber-500/60'
-                  : isLight
-                  ? 'bg-white border-slate-300 hover:bg-slate-50'
-                  : 'bg-[#171b21] border-[#242b35] hover:bg-[#1d222b]'
-              } ${openingPath && openingPath !== mod.path ? 'opacity-50' : ''}`}
-            >
-              <div
-                className={`flex items-center justify-center rounded border overflow-hidden shrink-0 ${
-                  isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0e1115] border-[#242b35]'
-                }`}
-                style={{ width: `${ICON_PX}px`, height: `${ICON_PX}px` }}
-              >
-                {mod.iconUrl ? (
-                  <img
-                    src={mod.iconUrl}
-                    alt=""
-                    // Fit, never upscale beyond the tile box.
-                    className="w-full h-full object-contain"
-                  />
-                ) : (
-                  <Package
-                    className={`w-7 h-7 ${isLight ? 'text-slate-400' : 'text-[#4d5c6e]'}`}
-                  />
-                )}
-              </div>
+        {officialMods.length > 0 && (
+          <div
+            className={`rounded border px-3 py-2.5 mb-5 flex items-start gap-2 ${
+              isLight
+                ? 'bg-amber-50 border-amber-300 text-amber-900'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-100'
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="font-semibold text-[11px]">
+                PSA: <span className="font-mono">wf-lib</span> is WormForge&apos;s shelf, not your
+                scratchpad.
+              </p>
+              <p className={`text-[11px] mt-1 ${isLight ? 'text-amber-800' : 'text-amber-100/80'}`}>
+                It gets wiped and reinstalled every update so the official files stay hash-identical.
+                You can open and edit these packs — when you save a change, the editor will offer to
+                move the whole mod into your normal <span className="font-mono">Mods</span> folder
+                first. That copy is the one updates can&apos;t touch. Nothing moves without a second
+                yes.
+              </p>
+            </div>
+          </div>
+        )}
 
-              <span
-                className={`text-[11px] font-semibold w-full truncate ${
-                  isLight ? 'text-slate-900' : 'text-[#dce7f3]'
-                }`}
-              >
-                {mod.id}
-              </span>
-              <span className={`text-[10px] w-full truncate ${isLight ? 'text-slate-500' : 'text-[#7e8fa3]'}`}>
-                {mod.author} &middot; {mod.version}
-              </span>
-            </button>
-          ))}
-        </div>
+        {officialMods.length > 0 && (
+          <div className="mb-6">
+            {sectionLabel(`WormForge official library (${officialMods.length})`)}
+            <div className={gridClass}>{officialMods.map(tile)}</div>
+          </div>
+        )}
+
+        {localMods.length > 0 && (
+          <div>
+            {officialMods.length > 0 && sectionLabel(`Your mods (${localMods.length})`)}
+            <div className={gridClass}>{localMods.map(tile)}</div>
+          </div>
+        )}
       </div>
 
       <div

@@ -79,6 +79,15 @@
         { "path": "*" },
         { "path": "*/**" }
       ]
+    },
+    {
+      "identifier": "fs:allow-rename",
+      "allow": [
+        { "path": "**" },
+        { "path": "**/*" },
+        { "path": "*" },
+        { "path": "*/**" }
+      ]
     }
   ]
 }

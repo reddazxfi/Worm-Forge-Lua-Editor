@@ -4082,6 +4082,7 @@ mod tests {
                 "MissileEntity",
                 "InventoryStore",
                 "LightHandle",
+                "MagneticField",
             ]
         );
     }

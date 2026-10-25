@@ -27,6 +27,20 @@ const MAX_DIRS = 5000;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 32 * 1024 * 1024;
 
+/**
+ * The engine's managed library folder under Mods/.
+ *
+ * `libraries::pack_dirs()` treats a `wf-lib` folder without its own mod.toml as
+ * a shelf: every immediate child is a bundle. The updater replaces that shelf,
+ * which is why the editor moves a mod out before saving edits into it.
+ */
+export const OFFICIAL_LIBRARY_DIR = 'wf-lib';
+
+/** Mirrors the engine's is_ignored_folder(): `_off` and `.hidden` are not packs. */
+export function isIgnoredModFolder(name: string): boolean {
+  return name.startsWith('_') || name.startsWith('.');
+}
+
 export interface OpenedFolder {
   name: string;
   root: string;
@@ -237,6 +251,115 @@ export async function saveModFile(root: string, rel: string, content: string): P
   }
   const fullFile = `${normalizedRoot}${sep}${parts.join(sep)}`;
   await writeTextFile(fullFile, content);
+}
+
+// ---------------------------------------------------------------------------
+// The official library (wf-lib)
+//
+// WormForge replaces Mods/wf-lib on every update to keep its hashes identical.
+// The editor still lets you read and edit those files, but a save must not land
+// inside that managed shelf: it would be erased by the next update. Instead the
+// whole mod folder is moved to its parent Mods/ folder -- the exact shape the
+// engine already reads for ordinary user packs -- and then written there.
+// ---------------------------------------------------------------------------
+
+export interface OfficialModLocation {
+  /** The mod folder inside wf-lib, e.g. `...\Mods\wf-lib\px`. */
+  fromRoot: string;
+  /** The managed shelf itself, e.g. `...\Mods\wf-lib`. */
+  libraryRoot: string;
+  /** The Mods folder that contains the shelf. */
+  modsRoot: string;
+  /** The mod's own folder name, e.g. `px`. */
+  folderName: string;
+  /** The preferred destination, e.g. `...\Mods\px`. */
+  preferredRoot: string;
+}
+
+/**
+ * Recognises a mod folder that sits directly inside a `wf-lib` shelf.
+ *
+ * Deliberately not recursive: the engine only treats immediate children as
+ * packs, and moving a deeper folder would not produce a bundle. The match is
+ * case-insensitive and honours both separators. `null` means this is an
+ * ordinary folder, or the `wf-lib` shelf itself (which is not a mod).
+ */
+export function officialModLocation(rawRoot: string): OfficialModLocation | null {
+  const root = (rawRoot || '').replace(/[\\/]+$/, '');
+  if (!root) return null;
+  const match = root.match(/^(.*?)[\\/](wf-lib)[\\/]([^\\/]+)$/i);
+  if (!match) return null;
+
+  const sep = root.includes('\\') ? '\\' : '/';
+  const parent = match[1];
+  const modsRoot = parent || sep;
+  const join = (base: string, name: string) =>
+    base.endsWith(sep) ? `${base}${name}` : `${base}${sep}${name}`;
+
+  return {
+    fromRoot: root,
+    libraryRoot: join(modsRoot, match[2]),
+    modsRoot,
+    folderName: match[3],
+    preferredRoot: join(modsRoot, match[3]),
+  };
+}
+
+export interface OfficialMovePlan extends OfficialModLocation {
+  /** Where the folder will actually go (may carry an `_edited` suffix). */
+  targetRoot: string;
+  /** True when preferredRoot was already occupied and the suffix was used. */
+  renamed: boolean;
+}
+
+/**
+ * Picks a destination for an official mod and reports whether the preferred
+ * name was taken.
+ *
+ * A collision is handled with a suffix instead of overwriting. Clobbering an
+ * existing `Mods/px` would destroy exactly the kind of work this feature is
+ * meant to protect.
+ */
+export async function planOfficialMove(rawRoot: string): Promise<OfficialMovePlan | null> {
+  const loc = officialModLocation(rawRoot);
+  if (!loc) return null;
+
+  const { exists } = await import('@tauri-apps/plugin-fs');
+  const isTaken = async (path: string) => {
+    try {
+      return await exists(path);
+    } catch {
+      return false;
+    }
+  };
+
+  const sep = loc.fromRoot.includes('\\') ? '\\' : '/';
+  let targetRoot = loc.preferredRoot;
+  let attempt = 0;
+  while (await isTaken(targetRoot)) {
+    attempt++;
+    if (attempt > 99) {
+      throw new Error(
+        `Could not find a free folder name beside "${loc.folderName}". Rename or remove one of the existing copies first.`
+      );
+    }
+    targetRoot = `${loc.modsRoot}${sep}${loc.folderName}_edited${attempt === 1 ? '' : `_${attempt}`}`;
+  }
+
+  return { ...loc, targetRoot, renamed: targetRoot !== loc.preferredRoot };
+}
+
+/**
+ * Moves the whole mod folder out of wf-lib. Re-checks nothing here: the caller
+ * has already shown the plan to the user, and `rename` refuses an occupied
+ * destination rather than replacing it.
+ */
+export async function commitOfficialMove(plan: OfficialMovePlan): Promise<void> {
+  if (!isDesktop()) {
+    throw new Error('Moving a mod out of wf-lib is only available in the desktop app.');
+  }
+  const { rename } = await import('@tauri-apps/plugin-fs');
+  await rename(plan.fromRoot, plan.targetRoot);
 }
 
 // "Save As": native dialog, desktop only.
@@ -685,6 +808,13 @@ export interface ModListEntry {
   folderName: string;
   /** Absolute path to the mod folder. */
   path: string;
+  /**
+   * True when this pack lives on the managed `wf-lib` shelf.
+   *
+   * The editor still opens it, but the first save asks to move the whole folder
+   * to Mods/ so the updater's wipe cannot take the user's edits with it.
+   */
+  official?: boolean;
   /** `id` from mod.toml, else the folder name. */
   id: string;
   author: string;
@@ -1008,9 +1138,12 @@ export function pickStartupFile(files: Record<string, string>): string | null {
 }
 
 /**
- * Lists the immediate subfolders of `rootPath` that look like mods (contain a
- * mod.toml). Does NOT recurse: a mod's own sprites/sounds subfolders are
- * ignored on purpose.
+ * Lists the mod folders directly under `rootPath`.
+ *
+ * Mirrors the engine's `libraries::pack_dirs()`: a `wf-lib` shelf without its
+ * own manifest contributes its immediate child packs (marked `official`); any
+ * other folder contributes itself. Does NOT recurse past that one shelf level:
+ * a mod's own sprites/sounds subfolders are ignored on purpose.
  *
  * Returns null when unsupported (browser) or when the path cannot be read.
  * Per-mod failures are skipped, not fatal, so a single unreadable mod does not
@@ -1033,16 +1166,18 @@ export async function listModEntries(rootPath: string): Promise<ModListEntry[] |
     const dirEntries = await readDir(normalizedRoot);
     const out: ModListEntry[] = [];
 
-    for (const e of dirEntries) {
-      if (!e.isDirectory) continue;
-      const modPath = `${normalizedRoot}${sep}${e.name}`;
-
+    /** Reads one folder and returns its tile, or null when it is not a mod. */
+    const readEntry = async (
+      folderName: string,
+      modPath: string,
+      official: boolean
+    ): Promise<ModListEntry | null> => {
       try {
         // A mod must have mod.toml to count as one.
         const manifestPath = `${modPath}${sep}mod.toml`;
-        if (!(await exists(manifestPath))) continue;
+        if (!(await exists(manifestPath))) return null;
 
-        let id = e.name;
+        let id = folderName;
         let author = 'Unknown';
         let version = 'Unknown';
         let components: ComponentEntry[] = [];
@@ -1104,9 +1239,10 @@ export async function listModEntries(rootPath: string): Promise<ModListEntry[] |
           mtime = null;
         }
 
-        out.push({
-          folderName: e.name,
+        return {
+          folderName,
           path: modPath,
+          official,
           id,
           author,
           version,
@@ -1114,10 +1250,44 @@ export async function listModEntries(rootPath: string): Promise<ModListEntry[] |
           mtime,
           components,
           bundledProfiles,
-        });
+        };
       } catch {
         // Unreadable mod (permissions, vanished mid-scan) - skip it.
+        return null;
       }
+    };
+
+    for (const e of dirEntries) {
+      if (!e.isDirectory || isIgnoredModFolder(e.name)) continue;
+      const modPath = `${normalizedRoot}${sep}${e.name}`;
+
+      // Mirror libs::pack_dirs(): a `wf-lib` WITHOUT its own manifest is a
+      // shelf of immediate child bundles. A user pack that happens to be named
+      // wf-lib and has a manifest stays a normal, single tile.
+      const isShelf =
+        e.name.toLowerCase() === OFFICIAL_LIBRARY_DIR &&
+        !(await exists(`${modPath}${sep}mod.toml`).catch(() => false));
+      if (isShelf) {
+        let children: Awaited<ReturnType<typeof readDir>> = [];
+        try {
+          children = await readDir(modPath);
+        } catch {
+          continue;
+        }
+        for (const child of children) {
+          if (!child.isDirectory || isIgnoredModFolder(child.name)) continue;
+          const entry = await readEntry(
+            child.name,
+            `${modPath}${sep}${child.name}`,
+            true
+          );
+          if (entry) out.push(entry);
+        }
+        continue;
+      }
+
+      const entry = await readEntry(e.name, modPath, false);
+      if (entry) out.push(entry);
     }
 
     return out;

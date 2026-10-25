@@ -55,7 +55,8 @@ import {
 import { formatLua } from './services/formatLua';
 import { compileWithEngine, parseWithAst, mergeExtractedSymbols, CheckEngine } from './services/luaCompiler';
 import { mergeDiagnostics, countSeverities } from './services/diagnostics';
-import { openModFolder, saveModFile, saveFileAs, cleanFolderPath, loadFolderFromPath, isDesktop, baseName, listModEntries, createModFolder, pickStartupFile, isLuaFile, type OpenedFolder, type NewModSpec } from './services/modFolder';
+import { openModFolder, saveModFile, saveFileAs, cleanFolderPath, loadFolderFromPath, isDesktop, baseName, listModEntries, createModFolder, pickStartupFile, isLuaFile, officialModLocation, planOfficialMove, commitOfficialMove, type OpenedFolder, type NewModSpec } from './services/modFolder';
+import { OfficialLibraryModal, type OfficialLibraryPrompt } from './components/OfficialLibraryModal';
 import { buildWorkspaceModel, openMode } from './services/workspaceTree';
 import type { WorkspaceModel } from './services/workspaceTree';
 import {
@@ -232,6 +233,15 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   } | null>(null);
   /** The mod currently being read from disk, so its tile can say so. */
   const [openingModPath, setOpeningModPath] = useState<string | null>(null);
+  /**
+   * The wf-lib disclaimer, in either its open or save form.
+   *
+   * The resolver is a ref rather than state so `saveFiles` can `await` the same
+   * dialog the open handler uses; putting a function in state would make every
+   * prompt a new render identity for no benefit.
+   */
+  const [officialPrompt, setOfficialPrompt] = useState<OfficialLibraryPrompt | null>(null);
+  const officialPromptResolver = useRef<((ok: boolean) => void) | null>(null);
   // ----- Installed profiles (Phase C) -----
   // `WormForge/Profiles` is derived from the mods folder, not configured
   // separately -- see profilesDirFromModsRoot.
@@ -748,6 +758,22 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
               ]);
               return;
             }
+            if (
+              baseName(res.root).toLowerCase() === 'wf-lib' &&
+              !Object.prototype.hasOwnProperty.call(res.files, 'mod.toml')
+            ) {
+              setLogs((prev) => [
+                ...prev,
+                {
+                  time: new Date().toLocaleTimeString(),
+                  text: `[Startup Folder]: "${res.name}" is the official wf-lib shelf, not a mod. Showing the Mods list instead; open a pack from there.`,
+                  type: 'warn',
+                },
+              ]);
+              setShowModsList(true);
+              refreshMods();
+              return;
+            }
             // The manifest decides, not the alphabet -- see pickStartupFile.
             // Without this a scratch file sorting first outranks `rules.lua`.
             const first = pickStartupFile(res.files);
@@ -911,6 +937,36 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
     [files, savedFiles, modFolder]
   );
 
+  // A save may wait on the wf-lib warning. Reading the captured `files` object
+  // after that await would write the text from before the dialog, so keep the
+  // latest buffers in a ref for the post-confirmation write.
+  const filesRef = useRef(files);
+  filesRef.current = files;
+
+  /**
+   * Opens the wf-lib warning and resolves when the user answers.
+   *
+   * Only one can be open at a time; a second request (unlikely, but possible
+   * through a double Ctrl+S) settles the first as "no" instead of leaving a
+   * promise hanging forever.
+   */
+  const askOfficial = useCallback(
+    (prompt: OfficialLibraryPrompt) =>
+      new Promise<boolean>((resolve) => {
+        officialPromptResolver.current?.(false);
+        officialPromptResolver.current = resolve;
+        setOfficialPrompt(prompt);
+      }),
+    []
+  );
+
+  const settleOfficial = useCallback((ok: boolean) => {
+    const resolve = officialPromptResolver.current;
+    officialPromptResolver.current = null;
+    setOfficialPrompt(null);
+    resolve?.(ok);
+  }, []);
+
   const handleOpenFolder = async () => {
     if (dirtyFiles.length > 0 && !window.confirm('You have unsaved changes. Open another folder anyway?')) {
       return;
@@ -922,6 +978,29 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       if (names.length === 0) {
         addLog(`Folder "${res.name}" has no .lua/.toml/.md/.txt/.json files.`, 'warn');
         return;
+      }
+      // Opening the shelf itself would mix every official pack into one
+      // workspace, and there is no single mod folder to move to safety on save.
+      // Send the user to the one place that knows how to open a child pack.
+      if (
+        baseName(res.root).toLowerCase() === 'wf-lib' &&
+        !Object.prototype.hasOwnProperty.call(res.files, 'mod.toml')
+      ) {
+        addLog(
+          'That is the wf-lib shelf, not a mod. Open one of its packs from the Mods list so the editor can move it out safely when you save.',
+          'warn'
+        );
+        handleShowModsList();
+        return;
+      }
+      const official = officialModLocation(res.root);
+      if (official) {
+        const proceed = await askOfficial({
+          kind: 'open',
+          folderName: official.folderName,
+          modId: res.name,
+        });
+        if (!proceed) return;
       }
       // Which file opens is decided inside applyOpenedFolder, from the
       // manifest's `entry`, so there is nothing left to compute here.
@@ -1080,6 +1159,14 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   // this replaces -- `mods/px` has 57 Lua files and four declared entrypoints.
   const handleOpenModTile = useCallback(
     async (mod: ModsListTile) => {
+      if (mod.official) {
+        const proceed = await askOfficial({
+          kind: 'open',
+          folderName: mod.folderName,
+          modId: mod.id,
+        });
+        if (!proceed) return;
+      }
       setOpeningModPath(mod.path);
       try {
         const res = await loadFolderFromPath(mod.path);
@@ -1099,7 +1186,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
         setOpeningModPath(null);
       }
     },
-    [openModIntoEditor]
+    [askOfficial, openModIntoEditor]
   );
 
   const handleCreateMod = useCallback(
@@ -1166,14 +1253,69 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   // "Save and close" can refuse to close while data is still unsaved.
   const saveFiles = async (fileNames: string[]): Promise<string[]> => {
     if (!modFolder) return fileNames;
+
+    const pending = fileNames.filter((name) => filesRef.current[name] !== undefined);
+    if (pending.length === 0) return [];
+
+    let root = modFolder.root;
+    let folderName = modFolder.name;
+    const changed = pending.filter((name) => filesRef.current[name] !== savedFiles[name]);
+
+    // A save inside the official shelf is moved out first. Doing it before any
+    // write means the updater cannot race us between the move and the save, and
+    // it keeps the mod a single folder instead of a half-written copy. A no-op
+    // Ctrl+S on an untouched official file stays in place: moving a pack because
+    // someone pressed the shortcut out of habit would be a nasty surprise.
+    if (changed.length > 0 && officialModLocation(root)) {
+      let plan;
+      try {
+        plan = await planOfficialMove(root);
+      } catch (e: any) {
+        addLog(`Could not prepare the move out of wf-lib: ${e?.message ?? String(e)}`, 'error');
+        return fileNames;
+      }
+      if (!plan) {
+        addLog('Refusing to save inside wf-lib: the mod folder could not be resolved. Open it from the Mods list instead.', 'error');
+        return fileNames;
+      }
+
+      const proceed = await askOfficial({
+        kind: 'save',
+        folderName: plan.folderName,
+        targetRoot: plan.targetRoot,
+        renamed: plan.renamed,
+      });
+      if (!proceed) {
+        addLog('Save cancelled. Nothing was moved out of wf-lib, and nothing was written.', 'warn');
+        return fileNames;
+      }
+
+      try {
+        await commitOfficialMove(plan);
+        root = plan.targetRoot;
+        folderName = baseName(root);
+        setModFolder({ name: folderName, root });
+        addLog(
+          `Moved "wf-lib/${plan.folderName}" to "${root}" so the next update cannot wipe it.`,
+          'success'
+        );
+        // The tile in the mods list must now point at the new copy, not the
+        // official one the user just left.
+        void refreshMods();
+      } catch (e: any) {
+        addLog(`Could not move the mod out of wf-lib: ${e?.message ?? String(e)}`, 'error');
+        return fileNames;
+      }
+    }
+
     const failed: string[] = [];
     let savedCount = 0;
     const nextSaved = { ...savedFiles };
-    for (const name of fileNames) {
-      const content = files[name];
+    for (const name of pending) {
+      const content = filesRef.current[name];
       if (content === undefined) continue;
       try {
-        await saveModFile(modFolder.root, name, content);
+        await saveModFile(root, name, content);
         nextSaved[name] = content;
         savedCount++;
       } catch (e: any) {
@@ -1183,7 +1325,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
     }
     setSavedFiles(nextSaved);
     if (savedCount > 0) {
-      addLog(`Saved ${savedCount} file${savedCount === 1 ? '' : 's'} to "${modFolder.name}".`, 'success');
+      addLog(`Saved ${savedCount} file${savedCount === 1 ? '' : 's'} to "${folderName}".`, 'success');
     }
     return failed;
   };
@@ -2037,6 +2179,16 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
         onCancel={() => setPendingClose(false)}
       />
 
+      {/* wf-lib is wiped by the updater. This is both the "you are about to
+          work on borrowed time" notice and the "I'll move it to safety before
+          saving" confirmation. */}
+      <OfficialLibraryModal
+        prompt={officialPrompt}
+        isLight={isLight}
+        onConfirm={() => settleOfficial(true)}
+        onCancel={() => settleOfficial(false)}
+      />
+
       {/* Mods-list launch screen. Rendered as a sibling overlay rather than by
           wrapping the studio in a conditional, so no existing toolbar/tree/
           editor markup is restructured - it simply covers it while active.
@@ -2063,6 +2215,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
               folderName={modFilesView.mod.folderName}
               modId={modFilesView.model.id}
               modName={modFilesView.model.name}
+              official={modFilesView.mod.official}
               model={modFilesView.model}
               isLight={isLight}
               onOpenFile={(path) => openModIntoEditor(modFilesView.opened, modFilesView.mod, path)}

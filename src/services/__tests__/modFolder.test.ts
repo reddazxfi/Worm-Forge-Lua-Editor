@@ -8,7 +8,66 @@
 //
 // Pure functions, no DOM: modFolder.ts touches `window`/`document` only inside
 // functions that are never called from here, so this runs in plain node.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+/**
+ * A tiny in-memory Windows filesystem for listModEntries(). The function is
+ * desktop-only and dynamically imports the Tauri plugin, so the only way to
+ * exercise its wf-lib branch in node is to mock that import.
+ */
+const mockFs = vi.hoisted(() => {
+  const files = new Map<string, string>();
+  const dirs = new Set<string>();
+
+  const readDir = vi.fn(async (path: string) => {
+    const prefix = path.endsWith('\\') ? path : `${path}\\`;
+    const names = new Set<string>();
+    for (const d of dirs) {
+      if (!d.startsWith(prefix)) continue;
+      const rest = d.slice(prefix.length);
+      if (rest && !rest.includes('\\')) names.add(rest);
+    }
+    for (const f of files.keys()) {
+      if (!f.startsWith(prefix)) continue;
+      const rest = f.slice(prefix.length);
+      if (rest && !rest.includes('\\')) names.add(rest);
+    }
+    return [...names].map((name) => {
+      const full = `${prefix}${name}`;
+      return { name, isDirectory: dirs.has(full), isFile: files.has(full) };
+    });
+  });
+
+  return {
+    files,
+    dirs,
+    readDir,
+    exists: vi.fn(async (path: string) => files.has(path) || dirs.has(path)),
+    readTextFile: vi.fn(async (path: string) => {
+      const text = files.get(path);
+      if (text === undefined) throw new Error(`no such file: ${path}`);
+      return text;
+    }),
+    readFile: vi.fn(async () => new Uint8Array()),
+    stat: vi.fn(async () => ({ mtime: 0 })),
+    reset() {
+      files.clear();
+      dirs.clear();
+      for (const fn of [readDir, this.exists, this.readTextFile, this.readFile, this.stat]) {
+        fn.mockClear();
+      }
+    },
+  };
+});
+
+vi.mock('@tauri-apps/plugin-fs', () => ({
+  readDir: mockFs.readDir,
+  exists: mockFs.exists,
+  readTextFile: mockFs.readTextFile,
+  readFile: mockFs.readFile,
+  stat: mockFs.stat,
+}));
+
 import {
   pickStartupFile,
   declaredEntryFile,
@@ -27,6 +86,10 @@ import {
   profileFileName,
   isSafeModRelativePath,
   saveModFile,
+  listModEntries,
+  officialModLocation,
+  planOfficialMove,
+  isIgnoredModFolder,
   type NewModSpec,
 } from '../modFolder';
 
@@ -639,5 +702,101 @@ describe('isSafeModRelativePath', () => {
     } finally {
       g.window = previous;
     }
+  });
+});
+
+describe('the official wf-lib shelf', () => {
+  it('recognises an immediate child pack on Windows and both slash styles', () => {
+    expect(officialModLocation('C:\\Worms\\WormForge\\Mods\\wf-lib\\px')).toEqual({
+      fromRoot: 'C:\\Worms\\WormForge\\Mods\\wf-lib\\px',
+      libraryRoot: 'C:\\Worms\\WormForge\\Mods\\wf-lib',
+      modsRoot: 'C:\\Worms\\WormForge\\Mods',
+      folderName: 'px',
+      preferredRoot: 'C:\\Worms\\WormForge\\Mods\\px',
+    });
+
+    expect(officialModLocation('/home/me/WormForge/Mods/wf-lib/utilities')).toMatchObject({
+      preferredRoot: '/home/me/WormForge/Mods/utilities',
+      folderName: 'utilities',
+    });
+  });
+
+  it('is case-insensitive and tolerates a trailing separator', () => {
+    expect(officialModLocation('D:/Mods/WF-LIB/WormCraft/')).toMatchObject({
+      folderName: 'WormCraft',
+      preferredRoot: 'D:/Mods/WormCraft',
+    });
+  });
+
+  it('does not call the shelf itself, a deeper path, or an ordinary mod official', () => {
+    expect(officialModLocation('C:\\Mods\\wf-lib')).toBeNull();
+    expect(officialModLocation('C:\\Mods\\wf-lib\\px\\lib')).toBeNull();
+    expect(officialModLocation('C:\\Mods\\px')).toBeNull();
+    expect(officialModLocation('')).toBeNull();
+  });
+
+  it('mirrors the engine rule that _ and . folders are not packs', () => {
+    expect(isIgnoredModFolder('_off')).toBe(true);
+    expect(isIgnoredModFolder('.git')).toBe(true);
+    expect(isIgnoredModFolder('px')).toBe(false);
+  });
+
+  it('lists the shelf children as official packs without hiding normal mods', async () => {
+    mockFs.reset();
+    const root = 'C:\\Mods';
+    const dirs = [
+      root,
+      `${root}\\wf-lib`,
+      `${root}\\wf-lib\\px`,
+      `${root}\\wf-lib\\_off`,
+      `${root}\\my_mod`,
+      `${root}\\_off`,
+      `${root}\\.hidden`,
+    ];
+    for (const d of dirs) mockFs.dirs.add(d);
+    mockFs.files.set(`${root}\\wf-lib\\px\\mod.toml`, 'id = "px"\n');
+    mockFs.files.set(`${root}\\my_mod\\mod.toml`, 'id = "my_mod"\n');
+
+    const g = globalThis as { window?: unknown };
+    const previous = g.window;
+    g.window = { __TAURI_INTERNALS__: {} };
+    try {
+      const entries = await listModEntries(root);
+      expect(entries?.map((e) => `${e.official ? 'official' : 'local'}:${e.folderName}`).sort()).toEqual([
+        'local:my_mod',
+        'official:px',
+      ]);
+      expect(entries?.find((e) => e.folderName === 'px')).toMatchObject({
+        official: true,
+        id: 'px',
+        path: `${root}\\wf-lib\\px`,
+      });
+    } finally {
+      g.window = previous;
+    }
+  });
+
+  it('plans the plain Mods/<name> destination when it is free', async () => {
+    mockFs.reset();
+    const from = 'C:\\Mods\\wf-lib\\px';
+    mockFs.dirs.add(from);
+    await expect(planOfficialMove(from)).resolves.toMatchObject({
+      fromRoot: from,
+      targetRoot: 'C:\\Mods\\px',
+      renamed: false,
+    });
+  });
+
+  it('adds an _edited suffix instead of overwriting an existing copy', async () => {
+    mockFs.reset();
+    const from = 'C:\\Mods\\wf-lib\\px';
+    mockFs.dirs.add(from);
+    // Both the plain name and the first fallback are already occupied.
+    mockFs.dirs.add('C:\\Mods\\px');
+    mockFs.dirs.add('C:\\Mods\\px_edited');
+    await expect(planOfficialMove(from)).resolves.toMatchObject({
+      targetRoot: 'C:\\Mods\\px_edited_2',
+      renamed: true,
+    });
   });
 });

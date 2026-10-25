@@ -115,16 +115,16 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.mines',
     type: 'table',
-    description: 'Landmine entity management subsystem for queries and iteration.',
+    description: 'Landmine entity management subsystem for spawning, queries, and iteration.',
     scope: 'global',
-    example: 'local mines = wa.mines.all()',
+    example: 'local mine = wa.mines.spawn({ owner = worm, x = worm.x, y = worm.y })',
   },
   {
     name: 'wa.arrows',
     type: 'table',
-    description: 'Arrow entity management subsystem for queries and iteration.',
+    description: 'Arrow entity management subsystem for spawning, queries, and iteration.',
     scope: 'global',
-    example: 'local arrows = wa.arrows.all()',
+    example: 'local arrow = wa.arrows.spawn({ owner = worm, x = worm.x, y = worm.y })',
   },
   {
     name: 'wa.missiles',
@@ -136,9 +136,16 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.oil',
     type: 'table',
-    description: 'Oil drum and barrel entity subsystem for queries and iteration.',
+    description: 'Oil drum and barrel entity subsystem for spawning, queries, and iteration.',
     scope: 'global',
-    example: 'local drums = wa.oil.all()',
+    example: 'local drum = wa.oil.spawn({ x = worm.x, y = worm.y })',
+  },
+  {
+    name: 'wa.magnetism',
+    type: 'table',
+    description: 'Match-wide magnetic fields shared by every pack, plus a sample query for custom movement.',
+    scope: 'global',
+    example: 'local field = wa.magnetism.field({ source = magnet, range = 170 })',
   },
   {
     name: 'wa.graves',
@@ -318,7 +325,7 @@ export const BUILTIN_ENUMERATIONS: EnumDef[] = [
   {
     name: 'WormEntity.state_label',
     description:
-      'What `worm.state_label` returns: the engine\'s 28-name DEBUG label table, generated from `label()` in crates/game/src/worm_state.rs. It is a SUPERSET of neither `worm.state` (READABLE_WORM_STATES, 12 names) nor `worm:set_state(...)` (SETTABLE_WORM_STATES, 6 names). Do not use it to validate a set_state argument -- only the settable list may be enforced. Derived from WORM_STATES so it cannot drift from the engine table.',
+      'What `worm.state_label` returns: the engine\'s 28-name DEBUG label table, generated from `label()` in crates/game/src/worm_state.rs. It is a SUPERSET of neither `worm.state` (READABLE_WORM_STATES, 18 names) nor `worm:set_state(...)` (SETTABLE_WORM_STATES, 6 names). Do not use it to validate a set_state argument -- only the settable list may be enforced. Derived from WORM_STATES so it cannot drift from the engine table.',
     values: WORM_STATES.map((s) => ({
       name: s.name,
       value: s.name,
@@ -407,8 +414,17 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     name: 'wa.world.retreat',
     parameters: [],
     returnType: 'int',
-    description: 'Returns retreat timer countdown in milliseconds (0 before retreat starts).',
+    description: 'Returns retreat timer countdown in milliseconds (0 before retreat starts). Pairs with wa.world.set_retreat().',
     example: 'local ms = wa.world.retreat()',
+  },
+  {
+    name: 'wa.world.set_retreat',
+    parameters: [
+      { name: 'ms', type: 'int', description: 'Retreat time left in whole milliseconds (0..3600000); 0 ends the retreat' },
+    ],
+    returnType: 'bool',
+    description: 'Changes a running retreat and returns whether it applied (simulation callback only). Outside a retreat, or after one has ended, it is a no-op returning false.',
+    example: 'if wa.world.set_retreat(5000) then wa.log("retreat extended") end',
   },
   {
     // From the developer's own verb list (wormforge-verbs.md, fork main
@@ -472,6 +488,26 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     returnType: 'table | nil',
     description: 'Raycasts along beam path against terrain and electrical targets. Returns `{ x, y, obj }` on hit or nil.',
     example: 'local hit = wa.world.electrical_trace(x0, y0, x1, y1)',
+  },
+  {
+    name: 'wa.magnetism.field',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ source = actor, [range = 170], [strength = 14000], [max_force = 12], [softening = 5], [polarity = "repel"], [enabled = true], [native = true] } -- source is required and must be a live Lua actor; range in px; at most 256 fields per match' },
+    ],
+    returnType: 'MagneticField',
+    description: "Registers a match-wide magnetic field on an actor; fields sum across packs from one simulation-step snapshot and disappear with their source. Actors opt in with magnetic = 1. Simulation callbacks only.",
+    example: 'local field = wa.magnetism.field({ source = magnet_actor, range = 170, polarity = "repel" })',
+  },
+  {
+    name: 'wa.magnetism.sample',
+    parameters: [
+      { name: 'x', type: 'number', description: 'Sample X in px' },
+      { name: 'y', type: 'number', description: 'Sample Y in px' },
+      { name: 'actor', type: 'LuaActor', optional: true, description: 'The actor whose movement the sample drives; excluded from its own fields and usable only in a simulation callback' },
+    ],
+    returnType: 'number, number, bool, bool',
+    description: "The fields' force at a point, for custom movement; with an actor, as that actor feels it. Point-only sampling is read-only, so HUD/draw may call it; tracked sampling with an actor needs a simulation callback. The four results are fx, fy, inside and waking.",
+    example: 'local fx, fy, inside, waking = wa.magnetism.sample(x, y, actor)',
   },
   {
     name: 'wa.land.solid',
@@ -545,6 +581,15 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'for _, mine in ipairs(wa.mines.all()) do\n  mine:arm(1000)\nend',
   },
   {
+    name: 'wa.mines.spawn',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ owner = <worm|actor>, x = number, y = number, [vx], [vy], [fuse], [arm], [damage], [radius], [dud_proof] } -- x/y in px and required; speeds in px/frame; fuse/arm in ms; radius in px. Defaults: fuse 400, arm 0, damage 50, radius 48, dud_proof false' },
+    ],
+    returnType: 'WorldHandle',
+    description: "Builds one of WA's mines, as Project X's new CMine: WA flies, arms, triggers and explodes it as its own. A worm owner's team lays it; an actor's mine is the map's. Simulation callbacks only.",
+    example: 'local mine = wa.mines.spawn({ owner = worm, x = worm.x, y = worm.y, fuse = 400, damage = 50 })',
+  },
+  {
     name: 'wa.missiles.all',
     parameters: [{ name: 'from', type: 'entity', optional: true, description: 'Optional search origin' }],
     returnType: 'table',
@@ -559,6 +604,15 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'for _, drum in ipairs(wa.oil.all()) do\n  drum:hit(50, 0, 0)\nend',
   },
   {
+    name: 'wa.oil.spawn',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ x = number, y = number, snap = true } -- x/y in px and required. snap drops it until it lands; snap = false starts it where it is put' },
+    ],
+    returnType: 'WorldHandle',
+    description: "Builds one of WA's oil drums, as the level's hazardous objects are made. Simulation callbacks only.",
+    example: 'local drum = wa.oil.spawn({ x = worm.x, y = worm.y, snap = true })',
+  },
+  {
     name: 'wa.graves.all',
     parameters: [{ name: 'from', type: 'entity', optional: true, description: 'Optional search origin' }],
     returnType: 'table',
@@ -568,7 +622,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.actors.spawn',
     parameters: [
-      { name: 'spec', type: 'table', description: 'Spawn configuration: sprite, x, y, vx, vy, gravity, loop, collide, collide_terrain, collide_worms, damage_terrain, damage_worms, persist, drown, mask, mask_worms, mask_land, mask_weapons, mask_actors, cursor, origin = "center"|"bottom", from = "sky"|"cursor"|"owner", owner, explode, on_explode, cluster, screen, on' }
+      { name: 'spec', type: 'table', description: 'Spawn configuration: sprite, x, y, vx, vy, gravity, loop, collide, collide_terrain, collide_worms, damage_terrain, damage_worms, persist, drown, mask, mask_worms, mask_land, mask_weapons, mask_actors, cursor, origin = "center"|"bottom", from = "sky"|"cursor"|"owner", owner, magnetic, explode, on_explode, cluster, screen, on' }
     ],
     returnType: 'ActorHandle',
     description: 'Spawns a native LuaActor into the world. Returns the spawned ActorHandle.',
@@ -847,6 +901,13 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'wa.on.draw(function()\n  wa.draw.quad({ points = { ... }, blend = "add" })\nend)',
   },
   {
+    name: 'wa.on.oil_explode',
+    parameters: [{ name: 'callback', type: 'function', description: 'function(ev) - ev.drum is the WorldHandle, ev.x and ev.y are px, ev.team is the team whose shot set it off (0 none), and ev:replace() stands in for WA\'s blast, fires and sound' }],
+    returnType: 'void',
+    description: "When WA is about to blow up an oil drum, in the simulation. ev:replace() stands in for WA's blast, fires and sound, as Project X's COilDrum::Explosion; WA frees the drum either way.",
+    example: 'wa.on.oil_explode(function(ev)\n  if ev.team == 3 then ev:replace() end\nend)',
+  },
+  {
     name: 'wa.on.contact',
     parameters: [{ name: 'callback', type: 'function', description: 'function(worm, other, c) - c.vx and c.vy are px/frame pre-impact speeds' }],
     returnType: 'void',
@@ -950,6 +1011,15 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     returnType: 'table',
     description: 'Returns all active arrow objects (WorldHandle).',
     example: 'for _, ar in ipairs(wa.arrows.all()) do ... end',
+  },
+  {
+    name: 'wa.arrows.spawn',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ owner = <worm|actor>, x = number, y = number, [vx], [vy], [damage], [gravity_pct] } -- x/y in px and required; speeds in px/frame; damage defaults to 10; gravity_pct defaults to 100' },
+    ],
+    returnType: 'WorldHandle | nil',
+    description: "Builds one of WA's arrows, as Project X's new CArrow; nil when WA makes none (its object pool full, or inside land). Simulation callbacks only.",
+    example: 'local arrow = wa.arrows.spawn({ owner = worm, x = worm.x, y = worm.y, vx = 4, vy = -3 })',
   },
 
   // ---- Lua API 4 additions (WormForge 0.9.1/0.9.11, Lua/verbs 9.11 api 4.0.txt) --
@@ -1134,6 +1204,8 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'sound', kind: 'method', parameters: [{ name: 'slot', type: 'int | string', description: 'WAV relative path or stock sound ID' }, { name: 'flags', type: 'int', optional: true, description: 'Flags (default 8)' }], returnType: 'void', description: 'Plays spatial sound effect.', example: 'a:sound("sounds/shot.wav")' },
       { name: 'warp', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ x = number, y = number, vx = number, vy = number, facing = -1|1 } -- px positions, px/frame speeds; x/y required, speeds/facing optional' }], returnType: 'void', description: 'Atomically moves a live actor and wakes it (sim callback only). Omitted speeds retain momentum; facing is supported.', example: 'a:warp{ x = 100, y = 200 }' },
       { name: 'fits', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'Target X in px' }, { name: 'y', type: 'number', description: 'Target Y in px' }, { name: 'mode', type: 'string', optional: true, description: '"terrain" to test land only, else the actor\'s own collision mask' }], returnType: 'bool', description: "WA's collision test of the actor's shape at a place. A read, so safe outside a simulation callback.", example: 'if a:fits(x, y, "terrain") then a:warp{ x = x, y = y } end' },
+      // Magnetism. A finite multiplier; 0 opts out.
+      { name: 'magnetic', kind: 'variable', returnType: 'number', description: 'Automatic magnetic response multiplier, 0..1000 (default 0; simulation callback only). Fields are summed in creation order and applied before movement.', example: 'a.magnetic = 0.25' },
       // Fog of war (0.9.11). Presentation only, so it is safe in any callback.
       { name: 'light', kind: 'variable', returnType: 'string | false | table', description: "The actor's fog-of-war light. A visible world actor has its profile's projectile light by default; invisible (sprite = false), cursor and screen-space actors have none until given one. A preset string (worm, animal, projectile, crate) uses that kind's profile settings; false removes the light; a table replaces the whole spec, and omitted geometry and shadow_cast come from its kind. mode is light (default), dark (shades what its cast sees) or shadow (shades what is hidden from it within reach); darkness wins over light. cone.toward is velocity (default), angle (the a:gfx rotation), facing or degrees. seen_by is owner (default: the owning worm's side, per view_ownership; public without an owning worm) or everyone. discover = true requires seen_by = owner; dark and shadow never record terrain memory. strength (0..255) is for dark and shadow only. Presentation only: any callback may set it. Reading returns the spec table, or false.", example: 'a.light = "projectile"\na.light = { kind = "dark", circle = { radius = 120 } }' },
     ],
@@ -1156,14 +1228,14 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'wind', kind: 'variable', returnType: 'number', description: 'Wind scale factor (1.0 = normal, writable)' },
       { name: 'collision_mask', kind: 'variable', returnType: 'int', description: 'Collision layer bitmask (bit 22 is landscape/water, writable)' },
       { name: 'keys', kind: 'property', returnType: 'table', description: 'Worm\'s own movement requests: { up, down, left, right }' },
-      // The twelve names `worm.state` can actually return, from
+      // The eighteen names `worm.state` can actually return, from
       // `worm_state_name()` in crates/lua-host/src/actor.rs. Anything else reads
       // as nil -- the lua-host does not guess. The old list here was partly
       // invented: it missed firing/fired/tumbling and advertised "sinking",
       // which is a set_state alias and never a value read back.
-      { name: 'state', kind: 'property', returnType: 'string | nil', description: 'State name: "standing" | "firing" | "fired" | "prefiring" | "punching" | "drilling" | "teleporting" | "jetpacking" | "parachuting" | "sliding" | "bungee" | "tumbling" | nil' },
+      { name: 'state', kind: 'property', returnType: 'string | nil', description: 'State name: "standing" | "firing" | "fired" | "prefiring" | "punching" | "drilling" | "kamikaze" | "teleporting" | "jetpacking" | "parachuting" | "sliding" | "bungee" | "tumbling" | "frozen" | "jump_prepare" | "jumping" | "blasted" | "hit" | nil' },
       { name: 'state_id', kind: 'property', returnType: 'int', description: 'Raw u32 state number' },
-      { name: 'state_label', kind: 'property', returnType: 'string | nil', description: 'Debug label for the raw state, including states worm.state does not name (e.g. "walking", "getting_up", "hit"). See data/wormStates.ts.' },
+      { name: 'state_label', kind: 'property', returnType: 'string | nil', description: 'Debug label for the raw state, including states worm.state does not name (e.g. "walking", "getting_up"). See data/wormStates.ts.' },
       { name: 'state_address', kind: 'property', returnType: 'int', description: 'Pointer to worm state field in memory' },
       { name: 'team', kind: 'property', returnType: 'int', description: 'Team number (1 to 6)' },
       { name: 'slot', kind: 'property', returnType: 'int', description: 'Selected weapon slot index (1 to 70)' },
@@ -1218,6 +1290,9 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'alliance', kind: 'property', returnType: 'int', description: 'Visible coalition colour of the owning team, as worm.alliance; nil without a team (read only)' },
       { name: 'worm_id', kind: 'property', returnType: 'int', description: 'For gravestones: stable worm ID of the deceased worm' },
       { name: 'fuse', kind: 'property', returnType: 'int', description: 'For mines: remaining fuse countdown in milliseconds' },
+      { name: 'damage', kind: 'property', returnType: 'int | nil', description: "For oil drums: WA's damage count; nil for anything else (read only)." },
+      { name: 'max_damage', kind: 'property', returnType: 'int | nil', description: "For oil drums: the damage at which the drum goes off (WA's 50); nil for anything else (read only)." },
+      { name: 'visible', kind: 'variable', returnType: 'bool | nil', description: 'For oil drums: whether WA draws it. false lets a pack draw its own drum; only the draw changes, not the drum itself. nil for anything else; writable from any callback.' },
       { name: 'x', kind: 'variable', returnType: 'number', description: 'Position X in px' },
       { name: 'y', kind: 'variable', returnType: 'number', description: 'Position Y in px' },
       { name: 'vx', kind: 'variable', returnType: 'number', description: 'Horizontal velocity in px/frame' },
@@ -1241,6 +1316,24 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'move', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'Target X in px' }, { name: 'y', type: 'number', description: 'Target Y in px' }], returnType: 'void', description: 'Moves a free light.', example: 'light:move(120, 210)' },
       { name: 'set', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ circle, mode, fade, ... }' }], returnType: 'void', description: "Changes a free light's settings; omitted keys keep their values. A new fade restarts its fade.", example: 'light:set({ mode = "dark", fade = 500 })' },
       { name: 'remove', kind: 'method', parameters: [], returnType: 'void', description: 'Removes a free light.', example: 'light:remove()' },
+    ],
+  },
+  {
+    // Match-wide magnetic field handle (0.9.11). The engine calls it
+    // FieldHandle; the editor class is named for the API that returns it.
+    name: 'MagneticField',
+    description: 'A match-wide magnetic field registered by wa.magnetism.field.',
+    syntaxExample: 'local field = wa.magnetism.field({ source = magnet })\nfield.polarity = "attract"\nfield:remove()',
+    members: [
+      { name: 'range', kind: 'variable', returnType: 'number', description: 'Range in px, 0..32767.' },
+      { name: 'strength', kind: 'variable', returnType: 'number', description: 'Inverse-square falloff coefficient, 0..1e12.' },
+      { name: 'max_force', kind: 'variable', returnType: 'number', description: 'Maximum contribution before direction attenuation, 0..1000 px/frame per step.' },
+      { name: 'softening', kind: 'variable', returnType: 'number', description: 'Positive central softening distance in px, 1/65536..32767.' },
+      { name: 'polarity', kind: 'variable', returnType: 'string', description: '"attract" or "repel".' },
+      { name: 'enabled', kind: 'variable', returnType: 'bool', description: 'Whether this field contributes. Reads false after removal.' },
+      { name: 'native', kind: 'variable', returnType: 'bool', description: 'Whether the field also affects WA\'s native mines and missiles.' },
+      { name: 'remove', kind: 'method', parameters: [], returnType: 'bool', description: 'Removes the field: true once, then false (simulation callback only).' },
+      { name: 'contains', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'X in px' }, { name: 'y', type: 'number', description: 'Y in px' }], returnType: 'bool', description: "Whether a point is inside this field's current snapshot." },
     ],
   },
   {

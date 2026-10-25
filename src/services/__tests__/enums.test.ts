@@ -26,9 +26,9 @@ describe('builtin enumerations', () => {
   });
 
   it('does not confuse state_label with readable/settable states', () => {
-    // worm.state reads back 12 names; set_state accepts 6. state_label is the
+    // worm.state reads back 18 names; set_state accepts 6. state_label is the
     // 28-entry debug table — a superset of neither.
-    expect(READABLE_WORM_STATES.length).toBe(12);
+    expect(READABLE_WORM_STATES.length).toBe(18);
     expect(SETTABLE_WORM_STATES.length).toBe(6);
     expect(WORM_STATES.length).toBe(28);
   });
