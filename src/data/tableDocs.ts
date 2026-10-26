@@ -262,7 +262,15 @@ function dataGroups(): TableField[] {
       ...fires.children,
     ];
   }
-  return groups;
+  return [
+    {
+      name: 'ends_invisibility',
+      kind: 'bool',
+      description:
+        "Whether using it ends Invisibility: the team's, and the firing worm's own worm.invisibility. Left out, WA's answer: its record creates a projectile (attacking weapons end it; the rope, Girder, Teleport, Prod, Freeze, Jet Pack and the utilities don't).",
+    },
+    ...groups,
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +294,7 @@ const WEAPON_CLAIM_FIELDS: TableField[] = [
   { name: 'icon', kind: 'sprite', description: 'Alias of `panel_icon`.' },
   { name: 'panel_icons', kind: 'table', type: 'stock icon names', description: 'Extra panel icons for the variant slots.' },
   { name: 'is_weapon', kind: 'bool', description: 'Default true. False makes it a non-weapon claim.' },
+  { name: 'ends_invisibility', kind: 'bool', description: "Whether using it ends Invisibility: the team's, and the firing worm's own worm.invisibility. Left out, WA's answer: its record creates a projectile (attacking weapons end it; the rope, Girder, Teleport, Prod, Freeze, Jet Pack and the utilities don't)." },
   { name: 'eat_fire', kind: 'bool', description: 'Default false. The claim consumes the fire key itself.' },
   { name: 'click_finish', kind: 'bool', description: 'Default true. A click finishes the shot immediately.' },
   { name: 'fire_repeat', kind: 'int', description: '1 to 20 shots at once. Default 1.' },
@@ -594,6 +603,53 @@ const ASSETS_LOAD: TableDoc = {
   ],
 };
 
+const HUD_WINDOW: TableDoc = {
+  tableDoc: true,
+  id: 'wa.hud.window',
+  title: 'HUD window',
+  summary:
+    "A text window in WA's own fonts and box style, sized to its text and open until closed or the match ends.",
+  usedBy: ['wa.hud.window'],
+  source: 'WormForge 0.9.11 release verb list (data/verbs.json)',
+  note:
+    'At most 32 open. The window fades out while the weapon panel is open unless over_panel = true.',
+  example: `local window = wa.hud.window({
+  text = "Turn 3",
+  x = 10,
+  y = 10,
+  align = "top_left",
+  font = "standard",
+  color = "yellow",
+  max_width = 240,
+})
+window:set({ text = "Turn 4" })
+window:close()`,
+  fields: [
+    { name: 'text', kind: 'string', description: 'The window text; takes \\n line breaks. Use text or lines.' },
+    { name: 'lines', kind: 'table', type: '{ string | { text, color } }[]', description: 'One entry per line; a line table may set its own color. Use text or lines.' },
+    { name: 'x', kind: 'number', type: 'px', description: "Offset from the box and screen point named by align. Default 0." },
+    { name: 'y', kind: 'number', type: 'px', description: "Offset from the box and screen point named by align. Default 0." },
+    {
+      name: 'align',
+      kind: 'enum',
+      type: 'screen anchor',
+      values: [
+        ['top_left', 'top_left'], ['top_center', 'top_center'], ['top_right', 'top_right'],
+        ['center_left', 'center_left'], ['center', 'center'], ['center_right', 'center_right'],
+        ['bottom_left', 'bottom_left'], ['bottom_center', 'bottom_center'], ['bottom_right', 'bottom_right'],
+      ],
+      description: "The box's and the screen's point that x, y offset it from.",
+    },
+    { name: 'font', kind: 'enum', type: 'font', values: [['small', 'small'], ['standard', 'standard'], ['medium', 'medium']], description: "WA font: small, standard (the round timer's) or medium." },
+    { name: 'color', kind: 'enum', type: 'colour', values: [['white', 'white'], ['grey', 'grey'], ['red', 'red'], ['blue', 'blue'], ['green', 'green'], ['yellow', 'yellow'], ['purple', 'purple'], ['cyan', 'cyan']], description: 'Text colour.' },
+    { name: 'border', kind: 'enum', type: 'colour | none', values: [['white', 'white'], ['grey', 'grey'], ['red', 'red'], ['blue', 'blue'], ['green', 'green'], ['yellow', 'yellow'], ['purple', 'purple'], ['cyan', 'cyan'], ['none', 'none']], description: 'Box border colour, or none.' },
+    { name: 'max_width', kind: 'int', type: 'px', description: 'Wrap the text at spaces at this width.' },
+    { name: 'to', kind: 'enum', type: 'audience', values: [['all', 'all'], ['active', 'active'], ['coalition', 'coalition']], description: 'Who sees it: everyone, the active player, or the active coalition.' },
+    { name: 'alliance', kind: 'int', type: '0..5', description: 'The coalition when to = "coalition"; 0 red .. 5 cyan.' },
+    { name: 'over_panel', kind: 'bool', description: 'Keep drawing while the weapon panel is open.' },
+  ],
+};
+
 /** Every documented table shape, in the order the tree shows them. */
 export const TABLE_DOCS: TableDoc[] = [
   LAUNCH,
@@ -602,6 +658,7 @@ export const TABLE_DOCS: TableDoc[] = [
   SPAWN,
   LIGHT_SPEC,
   FOG_SETTINGS,
+  HUD_WINDOW,
   FIRE_BULLET,
   ASSETS_LOAD,
 ];

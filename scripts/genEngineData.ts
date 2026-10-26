@@ -3,7 +3,7 @@
 //
 // WHY A GENERATOR
 // B2 moves the semantic checks into Rust, but the reference data -- ~900 wa.*
-// function names, five handle classes and their members, the receiver registry --
+// function names, the handle classes and their members, the receiver registry --
 // is authored in TypeScript and must stay there: it is documentation the user
 // edits, and the front end still needs it for autocomplete.
 //
@@ -53,7 +53,7 @@ for (const f of BUILTIN_FUNCTIONS) lines.push(`    ${rustStr(f.name)},`);
 lines.push('];');
 lines.push('');
 
-// Handle classes: only the five the registry resolves to, and only their METHOD
+// Handle classes: only those the registry resolves to, and only their METHOD
 // members -- the checker warns about unknown methods, so properties are irrelevant.
 const HANDLE_CLASSES = new Set([
   'WormEntity',
@@ -63,6 +63,7 @@ const HANDLE_CLASSES = new Set([
   'InventoryStore',
   'LightHandle',
   'MagneticField',
+  'WindowHandle',
 ]);
 
 lines.push('/// (class name, method names) for the handle classes the checker resolves.');

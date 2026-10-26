@@ -80,9 +80,9 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.hud',
     type: 'table',
-    description: 'HUD text line drawing subsystem for presentation overlays.',
+    description: 'HUD text lines, top-centre banners, and WA-styled text windows for presentation overlays.',
     scope: 'global',
-    example: 'wa.hud.line("WormForge Active", 14, 20)',
+    example: 'wa.hud.message_top("WormForge Active", { to = "all" })',
   },
   {
     name: 'wa.fire',
@@ -246,6 +246,20 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
     example: 'if msg == wa.msg.START_TURN then ... end',
   },
   {
+    name: 'wa.msg.TURN_STARTED',
+    type: 'int (56)',
+    description: 'A real team-turn start after the worm gains control (0x38); START_TURN also runs when Tab selects another worm.',
+    scope: 'global',
+    example: 'if msg == wa.msg.TURN_STARTED then ... end',
+  },
+  {
+    name: 'wa.msg.WEAPON_RELEASED',
+    type: 'int (73)',
+    description: "WA's native launch notification (0x49), before an ordinary shot's final fire; not an after-fire hook for every weapon.",
+    scope: 'global',
+    example: 'if msg == wa.msg.WEAPON_RELEASED then ... end',
+  },
+  {
     name: 'wa.msg.NONLETHAL',
     type: 'int (59)',
     description: 'Damage that floors at 1 HP (0x3B).',
@@ -286,7 +300,9 @@ export const BUILTIN_ENUMERATIONS: EnumDef[] = [
       { name: 'JUMP_UP', value: 37, description: 'Backflip jump (Backspace key / 0x25)' },
       { name: 'FIRE_WEAPON', value: 38, description: 'Space down / charge begin (0x26)' },
       { name: 'RELEASE_WEAPON', value: 39, description: 'Space up / weapon release (0x27)' },
-      { name: 'START_TURN', value: 52, description: 'Turn start message (0x34)' },
+      { name: 'START_TURN', value: 52, description: 'Turn start message (0x34); also runs when Tab selects another worm.' },
+      { name: 'TURN_STARTED', value: 56, description: 'A real team-turn start after the worm gains control (0x38).' },
+      { name: 'WEAPON_RELEASED', value: 73, description: "WA's native launch notification (0x49), before an ordinary shot's final fire." },
       { name: 'NONLETHAL', value: 59, description: 'Damage that floors at 1 HP (0x3B)' },
       { name: 'POISON', value: 62, description: 'Poison damage tick (0x3E)' },
       { name: 'HIT', value: 75, description: 'Special impact direct damage (0x4B)' },
@@ -325,7 +341,7 @@ export const BUILTIN_ENUMERATIONS: EnumDef[] = [
   {
     name: 'WormEntity.state_label',
     description:
-      'What `worm.state_label` returns: the engine\'s 28-name DEBUG label table, generated from `label()` in crates/game/src/worm_state.rs. It is a SUPERSET of neither `worm.state` (READABLE_WORM_STATES, 18 names) nor `worm:set_state(...)` (SETTABLE_WORM_STATES, 6 names). Do not use it to validate a set_state argument -- only the settable list may be enforced. Derived from WORM_STATES so it cannot drift from the engine table.',
+      'What `worm.state_label` returns: the engine\'s 28-name DEBUG label table, generated from `label()` in crates/game/src/worm_state.rs. It is a SUPERSET of neither `worm.state` (READABLE_WORM_STATES, 26 names) nor `worm:set_state(...)` (SETTABLE_WORM_STATES, 6 names). Do not use it to validate a set_state argument -- only the settable list may be enforced. Derived from WORM_STATES so it cannot drift from the engine table.',
     values: WORM_STATES.map((s) => ({
       name: s.name,
       value: s.name,
@@ -787,6 +803,25 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'wa.hud.line("Score: " .. score, 14, 30)',
   },
   {
+    name: 'wa.hud.message_top',
+    parameters: [
+      { name: 'text', type: 'string', description: 'One line of at most 127 bytes' },
+      { name: 'opts', type: 'table', optional: true, description: '{ to = "all" | "active" | "coalition", alliance = int }' },
+    ],
+    returnType: 'void',
+    description: 'WA\'s top-centre banner, as selecting a weapon shows it: one line of at most 127 bytes. to is "all" (default), "active" (the player whose turn it is) or "coalition" (the active team\'s, or alliance 0-5). Call from simulation events.',
+    example: 'wa.hud.message_top("WormForge", { to = "all" })',
+  },
+  {
+    name: 'wa.hud.window',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ text | lines, x, y, align, font, color, border, max_width, to, alliance, over_panel }' },
+    ],
+    returnType: 'WindowHandle',
+    description: 'A text window in WA\'s own fonts and box style, sized to its text, open until closed or the match ends; returns a handle. text takes \\n line breaks; lines = { "a", { "b", color = "yellow" } } colours lines. font: small, standard (the round timer\'s) or medium. color and border: white, grey, red, blue, green, yellow, purple, cyan; border "none". max_width wraps at spaces. align names the box\'s and the screen\'s point x, y offset it from (top_left ... bottom_right, center). to / alliance as message_top, taken when given. Fades out while the weapon panel is open unless over_panel = true. Drawn over WA\'s HUD on the GPU layer (Direct3D 9 shader). At most 32 open.',
+    example: 'local window = wa.hud.window({ text = "Turn 3", x = 10, y = 10, align = "top_left" })',
+  },
+  {
     name: 'wa.fire.spawn',
     parameters: [
       { name: 'spec', type: 'table', description: '{ owner = <worm|actor>, x = number, y = number, [vx], [vy], [count], [duration], [up_power], [damage], [damage_scale], [knock_scale], [tint = 0xRRGGBB] } -- x/y in px and required; duration in ms; up_power a native integer; damage_scale/knock_scale factors; the rest default to WA' }
@@ -1081,6 +1116,16 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     // anyway: the namespace check only warns, so listing it costs a missed
     // finding, while NOT listing it would flag working code -- and a false
     // positive on valid code is the worse error.
+    name: 'wa.weapons.hold_sheet',
+    parameters: [
+      { name: 'weapon', type: 'string', description: 'Weapon id' },
+      { name: 'n', type: 'int', description: "0 = the hold's sheet, 1 and on = hold.sheets[n]" },
+    ],
+    returnType: 'void',
+    description: "Draws held sheet n over the worm's aim pose: 0 the hold's sheet, 1 and on its hold.sheets (same frames and placement). Draw only, per weapon, so any callback may call it; as Project X swaps a WormSprite's sprite (the Gravity Gun's claws opening).",
+    example: 'wa.weapons.hold_sheet("px.gravity_gun", 1)',
+  },
+  {
     name: 'wa.weapons.set_selectable',
     parameters: [
       { name: 'spec', type: 'table', description: '{ weapon = string, team = int (1..6), selectable = bool }' },
@@ -1233,7 +1278,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       // as nil -- the lua-host does not guess. The old list here was partly
       // invented: it missed firing/fired/tumbling and advertised "sinking",
       // which is a set_state alias and never a value read back.
-      { name: 'state', kind: 'property', returnType: 'string | nil', description: 'State name: "standing" | "firing" | "fired" | "prefiring" | "punching" | "drilling" | "kamikaze" | "teleporting" | "jetpacking" | "parachuting" | "sliding" | "bungee" | "tumbling" | "frozen" | "jump_prepare" | "jumping" | "blasted" | "hit" | nil' },
+      { name: 'state', kind: 'property', returnType: 'string | nil', description: 'State name: "standing" | "walking" | "ready" | "charging" | "prefiring" | "firing" | "fired" | "punching" | "drilling" | "teleporting" | "jetpacking" | "parachuting" | "sliding" | "roping" | "bungee" | "tumbling" | "frozen" | "kamikaze" | "jump_prepare" | "jumping" | "jump_falling" | "blasted" | "hit" | "dying" | "drowning" | "dead" | nil' },
       { name: 'state_id', kind: 'property', returnType: 'int', description: 'Raw u32 state number' },
       { name: 'state_label', kind: 'property', returnType: 'string | nil', description: 'Debug label for the raw state, including states worm.state does not name (e.g. "walking", "getting_up"). See data/wormStates.ts.' },
       { name: 'state_address', kind: 'property', returnType: 'int', description: 'Pointer to worm state field in memory' },
@@ -1246,6 +1291,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'kind', kind: 'property', returnType: 'string', description: 'Always "worm"' },
       { name: 'visible', kind: 'variable', returnType: 'bool', description: 'Overall worm visibility (read/write)' },
       { name: 'body_visible', kind: 'variable', returnType: 'bool', description: 'Body sprite visibility only (labels, name, health, cursor stay visible)' },
+      { name: 'invisibility', kind: 'variable', returnType: 'bool', description: "WA's Invisibility for this worm alone, as its team's would give it: hidden and not followed where WA wouldn't show an invisible team, ghosted where it would; a weapon that ends Invisibility ends it; writes from simulation callbacks.", example: 'worm.invisibility = true' },
       { name: 'turn', kind: 'property', returnType: 'bool', description: 'True if currently this worm\'s turn' },
       { name: 'hp', kind: 'property', returnType: 'int', description: 'Hit points / health points' },
       { name: 'alliance', kind: 'property', returnType: 'int', description: 'Team alliance / color index (0 red .. 5 cyan)' },
@@ -1303,7 +1349,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'revive', kind: 'method', parameters: [{ name: 'worm_id', type: 'int', description: 'Stable worm ID' }, { name: 'health', type: 'int', description: 'Initial HP' }], returnType: 'WormHandle | nil', description: 'Revives dead worm from gravestone, removing the grave (sim callback only).', example: 'grave:revive(worm.id, 100)' },
       { name: 'warp', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ x = number, y = number, vx = number, vy = number } -- px positions, px/frame speeds; x/y required, speeds optional (no facing on objects)' }], returnType: 'void', description: 'Atomically moves a live object and wakes it (sim callback only). Omitted speeds retain momentum.', example: 'object:warp{ x = 100, y = 200 }' },
       { name: 'fits', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'Target X in px' }, { name: 'y', type: 'number', description: 'Target Y in px' }, { name: 'mode', type: 'string', optional: true, description: '"terrain" to test land only, else the object\'s own collision mask' }], returnType: 'bool', description: "WA's collision test of the object's shape at a place. A read, so safe outside a simulation callback.", example: 'if object:fits(x, y) then object:warp{ x = x, y = y } end' },
-      { name: 'remove', kind: 'method', parameters: [], returnType: 'void', description: 'Frees a missile or mine without a blast (sim callback only).', example: 'object:remove()' },
+      { name: 'remove', kind: 'method', parameters: [], returnType: 'bool', description: 'Frees a missile, arrow, mine or oil drum without a blast: a drum goes with no fires and no wa.on.oil_explode. Returns whether it did. Simulation callbacks only.', example: 'object:remove()' },
     ],
   },
   {
@@ -1334,6 +1380,16 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'native', kind: 'variable', returnType: 'bool', description: 'Whether the field also affects WA\'s native mines and missiles.' },
       { name: 'remove', kind: 'method', parameters: [], returnType: 'bool', description: 'Removes the field: true once, then false (simulation callback only).' },
       { name: 'contains', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'X in px' }, { name: 'y', type: 'number', description: 'Y in px' }], returnType: 'bool', description: "Whether a point is inside this field's current snapshot." },
+    ],
+  },
+  {
+    name: 'WindowHandle',
+    description: 'A HUD text window created by wa.hud.window; open until closed or the match ends.',
+    syntaxExample: 'local window = wa.hud.window({ text = "Turn 3", x = 10, y = 10 })\nwindow:set({ text = "Turn 4" })\nwindow:close()',
+    members: [
+      { name: 'set', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ text, x, y, color, ... }' }], returnType: 'bool', description: 'Changes a window; omitted keys keep their values. False once it is closed.', example: 'window:set({ text = "Turn 4" })' },
+      { name: 'close', kind: 'method', parameters: [], returnType: 'bool', description: 'Closes a window; false if it already was.', example: 'window:close()' },
+      { name: 'is_open', kind: 'method', parameters: [], returnType: 'bool', description: 'Whether the window is still open: the same on every machine.', example: 'if window:is_open() then ... end' },
     ],
   },
   {

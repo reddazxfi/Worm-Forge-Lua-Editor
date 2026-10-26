@@ -33,7 +33,8 @@ export type HandleClassName =
   | 'MissileEntity'
   | 'InventoryStore'
   | 'LightHandle'
-  | 'MagneticField';
+  | 'MagneticField'
+  | 'WindowHandle';
 
 /**
  * returnType strings in wormforgeDefinitions.ts use the ENGINE's vocabulary
@@ -53,6 +54,7 @@ export const HANDLE_ALIASES: Record<string, HandleClassName> = {
   LightHandle: 'LightHandle',
   MagneticField: 'MagneticField',
   FieldHandle: 'MagneticField',
+  WindowHandle: 'WindowHandle',
 };
 
 /** Every class the union check may consult. */
@@ -64,6 +66,7 @@ export const ALL_HANDLE_CLASSES: HandleClassName[] = [
   'InventoryStore',
   'LightHandle',
   'MagneticField',
+  'WindowHandle',
 ];
 
 export interface ReceiverRow {
@@ -152,6 +155,15 @@ export const RECEIVER_REGISTRY: ReceiverRow[] = [
     diagnose: [],
     className: 'MagneticField',
     rule: 'magnetic-api',
+  },
+  {
+    // HUD text window (0.9.11): `local window = wa.hud.window{...}`.
+    // Same policy as LightHandle: `window` is a common local name, so only the
+    // trace from wa.hud.window is confident enough to diagnose.
+    prefixes: ['window', 'hud_window'],
+    diagnose: [],
+    className: 'WindowHandle',
+    rule: 'window-api',
   },
 ];
 

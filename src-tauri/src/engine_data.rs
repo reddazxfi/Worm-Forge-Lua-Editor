@@ -65,6 +65,8 @@ pub static WA_FUNCTIONS: &[&str] = &[
     "wa.draw.ribbon",
     "wa.draw.random",
     "wa.hud.line",
+    "wa.hud.message_top",
+    "wa.hud.window",
     "wa.fire.spawn",
     "wa.perf.enable",
     "wa.inventory.create",
@@ -102,6 +104,7 @@ pub static WA_FUNCTIONS: &[&str] = &[
     "wa.weapons.data",
     "wa.weapons.fire_bullet",
     "wa.weapons.panel_icon",
+    "wa.weapons.hold_sheet",
     "wa.weapons.set_selectable",
     "wa.world.set_turn_clock",
     "wa.fog.set",
@@ -174,6 +177,11 @@ pub static HANDLE_CLASSES: &[(&str, &[&str])] = &[
         "remove",
         "contains",
     ]),
+    ("WindowHandle", &[
+        "set",
+        "close",
+        "is_open",
+    ]),
     ("InventoryStore", &[
         "get",
         "set",
@@ -221,6 +229,7 @@ pub static HANDLE_ALL_MEMBERS: &[(&str, &[&str])] = &[
         "kind",
         "visible",
         "body_visible",
+        "invisibility",
         "turn",
         "hp",
         "alliance",
@@ -346,6 +355,11 @@ pub static HANDLE_ALL_MEMBERS: &[(&str, &[&str])] = &[
         "native",
         "remove",
         "contains",
+    ]),
+    ("WindowHandle", &[
+        "set",
+        "close",
+        "is_open",
     ]),
 ];
 
@@ -531,6 +545,7 @@ pub static SPEC_KEYS: &[&str] = &[
     "stock_fire_choice",
     "panel_icons",
     "hold",
+    "ends_invisibility",
     "worm_sprites_toggle",
     "worm_sprites_team_tint",
     "fires",

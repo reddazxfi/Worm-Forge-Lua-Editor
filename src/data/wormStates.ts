@@ -8,7 +8,7 @@
 //                        rests on one observation; its own doc says "check it
 //                        before building on it". Packs cannot name most of these.
 //   READABLE_WORM_STATES `worm_state_name()` in crates/lua-host/src/actor.rs --
-//                        what `worm.state` can actually return. Eighteen names.
+//                        what `worm.state` can actually return. Twenty-six names.
 //   SETTABLE_WORM_STATES `settable_worm_state()`, same file -- what
 //                        `worm:set_state("...")` accepts. FIVE states, SIX names,
 //                        because "sinking" is a legacy alias of tumbling (0x7F).
@@ -80,6 +80,9 @@ export const WORM_STATES: WormState[] = [
  */
 export const READABLE_WORM_STATES: string[] = [
   'standing',
+  'walking',
+  'ready',
+  'charging',
   'firing',
   'fired',
   'prefiring',
@@ -90,13 +93,18 @@ export const READABLE_WORM_STATES: string[] = [
   'jetpacking',
   'parachuting',
   'sliding',
+  'roping',
   'bungee',
   'tumbling',
   'frozen',
   'jump_prepare',
   'jumping',
+  'jump_falling',
   'blasted',
   'hit',
+  'dying',
+  'drowning',
+  'dead',
 ];
 
 /**

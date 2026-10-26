@@ -1,9 +1,7 @@
-Verbs from release page.
-
 {
- "engine": "WormForge 0.9.11, 2026-10-19",
+ "engine": "WormForge 0.9.1, 2026-10-17",
  "api_version": 4,
- "updated": "2026-10-24",
+ "updated": "2026-10-26",
  "units": "Lua speaks pixels: positions and sizes in pixels, speeds in pixels per frame, with fractions. The engine converts to WA's 16.16 once.",
  "sections": [
   {
@@ -82,6 +80,15 @@ Verbs from release page.
      "aliases": []
     },
     {
+     "key": "wa.weapons.hold_sheet",
+     "sig": "wa.weapons.hold_sheet(weapon, n)",
+     "desc": "Draws held sheet n over the worm's aim pose: 0 the hold's sheet, 1 and on its hold.sheets (same frames and placement). Draw only, per weapon, so any callback may call it; as Project X swaps a WormSprite's sprite (the Gravity Gun's claws opening).",
+     "units": "",
+     "aliases": [
+      "hold.sheets"
+     ]
+    },
+    {
      "key": "wa.weapons.set_selectable",
      "sig": "wa.weapons.set_selectable{ weapon, team, selectable }",
      "desc": "Whether a team (1 to 6) may select a placed weapon, for now: one it may not is greyed on the panel, can't be picked and is skipped by the F-keys, as WA's delayed weapons are, until it may again. Every round starts with all selectable. Simulation callbacks only. Since 0.9.1.",
@@ -147,6 +154,15 @@ Verbs from release page.
       "worm_sprites_team_tint",
       "gpu_worm_sprites",
       "mole_dig_rotation"
+     ]
+    },
+    {
+     "key": "missile.trail.sprite",
+     "sig": "missile = { trail = { sprite = \"sprites/my_trail.png\" } }",
+     "desc": "A weapon's own native trail image, loaded with the claim and scoped to that weapon; it does not replace the stock trail sprite for anything else. An installation declaration, not something wa.weapons.launch loads mid-match.",
+     "units": "",
+     "aliases": [
+      "trail.sprite"
      ]
     },
     {
@@ -224,10 +240,19 @@ Verbs from release page.
     {
      "key": "data.shots",
      "sig": "shots = n",
-     "desc": "Shots per use; mid-air each fire press fires the next.",
+     "desc": "Shots per use, 1 to 9; mid-air each fire press fires the next. The Ninja Rope's are its own: 1 to 127 rope shots per use, or -1 unlimited.",
      "units": "",
      "aliases": [
       "shots"
+     ]
+    },
+    {
+     "key": "data.rope_length",
+     "sig": "rope_length = 200",
+     "desc": "The Ninja Rope's maximum length in pixels, up to 535. Unset, the rope's scheme power gives it, with its shots: power 0 one shot of 147 px, 1 two of 168, 2 two of 189, 3 four of 210, more unlimited of 231.",
+     "units": "px",
+     "aliases": [
+      "rope_length"
      ]
     },
     {
@@ -267,21 +292,21 @@ Verbs from release page.
      ]
     },
     {
-     "key": "data.cursor_sprite",
-     "sig": "cursor_sprite = \"<WA sprite>\"",
-     "desc": "One of WA's sprites drawn at the cursor while aiming, as WA draws the worm where its Teleport would land.",
-     "units": "",
-     "aliases": [
-      "cursor_sprite"
-     ]
-    },
-    {
      "key": "data.placement_range",
      "sig": "placement_range = 300",
      "desc": "While the worm aims it, WA's cursor is held within this many pixels of the worm, as Project X's girder restrictor holds Highlander's girders. A weapon's own option may set it: an int option with data = true is the weapon data field of its key.",
      "units": "px",
      "aliases": [
       "placement_range"
+     ]
+    },
+    {
+     "key": "data.cursor_sprite",
+     "sig": "cursor_sprite = \"<WA sprite>\"",
+     "desc": "One of WA's sprites drawn at the cursor while aiming, as WA draws the worm where its Teleport would land.",
+     "units": "",
+     "aliases": [
+      "cursor_sprite"
      ]
     },
     {
@@ -302,6 +327,24 @@ Verbs from release page.
      "units": "",
      "aliases": [
       "aims_straight_up"
+     ]
+    },
+    {
+     "key": "data.collects_crates",
+     "sig": "collects_crates = false",
+     "desc": "Its missiles leave crates where they are. WA's missile picks up any crate it reaches for the firing team, whatever it collides with; with bounce.hits.crates in its record it bounces off them instead, as Project X's Burning Sheep Launcher does. Left out, WA's.",
+     "units": "",
+     "aliases": [
+      "collects_crates"
+     ]
+    },
+    {
+     "key": "data.ends_invisibility",
+     "sig": "ends_invisibility = true | false",
+     "desc": "Whether using it ends Invisibility: the team's, and the firing worm's own worm.invisibility. Left out, WA's answer: its record creates a projectile (attacking weapons end it; the rope, Girder, Teleport, Prod, Freeze, Jet Pack and the utilities don't).",
+     "units": "",
+     "aliases": [
+      "ends_invisibility"
      ]
     }
    ]
@@ -335,7 +378,7 @@ Verbs from release page.
     {
      "key": "worm.fields",
      "sig": "Worm fields (read and write)",
-     "desc": "x, y, vx, vy, facing, visible, body_visible, collision_mask, fuel, gravity, wind, windup, shots_fired, shots_to_fire.",
+     "desc": "x, y, vx, vy, facing, visible, body_visible, collision_mask, fuel, gravity, wind, windup, shots_fired, shots_to_fire, name (writes, from simulation callbacks, keep the first 16 printable ASCII bytes and change the native name and label; id and the saved team stay); invisibility (true: WA's Invisibility for this worm alone, as its team's would give it: hidden and not followed where WA wouldn't show an invisible team, ghosted where it would; a weapon that ends Invisibility ends it; writes from simulation callbacks).",
      "units": "x, y px · vx, vy px/frame · gravity, wind factor (1 = normal) · fuel plain (0 = unlimited) · windup frames",
      "aliases": [
       "worm.x",
@@ -351,38 +394,63 @@ Verbs from release page.
       "worm.wind",
       "worm.windup",
       "worm.shots_fired",
-      "worm.shots_to_fire"
+      "worm.shots_to_fire",
+      "worm.name",
+      "worm.invisibility"
      ]
     },
     {
      "key": "worm.readonly",
      "sig": "Worm fields (read only)",
-     "desc": "id, team, alliance, ammo_group, hp, kind, weapon (its id), turn, aim, aiming, drilling, state (standing, prefiring, firing, fired, punching, drilling, teleporting, jetpacking, parachuting, sliding, bungee, tumbling, frozen, kamikaze, jump_prepare, jumping, blasted, hit; nil for any other WA state), state_id, state_label, keys, taken.",
+     "desc": "id, team, alliance, ammo_group, hp, kind, weapon (its id), turn, name, aim, aiming, drilling, state (standing, walking, ready, charging, prefiring, firing, fired, punching, drilling, teleporting, jetpacking, parachuting, sliding, roping, bungee, tumbling, frozen, kamikaze, jump_prepare, jumping, jump_falling, blasted, hit, and WA's own death: dying, drowning, dead; nil for any other WA state), state_id, state_label, keys, taken.",
      "units": "aim 0 (down) to 1 (up)",
      "aliases": [
-      "worm.id",
-      "worm.team",
-      "worm.alliance",
-      "worm.ammo_group",
-      "worm.hp",
-      "worm.kind",
-      "worm.weapon",
-      "worm.turn",
       "worm.aim",
       "worm.aiming",
+      "worm.alliance",
+      "worm.ammo_group",
       "worm.drilling",
+      "worm.hp",
+      "worm.id",
+      "worm.keys",
+      "worm.kind",
       "worm.state",
       "worm.state_id",
       "worm.state_label",
-      "worm.keys",
-      "worm.taken"
+      "worm.taken",
+      "worm.team",
+      "worm.turn",
+      "worm.weapon"
      ]
     },
     {
      "key": "worm:ammo",
-     "sig": "worm:ammo(weapon, n) / worm:ammo(weapon, { set = n })",
-     "desc": "Reads, adds or sets the team's ammo for a placed weapon, by its id.",
+     "sig": "worm:ammo(weapon, n) / worm:ammo(weapon, { set = n, keep_delay })",
+     "desc": "Reads, adds or sets the team's ammo for a placed weapon, by its id. keep_delay = true changes ammo without clearing the weapon's delay.",
      "units": "",
+     "aliases": [
+      "keep_delay"
+     ]
+    },
+    {
+     "key": "worm:delay",
+     "sig": "worm:delay(weapon) / worm:delay(weapon, turns)",
+     "desc": "Reads or writes the team's cooldown for a weapon, preserving ammo and selection: 0 usable, a positive count goes down with WA's team-turn upkeep, -1 blocked until cleared. Uses the worm's ammo row, shared inventories included. Writes from simulation callbacks.",
+     "units": "turns -1..127",
+     "aliases": []
+    },
+    {
+     "key": "worm:poison",
+     "sig": "worm:poison(amount)",
+     "desc": "A native gas exposure: WA checks immunity, adds the dose and takes its nonlethal health at turn boundaries. Returns whether the dose grew. Does not hurt the worm at once or change control. Simulation callbacks only.",
+     "units": "amount 1..1000",
+     "aliases": []
+    },
+    {
+     "key": "worm:reduce_health",
+     "sig": "worm:reduce_health(amount)",
+     "desc": "Lowers HP directly: no hit reaction, no control or movement change, no hurt callbacks. False, changing nothing, for a dead worm or a cost that would leave less than 1 HP. Pending damage stays queued. Simulation callbacks only.",
+     "units": "HP 0..10000",
      "aliases": []
     },
     {
@@ -416,35 +484,35 @@ Verbs from release page.
     {
      "key": "worm:take",
      "sig": "worm:take{ hide, turn }",
-     "desc": "Hands the worm to the pack: it stays where the pack puts it.",
+     "desc": "Hands the worm to the pack: it stays where the pack puts it. Returns whether it did. Refused (false) for a worm in WA's death (dying, drowning, dead): WA keeps it still until it is gone.",
      "units": "",
      "aliases": []
     },
     {
      "key": "worm:release",
      "sig": "worm:release(vx, vy, { tumble })",
-     "desc": "Gives the worm back to WA, flying or tumbling.",
+     "desc": "Gives the worm back to WA, flying or tumbling; on a worm never taken, a launch. Returns whether it did. Refused (false) for a worm in WA's death (dying, drowning, dead): WA keeps it still until it is gone. A zero-HP worm WA hasn't started killing still launches.",
      "units": "px/frame",
      "aliases": []
     },
     {
      "key": "worm:jump",
      "sig": "worm:jump(\"forward\" | \"back\" | \"up\" | \"backflip\")",
-     "desc": "WA's own jump take-off from wherever the worm is; no argument repeats its last jump.",
+     "desc": "WA's own jump take-off from wherever the worm is; none repeats its last jump.",
      "units": "",
      "aliases": []
     },
     {
      "key": "worm:carry",
      "sig": "worm:carry(x, y)",
-     "desc": "Moves a held worm.",
+     "desc": "Moves a held worm. Returns whether it did. Refused (false) for a worm in WA's death (dying, drowning, dead): WA keeps it still until it is gone.",
      "units": "px",
      "aliases": []
     },
     {
      "key": "worm:drop",
      "sig": "worm:drop()",
-     "desc": "Lets a carried worm fall.",
+     "desc": "Lets a carried worm fall. One that has started dying is only let go.",
      "units": "",
      "aliases": []
     },
@@ -507,7 +575,7 @@ Verbs from release page.
     {
      "key": "wa.actors.spawn",
      "sig": "wa.actors.spawn{ sprite, x, y, ... }",
-     "desc": "Creates a Lua actor: a WA collision body the pack controls. Keys: sprite, x, y, from (sky, cursor or owner), origin (center or bottom), owner, gravity, collide, collide_terrain, collide_worms, damage_terrain, damage_worms, drown, persist, visible, loop, shape = \"missile\", as_object, mask and its layer options, on_explode, on = { frame, land, hit }.",
+     "desc": "Creates a native WA actor. body = { shape, hits, hit_by } chooses its outline, outgoing movement and incoming attackers independently. A body uses the oil-drum layer (17). shape is worm (default), missile, sprite (registered sprite frame zero), or a pack-relative image path; a bare image uses no sprite slot and works with sprite=false. hits defaults to {}; hit_by defaults to \"all\". Legacy collide, collide_terrain, collide_worms, as_object, shape, solid and mask options are accepted only without body. Other keys: sprite, x, y, vx, vy, from, origin, owner, gravity, damage_terrain, damage_worms, drown, persist, visible, loop, on_explode, on = { frame, land, hit, contact, bump }.",
      "units": "position px",
      "aliases": [
       "as_object"
@@ -528,9 +596,28 @@ Verbs from release page.
      "aliases": []
     },
     {
+     "key": "a.hits",
+     "sig": "a.hits = { land = true, objects = true }",
+     "desc": "Outgoing movement layers: land, worms (all states), mines, crates, objects (drums and body actors), missiles (native missiles and plain Lua actors). Reads return a boolean table; writes require simulation callbacks. Water is controlled by drown and preserved by writes. WA handles native movement before on.frame.",
+     "units": "",
+     "aliases": [
+      "body.hits"
+     ]
+    },
+    {
+     "key": "a.hit_by",
+     "sig": "a.hit_by = \"all\" | { arrows = true, melee = true }",
+     "desc": "Incoming categories: worms, missiles, arrows, mines, actors, bullets, melee, fire, dragon_ball, blasts. \"all\" allows every category; {} excludes them all. Read/write independently of hits; writes require simulation callbacks and leave the body active for its own physics. Filters narrow stock rules: Prod still cannot push objects and melee tests the target position. Bodies do not catch ninja ropes. Unknown keys are refused.",
+     "units": "",
+     "aliases": [
+      "body.hit_by",
+      "body.shape"
+     ]
+    },
+    {
      "key": "a.light",
      "sig": "a.light = \"projectile\" | false | { kind, mode, circle, cone = { length, width, toward }, shadow_cast, seen_by, discover, strength }",
-     "desc": "The actor's fog-of-war light. A visible world actor has its profile's projectile light by default; invisible, cursor and screen-space actors have none until given one. A preset string (worm, animal, projectile, crate) uses that kind's profile settings; false removes the light; a table replaces the whole spec, and omitted geometry and shadow_cast come from its kind. mode is light (default), dark (shades what its cast sees) or shadow (shades what is hidden from it within reach); darkness wins over light. cone.toward is velocity (default), angle (the a:gfx rotation), facing or degrees. seen_by is owner (default: the owning worm's side, per view_ownership; public without an owning worm) or everyone. discover = true requires seen_by = owner; dark and shadow never record terrain memory. strength (0..255) is for dark and shadow only. Presentation only: any callback may set it.",
+     "desc": "The actor's fog-of-war light. A visible world actor has its profile's projectile light by default; invisible (sprite = false), cursor and screen-space actors have none until given one. A preset string (worm, animal, projectile, crate) uses that kind's profile settings; false removes the light; a table replaces the whole spec, and omitted geometry and shadow_cast come from its kind. mode is light (default), dark (shades what its cast sees) or shadow (shades what is hidden from it within reach); darkness wins over light. cone.toward is velocity (default), angle (the a:gfx rotation), facing or degrees. seen_by is owner (default: the owning worm's side, per view_ownership; public without an owning worm) or everyone. discover = true requires seen_by = owner; dark and shadow never record terrain memory. strength (0..255) is for dark and shadow only. Presentation only: any callback may set it. Reading returns the spec table, or false.",
      "units": "px; degrees",
      "aliases": [
       "light",
@@ -540,7 +627,7 @@ Verbs from release page.
     {
      "key": "actor.fields",
      "sig": "Actor fields",
-     "desc": "x, y, vx, vy and facing read and write; id, kind and owner read only; magnetic is the automatic field response, 0 opting out.",
+     "desc": "x, y, vx, vy and facing read and write; id, kind and owner read only.",
      "units": "x, y px · vx, vy px/frame",
      "aliases": [
       "a.x",
@@ -550,8 +637,7 @@ Verbs from release page.
       "a.facing",
       "a.id",
       "a.kind",
-      "a.owner",
-      "a.magnetic"
+      "a.owner"
      ]
     },
     {
@@ -564,7 +650,7 @@ Verbs from release page.
     {
      "key": "a:move",
      "sig": "a:move{ terrain, worms }",
-     "desc": "Moves by its speed against terrain and worms, and returns what it hit.",
+     "desc": "Adds its speed to its position once and reports land under its feet (terrain, land, left). It is not WA's sweep: it does not stop at land, bounce or meet worms, and produces no bumps.",
      "units": "",
      "aliases": []
     },
@@ -581,6 +667,37 @@ Verbs from release page.
      "desc": "WA's collision test of its shape at a place.",
      "units": "px",
      "aliases": []
+    },
+    {
+     "key": "on.contact",
+     "sig": "on = { contact = function(a, ev) end }",
+     "desc": "Something moving ran into this actor (WA's own movement): ev.other, ev.x, ev.y, ev.vx, ev.vy (its speed going in), ev.nx, ev.ny (the side), ev.frame. After physics, once per pair a frame; Lua decides the push.",
+     "units": "px, px/frame",
+     "aliases": []
+    },
+    {
+     "key": "on.bump",
+     "sig": "on = { bump = function(a, ev) end }",
+     "desc": "This actor's own movement ran into something, stopped by WA's sweep: ev.other (\"land\" or the worm/object/actor), ev.nx, ev.ny (the side, pointing away), ev.surface_nx, ev.surface_ny (on a land floor only: its slope, from WA's own gradient), ev.vx, ev.vy (speed going in), ev.x, ev.y, ev.first (not touching it the frame before), ev.frame. After physics, in lifetime order; WA's stop or bounce is already in a.vx, a.vy, write them to steer. Needs an actor that collides with something.",
+     "units": "px, px/frame",
+     "aliases": [
+      "bump",
+      "ev.surface_nx",
+      "ev.surface_ny"
+     ]
+    },
+    {
+     "key": "on.hit",
+     "sig": "on = { hit = function(a, hit) end }",
+     "desc": "WA's blasts and hits on the actor go here instead of to its speed: hit.kind (\"blast\" or \"hit\"), hit.hit_kind, hit.x, hit.y, hit.vx, hit.vy (the push WA would give), hit.damage (after distance falloff), hit.team. Blasts also give hit.blast_damage, the damage before falloff.",
+     "units": "px, px/frame",
+     "aliases": [
+      "hit.kind",
+      "hit.hit_kind",
+      "hit.damage",
+      "hit.blast_damage",
+      "hit.team"
+     ]
     },
     {
      "key": "a:collision_ignore",
@@ -723,10 +840,14 @@ Verbs from release page.
     },
     {
      "key": "wa.mines.spawn",
-     "sig": "wa.mines.spawn{ owner, x, y, vx, vy, fuse, arm, damage, radius, dud_proof }",
-     "desc": "Builds one of WA's mines, as Project X's new CMine: WA flies, arms, triggers and explodes it as its own. A worm owner's team lays it; an actor's mine is the map's.",
+     "sig": "wa.mines.spawn{ owner, x, y, vx, vy, fuse, arm, damage, radius, dud_proof, triggered, terrain_keep_speed_pct, on_bump }",
+     "desc": "Builds one of WA's mines, as Project X's new CMine: WA flies, arms, triggers and explodes it as its own. A worm owner's team lays it; an actor's mine is the map's. triggered = true starts it triggered (arming still runs first); terrain_keep_speed_pct (0..1000) is the speed it keeps along land until WA arms it. on_bump = function(mine, ev) hears what that mine's own movement ran into, as an actor's on.bump (Project X's CMine::Collide).",
      "units": "position px · speed px/frame · fuse, arm ms · radius px",
-     "aliases": []
+     "aliases": [
+      "on_bump",
+      "terrain_keep_speed_pct",
+      "triggered"
+     ]
     },
     {
      "key": "wa.arrows.spawn",
@@ -764,7 +885,7 @@ Verbs from release page.
     {
      "key": "object.fields",
      "sig": "Object fields",
-     "desc": "x, y, vx, vy read and write; id, uid, kind, team, alliance read only; fuse on mines, worm_id on graves; damage and max_damage on oil drums, and visible (false: WA stops drawing that drum, so a pack can draw its own).",
+     "desc": "x, y, vx, vy read and write; id, uid, kind, team, alliance read only; fuse on mines; gravity on mines, crates, oil drums, missiles, arrows and graves (read and write from simulation callbacks: 1 WA's normal, 0 none, Project X's GravityFactor); worm_id on graves; damage and max_damage on oil drums, and visible on drums and mines (false: WA stops drawing it, a mine's countdown included, so a pack can draw its own or hide it; WA still moves and explodes it).",
      "units": "x, y px · vx, vy px/frame · fuse ms",
      "aliases": [
       "object.x",
@@ -780,7 +901,9 @@ Verbs from release page.
       "grave.worm_id",
       "drum.damage",
       "drum.max_damage",
-      "drum.visible"
+      "drum.visible",
+      "object.gravity",
+      "mine.visible"
      ]
     },
     {
@@ -800,7 +923,7 @@ Verbs from release page.
     {
      "key": "object:remove",
      "sig": "object:remove()",
-     "desc": "Frees a missile or mine without a blast.",
+     "desc": "Frees a missile, arrow, mine or oil drum without a blast: a drum goes with no fires and no wa.on.oil_explode. Returns whether it did. Simulation callbacks only.",
      "units": "",
      "aliases": []
     },
@@ -1122,6 +1245,17 @@ Verbs from release page.
      "aliases": []
     },
     {
+     "key": "wa.on.oil_explode",
+     "sig": "wa.on.oil_explode(fn)",
+     "desc": "When WA is about to blow up an oil drum, in the simulation. ev:replace() stands in for WA's blast, fires and sound, as Project X's COilDrum::Explosion; WA frees the drum either way.",
+     "units": "ev.x, ev.y px",
+     "aliases": [
+      "ev.drum",
+      "ev.team",
+      "ev:replace"
+     ]
+    },
+    {
      "key": "wa.on.draw",
      "sig": "wa.on.draw(fn)",
      "desc": "Each rendered frame, to draw. Read only.",
@@ -1136,20 +1270,9 @@ Verbs from release page.
      "aliases": []
     },
     {
-     "key": "wa.on.oil_explode",
-     "sig": "wa.on.oil_explode(fn)",
-     "desc": "When WA is about to blow up an oil drum, in the simulation. ev:replace() stands in for WA's blast, fires and sound, as Project X's COilDrum::Explosion; WA frees the drum either way.",
-     "units": "ev.x, ev.y px",
-     "aliases": [
-      "ev.drum",
-      "ev.team",
-      "ev:replace"
-     ]
-    },
-    {
      "key": "wa.msg",
      "sig": "wa.msg",
-     "desc": "Stock message names: START_TURN, FRAME_FINISH, FIRE_WEAPON, RELEASE_WEAPON, JUMP, JUMP_UP, HIT, EXPLOSION, IMPACT, NONLETHAL, POISON.",
+     "desc": "Stock message names: START_TURN (also when Tab picks another worm), TURN_STARTED (a real team-turn start, after the worm gains control), FRAME_FINISH, FIRE_WEAPON, RELEASE_WEAPON, WEAPON_RELEASED (WA's launch notification, before an ordinary shot's final fire; not an after-fire hook for every weapon), JUMP, JUMP_UP, HIT, EXPLOSION, IMPACT, NONLETHAL, POISON.",
      "units": "",
      "aliases": [
       "wa.msg.START_TURN",
@@ -1162,7 +1285,9 @@ Verbs from release page.
       "wa.msg.EXPLOSION",
       "wa.msg.IMPACT",
       "wa.msg.NONLETHAL",
-      "wa.msg.POISON"
+      "wa.msg.POISON",
+      "wa.msg.TURN_STARTED",
+      "wa.msg.WEAPON_RELEASED"
      ]
     }
    ]
@@ -1175,7 +1300,7 @@ Verbs from release page.
     {
      "key": "wa.draw.quad",
      "sig": "wa.draw.quad{ points, color or colors, sprite, frame, blend, depth }",
-     "desc": "Draws a textured quad; corners in the world.",
+     "desc": "Draws a textured quad; corners in the world. depth places it among the GPU sprites by wa.depth's three bands (behind terrain, on the ground, in front of WA's world).",
      "units": "px",
      "aliases": []
     },
@@ -1196,7 +1321,7 @@ Verbs from release page.
     {
      "key": "wa.depth",
      "sig": "wa.depth.FRONT, EFFECTS, WORMS, OBJECTS, TERRAIN, BEHIND_TERRAIN",
-     "desc": "Named draw depths; lower is nearer. Plain numbers, so wa.depth.OBJECTS - 1 sits just in front.",
+     "desc": "Named draw depths; lower is nearer. Plain numbers, so wa.depth.OBJECTS - 1 sits just in front. Three bands: at or behind terrain (0x180000) terrain hides a GPU draw; from 0x100000 to wa.depth.TERRAIN - 1 it lies on the ground, in front of terrain but under whatever WA draws (worms, objects, effects, front water); nearer than 0x100000 only the HUD covers it.",
      "units": "",
      "aliases": []
     },
@@ -1204,6 +1329,45 @@ Verbs from release page.
      "key": "wa.hud.line",
      "sig": "wa.hud.line(text)",
      "desc": "Adds a line to the HUD.",
+     "units": "",
+     "aliases": []
+    },
+    {
+     "key": "wa.hud.message_top",
+     "sig": "wa.hud.message_top(text, { to, alliance })",
+     "desc": "WA's top-centre banner, as selecting a weapon shows it: one line of at most 127 bytes. to is \"all\" (default), \"active\" (the player whose turn it is) or \"coalition\" (the active team's, or alliance 0-5). Call from simulation events.",
+     "units": "",
+     "aliases": [
+      "message_top"
+     ]
+    },
+    {
+     "key": "wa.hud.window",
+     "sig": "wa.hud.window{ text | lines, x, y, align, font, color, border, max_width, to, alliance, over_panel }",
+     "desc": "A text window in WA's own fonts and box style, sized to its text, open until closed or the match ends; returns a handle. text takes \\n line breaks; lines = { \"a\", { \"b\", color = \"yellow\" } } colours lines. font: small, standard (the round timer's) or medium. color and border: white, grey, red, blue, green, yellow, purple, cyan; border \"none\". max_width wraps at spaces. align names the box's and the screen's point x, y offset it from (top_left ... bottom_right, center). to / alliance as message_top, taken when given. Fades out while the weapon panel is open unless over_panel = true. Drawn over WA's HUD on the GPU layer (Direct3D 9 shader). At most 32 open.",
+     "units": "px",
+     "aliases": [
+      "hud.window"
+     ]
+    },
+    {
+     "key": "window:set",
+     "sig": "window:set{ text, x, color, ... }",
+     "desc": "Changes a window; omitted keys keep their values. False once it is closed.",
+     "units": "",
+     "aliases": []
+    },
+    {
+     "key": "window:close",
+     "sig": "window:close()",
+     "desc": "Closes a window; false if it already was.",
+     "units": "",
+     "aliases": []
+    },
+    {
+     "key": "window:is_open",
+     "sig": "window:is_open()",
+     "desc": "Whether the window is still open: the same on every machine.",
      "units": "",
      "aliases": []
     },
@@ -1233,7 +1397,7 @@ Verbs from release page.
   {
    "id": "fog",
    "title": "Fog of war",
-   "lead": "Fog, lights, darkness and shadows. Presentation only: never part of the simulation, so any callback may call it and each machine may see differently.",
+   "lead": "Configure the fog of war and place lights, darkness and shadows. The fog is presentation only: it never reaches the simulation, so these may be called from any callback, and each machine may see differently.",
    "verbs": [
     {
      "key": "wa.fog.set",

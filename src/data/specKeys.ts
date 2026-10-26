@@ -73,6 +73,7 @@ export const WEAPON_SPEC_KEYS: string[] = [
   'stock_fire_choice',
   'panel_icons',
   'hold',
+  'ends_invisibility',
   'worm_sprites_toggle',
   'worm_sprites_team_tint',
   'fires',

@@ -20,6 +20,9 @@ const NO_SHIPPED_USAGE = new Set([
   'InventoryStore:get',
   'InventoryStore:set',
   'InventoryStore:remove',
+  'WindowHandle:set',
+  'WindowHandle:close',
+  'WindowHandle:is_open',
 ]);
 
 describe('full documentation snippets', () => {

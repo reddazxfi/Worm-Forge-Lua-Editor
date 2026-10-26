@@ -113,6 +113,21 @@ describe('Lua API 4 additions in 0.9.11 (fog of war)', () => {
   });
 });
 
+describe('0.9.11 HUD windows and Invisibility', () => {
+  const silent = [
+    'wa.hud.message_top("WormForge", { to = "all" })',
+    'wa.weapons.hold_sheet("px.gravity_gun", 1)',
+    'local window = wa.hud.window({ text = "Turn 3", x = 10, y = 10 })\nwindow:set({ text = "Turn 4" })\nwindow:close()',
+    'local function f(worm) worm.invisibility = true end',
+    'local function f(worm) return worm.state == "dying" end',
+    'wa.weapons.replace({ copy_from = "bazooka", ends_invisibility = false })',
+  ];
+
+  it.each(silent)('%s is real 0.9.11 API and produces no finding', (src) => {
+    expect(rulesOf(src)).toEqual([]);
+  });
+});
+
 describe('render-context math (mirror of checks.rs RenderScan)', () => {
   it('math.sin inside wa.on.draw(function literal) is silent', () => {
     const src = 'wa.on.draw(function()\n  local x = math.sin(1)\nend)';
@@ -268,6 +283,21 @@ describe('class member updates (0.9.1)', () => {
     expect(names).toContain('remove');
   });
 
+  it('documents the 0.9.11 HUD window, invisibility, and death states', () => {
+    const fn = (name: string) => BUILTIN_FUNCTIONS.find((f) => f.name === name);
+    expect(fn('wa.hud.message_top')).toBeTruthy();
+    expect(fn('wa.hud.window')?.returnType).toBe('WindowHandle');
+
+    const win = cls('WindowHandle');
+    expect(win.members.map((m) => m.name)).toEqual(
+      expect.arrayContaining(['set', 'close', 'is_open'])
+    );
+
+    const worm = cls('WormEntity');
+    expect(worm.members.find((m) => m.name === 'invisibility')?.kind).toBe('variable');
+    expect(worm.members.find((m) => m.name === 'state')?.description).toContain('"dying"');
+  });
+
   it('no member or function doc still claims 16.16 units (API 4 speaks px)', () => {
     const offenders: string[] = [];
     for (const f of BUILTIN_FUNCTIONS) {
@@ -360,7 +390,7 @@ describe('spec keys (API 4)', () => {
     // checks.rs: spec_key_data_survived_the_move_into_the_generator asserts 49.
     // If this fails, the two lists drifted -- fix src/data/specKeys.ts and keep
     // both numbers in step.
-    expect(WEAPON_SPEC_KEYS.length).toBe(49);
+    expect(WEAPON_SPEC_KEYS.length).toBe(50);
   });
 
   it.each(['fires', 'handling', 'missile', 'clusters', 'gun', 'strike', 'jet_pack', 'raw', 'panel_icons', 'hold'])(
