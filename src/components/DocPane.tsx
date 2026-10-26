@@ -3,6 +3,7 @@ import { BookOpen, Copy, Check, Plus, Code2, ArrowRight, FolderOpen, Link2 } fro
 import { ClassDef, EnumDef, FunctionDef, MemberDef, VariableDef } from '../types/wormforge';
 import { TableFields } from './TableFields';
 import type { TableDoc } from '../data/tableDocs';
+import { docSnippetFor } from '../data/docSnippets';
 
 interface DocPaneProps {
   selectedItem: any;
@@ -36,6 +37,15 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
   const isModItem = selectedItem.name && selectedItem.name.includes(':');
 
   const activeMember: MemberDef | undefined = selectedItem.activeMember;
+
+  // Keys line up with DOC_SNIPPETS: `LuaActor:move`, `wa.on.hurt`, or a class
+  // name for the class card. A table doc has no name, so it uses its id.
+  const docKey = activeMember
+    ? `${selectedItem.name}${activeMember.kind === 'method' ? ':' : '.'}${activeMember.name}`
+    : isTableDoc
+      ? `table:${(selectedItem as TableDoc).id}`
+      : selectedItem.name || '';
+  const snippet = docSnippetFor(docKey);
 
   const getSignature = () => {
     if (isTableDoc) {
@@ -84,9 +94,13 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
     activeMember?.example ||
     selectedItem.example ||
     (!isTableDoc && isFunc ? `${signature}\n` : !isTableDoc && isVar ? `local val = ${selectedItem.name}\n` : '');
+  // The Insert button and the preview both show the complete block. `example`
+  // remains the short signature/usage line used by the existing docs and the
+  // checker tests; the full snippet is documentation-only.
+  const insertCode = snippet?.code ?? exampleCode;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(exampleCode);
+    navigator.clipboard.writeText(insertCode);
     setCopiedTarget('top');
     setTimeout(() => setCopiedTarget((prev) => (prev === 'top' ? null : prev)), 1600);
   };
@@ -146,17 +160,17 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
           )}
           <button
             onClick={handleCopy}
-            title="Copy example code"
+            title={snippet ? 'Copy the full example' : 'Copy example code'}
             className={`p-1 rounded transition-colors ${
               isLight ? 'bg-white hover:bg-slate-200 text-slate-600 border border-slate-300' : 'bg-[#212730] hover:bg-[#2c3340] text-[#93a4b8] hover:text-[#d3e0f0]'
             }`}
           >
             {copiedTarget === 'top' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
           </button>
-          {exampleCode && (
+          {insertCode && (
             <button
-              onClick={() => onInsertCode(exampleCode)}
-              title="Insert into code editor"
+              onClick={() => onInsertCode(snippet ? `${snippet.code}\n` : insertCode)}
+              title={snippet ? 'Insert the full example from the engine mods' : 'Insert into code editor'}
               className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-600 border border-amber-500/40 font-medium text-[11px] flex items-center gap-1 transition-colors"
             >
               <Plus className="w-3 h-3" />
@@ -379,17 +393,17 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
         )}
 
         {/* Code Example Preview */}
-        {exampleCode && (
+        {insertCode && (
           <div className="mt-2 space-y-1">
             <span
               className={`text-[10.5px] font-semibold tracking-wider uppercase select-text ${
                 isLight ? 'text-slate-500' : 'text-[#637488]'
               }`}
             >
-              Snippet / Usage
+              {snippet ? 'Full example' : 'Snippet / Usage'}
             </span>
             <pre
-              onClick={() => copyContent(exampleCode, 'snippet')}
+              onClick={() => copyContent(insertCode, 'snippet')}
               title="Click to copy snippet, or drag to select text"
               className={`p-2 border rounded text-[11px] font-mono overflow-x-auto whitespace-pre select-text cursor-pointer transition-all relative group ${
                 isLight
@@ -397,7 +411,7 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
                   : 'bg-[#101317] hover:bg-[#141920] border-[#232932] hover:border-amber-500/50 text-[#a5bad0]'
               }`}
             >
-              <code className="select-text">{exampleCode}</code>
+              <code className="select-text">{insertCode}</code>
               <span
                 className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1 font-sans transition-opacity ${
                   copiedTarget === 'snippet'
@@ -418,6 +432,26 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
                 )}
               </span>
             </pre>
+            {snippet && (
+              <div
+                className={`flex items-start gap-1 text-[10px] font-mono ${
+                  isLight ? 'text-slate-500' : 'text-[#66788c]'
+                }`}
+                title={snippet.source}
+              >
+                <Link2 className="w-3 h-3 mt-0.5 shrink-0" />
+                <span className="break-all">{snippet.source}</span>
+              </div>
+            )}
+            {!snippet && activeMember?.kind === 'method' && (
+              <div
+                className={`text-[10px] leading-snug ${
+                  isLight ? 'text-slate-500' : 'text-[#66788c]'
+                }`}
+              >
+                No shipped engine mod calls this method directly, so the one-line contract is shown.
+              </div>
+            )}
           </div>
         )}
       </div>
