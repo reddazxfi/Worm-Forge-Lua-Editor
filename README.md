@@ -3,6 +3,10 @@
 # 🪱⚡ WormForge Code Studio
 > **Elevate your Worms Armageddon modding workflow with a seamless, robust, next-generation Lua development experience.** 🚀
 
+> **New to WormForge modding?** Start with [MODDING.md](MODDING.md). It explains
+> the bundle / component / profile / `install(ctx)` model step by step, using
+> the same format the loader reads.
+
 WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully crafted** code editor designed to **empower** modders to **unlock** the full potential of the WormForge scripting engine. Whether you're a seasoned modder or just getting started, our **cutting-edge** toolkit has you covered. ✨
 
 ---
@@ -114,9 +118,24 @@ npx tauri dev
 That starts the local server and opens the desktop window. The dev server exists to
 serve the window during development; **it is not a supported way to run the app.** 🪄
 
-> **This is a desktop-only tool.** Folder open/save, the real Lua compiler, the mods
-> list and Create Mod all need the desktop app - the browser build of the frontend is
-> not a supported target. There are no filesystem endpoints on the dev server.
+> **The desktop app is the supported target.** Folder open/save, the real Lua
+> compiler, the mods list and Create Mod all need Tauri. A static web build is
+> published for browsing/editing single files; it is not a full replacement.
+> There are no filesystem endpoints on the dev server.
+
+### Web build (GitHub Pages)
+
+`.github/workflows/deploy-pages.yml` builds the Vite frontend and deploys `dist`
+to GitHub Pages on every push to `main`. Enable **Settings → Pages → Source:
+GitHub Actions** once in the repository; after that the site is at:
+
+```text
+https://<owner>.github.io/Worm-Forge-Lua-Editor/
+```
+
+The web build keeps the editor, the API sidebar and single-file syntax checking.
+It does not have the Rust Lua compiler, folder open/save, the mods list or Create
+Mod. The desktop `.exe` remains the real modding tool.
 
 ### New mod layout
 Create Mod writes a bundle in the same shape the loader installs:
@@ -124,13 +143,16 @@ Create Mod writes a bundle in the same shape the loader installs:
 ```
 my_mod/
   mod.toml                  # one component + [[components.options]]
-  code/mod.lua              # returns install(ctx) (or { defaults, install })
+  code/mod.lua              # feature: install(ctx); weapon: { defaults, install }
   profiles/My Mod.toml      # selects the component and stores the chosen values
 ```
 
 Behavior mods default to bool options, which the loader shows as checkmarks. Weapon
 mods default to numeric options for values such as `ctx.option("bullets")`, and their
 starter profile places the weapon on F1 with a small stock kit.
+
+For the full explanation of `return`, `ctx`, `defaults`, profiles and where
+custom behavior belongs, read [MODDING.md](MODDING.md).
 
 ### Build the Windows `.exe`
 ```bat

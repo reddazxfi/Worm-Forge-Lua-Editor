@@ -17,7 +17,7 @@ const rulesOf = (src: string): string[] =>
 const typoFor = (src: string) =>
   parseAndValidate(src).diagnostics.find((d) => d.rule === 'wa-namespace-typo');
 
-describe('Lua API 4 surface (WormForge 0.9.1/0.9.4)', () => {
+describe('Lua API 4 surface (WormForge 0.9.1/0.9.5)', () => {
   // Exact snippets the Rust checker pins (checks.rs: api4_* tests). Both engines
   // must agree or __sweep.ts reports drift on every API 4 file.
   const silent = [
@@ -104,7 +104,7 @@ describe('Lua API 4 additions in 0.9.11 (fog of war)', () => {
     'local function f(a) a.light = { kind = "dark", circle = { radius = 120 } } end',
   ];
 
-  it.each(silent)('%s is real 0.9.4 API and produces no finding', (src) => {
+  it.each(silent)('%s is real 0.9.5 API and produces no finding', (src) => {
     expect(rulesOf(src)).toEqual([]);
   });
 

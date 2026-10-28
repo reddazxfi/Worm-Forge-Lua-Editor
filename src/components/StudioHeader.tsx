@@ -91,7 +91,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                 WormForge Code Studio
               </span>
               <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-500 font-mono border border-amber-500/30">
-                v0.9.4 release
+                v0.9.5 release
               </span>
             </h1>
           </div>

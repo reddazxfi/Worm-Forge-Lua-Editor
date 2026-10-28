@@ -1,5 +1,8 @@
 # Bundled WormForge examples
 
+New to the bundle/component/profile format? Read [`../MODDING.md`](../MODDING.md)
+first. These packs are the reading material after that.
+
 These are the examples embedded in WormForge Code Studio. They are deliberately
 small and focused: one idea per pack, so the code is readable rather than a tour
 of every feature the engine has.

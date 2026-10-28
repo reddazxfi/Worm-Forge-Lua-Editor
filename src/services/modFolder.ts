@@ -689,6 +689,9 @@ export function buildModEntryLua(
 -- Entry file for this mod. mod.toml declares it as the ${componentId} component,
 -- and the bundled profile in profiles/ switches that component on.
 --
+-- This file is a Lua module: the engine reads what it returns.
+-- \`ctx\` is a table the engine passes in; it is not a global and not the mod.
+-- \`wa\` exists only inside install and the callbacks it registers.
 `;
   const values =
     options.length > 0
@@ -698,9 +701,9 @@ ${reads}`
       : '';
 
   if (kind === 'weapon') {
-    return `${header}-- A weapon's file is loaded with require() and MUST return a table with
--- defaults and install. Nothing calls it by itself: the engine calls install()
--- once per round when the profile places this component.
+    return `${header}-- A weapon component returns a table with defaults and install.
+-- The top level is declaration only: \`wa\` is not available here.
+-- The engine calls install(ctx) once when the profile places this component.
 return {
   defaults = {
     ammo = { round_start = -1 },
@@ -715,9 +718,9 @@ ${values}    -- TODO: this is the weapon's behavior. Read the parameters above a
 `;
   }
 
-  return `${header}-- A feature's file is loaded with require() and MUST return its install
--- function, or a table { install = ... }. Nothing calls it by itself: the
--- engine calls it once per round when the profile selects the component.
+  return `${header}-- A feature returns its install function, or a table { install = ... }.
+-- The top level is declaration only: \`wa\` is not available here.
+-- The engine calls install(ctx) once when the profile selects this component.
 return function(ctx)
 ${values}    -- TODO: this is the behavior. Read the parameters above and replace this
     -- log with the actual behavior.
