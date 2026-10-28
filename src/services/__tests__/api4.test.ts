@@ -283,6 +283,13 @@ describe('class member updates (0.9.1)', () => {
     expect(names).toContain('remove');
   });
 
+  it('documents require as a global, not a wa member', () => {
+    const req = BUILTIN_FUNCTIONS.find((f) => f.name === 'require');
+    expect(req).toBeTruthy();
+    expect(req?.scope).toBe('global');
+    expect(BUILTIN_FUNCTIONS.some((f) => f.name === 'wa.require')).toBe(false);
+  });
+
   it('documents the 0.9.11 HUD window, invisibility, and death states', () => {
     const fn = (name: string) => BUILTIN_FUNCTIONS.find((f) => f.name === name);
     expect(fn('wa.hud.message_top')).toBeTruthy();
@@ -386,14 +393,14 @@ describe('wa.audit is named, not called a typo (mirrors checks.rs)', () => {
 });
 
 describe('spec keys (API 4)', () => {
-  it('has exactly the 49 keys the checker test pins', () => {
-    // checks.rs: spec_key_data_survived_the_move_into_the_generator asserts 49.
+  it('has exactly the 51 keys the checker test pins', () => {
+    // checks.rs: spec_key_data_survived_the_move_into_the_generator asserts 51.
     // If this fails, the two lists drifted -- fix src/data/specKeys.ts and keep
     // both numbers in step.
-    expect(WEAPON_SPEC_KEYS.length).toBe(50);
+    expect(WEAPON_SPEC_KEYS.length).toBe(51);
   });
 
-  it.each(['fires', 'handling', 'missile', 'clusters', 'gun', 'strike', 'jet_pack', 'raw', 'panel_icons', 'hold'])(
+  it.each(['fires', 'handling', 'missile', 'clusters', 'gun', 'strike', 'jet_pack', 'raw', 'panel_icons', 'hold', 'available_in_caves'])(
     'accepts the API 4 claim key %s without a spec-key-typo',
     (key) => {
       const src = `wa.weapons.replace({ ${key} = {} })`;

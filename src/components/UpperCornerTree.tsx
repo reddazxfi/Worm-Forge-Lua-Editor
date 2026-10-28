@@ -24,6 +24,7 @@ import {
 import { fieldPaths, type TableDoc } from '../data/tableDocs';
 import { WorkspaceTree } from './WorkspaceTree';
 import type { WorkspaceModel } from '../services/workspaceTree';
+import type { AppSurfaces } from '../services/appTheme';
 
 interface UpperCornerTreeProps {
   variables: VariableDef[];
@@ -45,6 +46,7 @@ interface UpperCornerTreeProps {
   onInsertCode: (snippet: string) => void;
   onOpenEngineModal: () => void;
   isLight?: boolean;
+  surface?: AppSurfaces;
 }
 
 export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
@@ -64,6 +66,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
   onInsertCode,
   onOpenEngineModal,
   isLight = false,
+  surface,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -142,6 +145,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
 
   return (
     <div
+      style={surface ? { backgroundColor: surface.tree } : undefined}
       className={`flex flex-col h-full border-b select-none text-xs transition-colors ${
         isLight
           ? 'bg-slate-50 border-slate-300 text-slate-800'
@@ -150,6 +154,7 @@ export const UpperCornerTree: React.FC<UpperCornerTreeProps> = ({
     >
       {/* Header and Search */}
       <div
+        style={surface ? { backgroundColor: surface.header } : undefined}
         className={`p-2 border-b flex items-center gap-2 transition-colors ${
           isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#14161a] border-[#262b33]'
         }`}

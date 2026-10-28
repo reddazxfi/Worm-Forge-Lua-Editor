@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planInsertion } from '../completion';
+import { planInsertion, planRequireInsertion } from '../completion';
 
 /** Apply a plan to the line, as the editor would. */
 function applied(line: string, caret: number, insertText: string): string {
@@ -61,6 +61,38 @@ describe('planInsertion: separator repairs', () => {
 
   it('does not consume a colon elsewhere on the line', () => {
     expect(applied('local x = 1; a:', 15, ':gfx()')).toBe('local x = 1; a:gfx()');
+  });
+});
+
+describe('planRequireInsertion: whole module path', () => {
+  const applied = (line: string, caret: number, insertText: string) => {
+    const plan = planRequireInsertion(line, caret, insertText);
+    if (!plan) throw new Error('no plan');
+    return line.slice(0, plan.start) + plan.text + line.slice(caret);
+  };
+
+  it('replaces the whole path, not just the last segment', () => {
+    const line = 'local u = require("lib/ut';
+    expect(applied(line, line.length, 'lib/util')).toBe('local u = require("lib/util');
+  });
+
+  it('handles a deeper typed prefix without doubling it', () => {
+    const line = 'require("lib/ef';
+    expect(applied(line, line.length, 'lib/effects/trail')).toBe(
+      'require("lib/effects/trail'
+    );
+  });
+
+  it('handles a dash in the last segment', () => {
+    const line = "require('lib/foo-";
+    expect(applied(line, line.length, 'lib/foo-bar')).toBe("require('lib/foo-bar");
+  });
+
+  it('handles a shared export prefix', () => {
+    const line = 'require("wf-lib/effects/tr';
+    expect(applied(line, line.length, 'wf-lib/effects/trail')).toBe(
+      'require("wf-lib/effects/trail'
+    );
   });
 });
 

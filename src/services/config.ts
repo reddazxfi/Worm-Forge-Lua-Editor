@@ -1,7 +1,15 @@
 import { isValidSwatch, SYNTAX_TOKENS, type SyntaxOverrides } from './editorThemes';
+import { sanitizeBackground } from './appTheme';
 
 export interface EditorConfig {
   theme: 'dark' | 'light';
+  // Per-theme app background. Empty means "use the stock theme background"; a
+  // value is a validated #rrggbb hex that stays in the theme's luminance family.
+  backgroundDark: string;
+  backgroundLight: string;
+  // Which side of the editor the tree/doc sidebar sits on. Dragging and the
+  // splitter's border both follow this, rather than assuming left forever.
+  sidebarSide: 'left' | 'right';
   // Which syntax palette the editor uses. An unknown id falls back to 'classic'
   // in editorThemes.getPreset(), so a stale config degrades instead of breaking.
   syntaxPreset: string;
@@ -43,6 +51,9 @@ export interface EditorConfig {
 
 export const DEFAULT_CONFIG: EditorConfig = {
   theme: 'dark',
+  backgroundDark: '',
+  backgroundLight: '',
+  sidebarSide: 'left',
   syntaxPreset: 'classic',
   syntaxOverridesDark: {},
   syntaxOverridesLight: {},
@@ -79,6 +90,11 @@ export function loadConfig(): EditorConfig {
     // from the spread), and one edited by hand could hold a non-boolean. Only an
     // explicit `false` turns the popup off; everything else stays on.
     if (typeof merged.autocomplete !== 'boolean') merged.autocomplete = true;
+    // New in the 1.0 appearance pass. Validate rather than trust localStorage:
+    // the streaming inline styles below cannot tolerate an arbitrary string.
+    merged.sidebarSide = parsed?.sidebarSide === 'right' ? 'right' : 'left';
+    merged.backgroundDark = sanitizeBackground(parsed?.backgroundDark, 'dark');
+    merged.backgroundLight = sanitizeBackground(parsed?.backgroundLight, 'light');
     return migrateStartupFolder(merged);
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -206,6 +222,8 @@ export function exportConfigAsIni(cfg: EditorConfig): string {
   return `; WormForge Code Editor Configuration
 [Editor]
 theme = ${cfg.theme}
+background_dark = ${cfg.backgroundDark || ''}
+background_light = ${cfg.backgroundLight || ''}
 syntax_preset = ${cfg.syntaxPreset}
 ${serializeOverrideIni('syntax_override_dark', cfg.syntaxOverridesDark)}
 ${serializeOverrideIni('syntax_override_light', cfg.syntaxOverridesLight)}
@@ -221,6 +239,7 @@ launch_mode = ${cfg.launchMode}
 mods_root_path = ${cfg.modsRootPath || ''}
 
 [Layout]
+sidebar_side = ${cfg.sidebarSide}
 sidebar_width = ${cfg.sidebarWidth}
 tree_height_percent = ${cfg.treeHeightPercent}
 console_height = ${cfg.consoleHeight}
@@ -261,6 +280,23 @@ export function parseIniConfig(iniText: string): Partial<EditorConfig> {
 
     if (cleanKey === 'theme' && (val === 'light' || val === 'dark')) {
       result.theme = val;
+    } else if (cleanKey === 'background_dark' || cleanKey === 'background_light') {
+      // Blank means "stock theme colour", which is a supported value, not an
+      // error. A non-blank value still has to pass the same luminance gate as the
+      // live picker; a bad hex is ignored and the current setting stays.
+      const mode = cleanKey === 'background_dark' ? 'dark' : 'light';
+      if (!val) {
+        if (mode === 'dark') result.backgroundDark = '';
+        else result.backgroundLight = '';
+      } else {
+        const safe = sanitizeBackground(val, mode);
+        if (safe) {
+          if (mode === 'dark') result.backgroundDark = safe;
+          else result.backgroundLight = safe;
+        }
+      }
+    } else if (cleanKey === 'sidebar_side') {
+      if (val === 'left' || val === 'right') result.sidebarSide = val;
     } else if (cleanKey === 'syntax_preset') {
       // Not validated against SYNTAX_PRESETS here on purpose: getPreset() already
       // falls back to 'classic' at render time, so an .ini naming a preset from a

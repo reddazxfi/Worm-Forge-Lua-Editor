@@ -42,6 +42,10 @@ mlua = { version = "0.10", features = ["lua54", "vendored"] }
 # which is unused here -- the payload is built by hand below, so the AST is
 # never serialized wholesale.
 full_moon = { version = "3", default-features = false, features = ["lua54"] }
+# The engine parses mod.toml with toml 0.8. The resolver only reads the fields
+# that affect require (id, dependencies, exports, namespace, components), but it
+# uses the same parser so a manifest that parses here parses in the game.
+toml = "0.8"
 
 [profile.release]
 opt-level = "s"

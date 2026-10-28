@@ -4,22 +4,33 @@ import { ClassDef, EnumDef, FunctionDef, MemberDef, VariableDef } from '../types
 import { TableFields } from './TableFields';
 import type { TableDoc } from '../data/tableDocs';
 import { docSnippetFor } from '../data/docSnippets';
+import type { AppSurfaces } from '../services/appTheme';
 
 interface DocPaneProps {
   selectedItem: any;
   onInsertCode: (snippet: string) => void;
   onLoadTemplate?: (templateId: string) => void;
   isLight?: boolean;
+  surface?: AppSurfaces;
 }
 
-export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, onLoadTemplate, isLight = false }) => {
+export const DocPane: React.FC<DocPaneProps> = ({
+  selectedItem,
+  onInsertCode,
+  onLoadTemplate,
+  isLight = false,
+  surface,
+}) => {
   const [copiedTarget, setCopiedTarget] = React.useState<string | null>(null);
 
   if (!selectedItem) {
     return (
-      <div className={`h-full flex flex-col items-center justify-center p-4 text-center border-b transition-colors select-text ${
-        isLight ? 'bg-slate-50 border-slate-300 text-slate-500' : 'bg-[#14171c] border-[#262b33] text-[#556275]'
-      }`}>
+      <div
+        style={surface ? { backgroundColor: surface.doc } : undefined}
+        className={`h-full flex flex-col items-center justify-center p-4 text-center border-b transition-colors select-text ${
+          isLight ? 'bg-slate-50 border-slate-300 text-slate-500' : 'bg-[#14171c] border-[#262b33] text-[#556275]'
+        }`}
+      >
         <BookOpen className="w-6 h-6 mb-1 opacity-50" />
         <p className="text-xs font-medium">Select any item from the Tree above or hover code</p>
         <span className="text-[11px] opacity-75 mt-1">Displays functions, parameters, classes, and verbs</span>
@@ -124,6 +135,7 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
     // container, which yanked the whole sidebar to the bottom. Only the inner
     // body scrolls now.
     <div
+      style={surface ? { backgroundColor: surface.doc } : undefined}
       className={`h-full flex flex-col border-b text-xs select-text transition-colors ${
         isLight
           ? 'bg-slate-50 border-slate-300 text-slate-800'
@@ -132,6 +144,7 @@ export const DocPane: React.FC<DocPaneProps> = ({ selectedItem, onInsertCode, on
     >
       {/* Title Bar */}
       <div
+        style={surface ? { backgroundColor: surface.header } : undefined}
         className={`p-2.5 border-b flex items-center justify-between transition-colors ${
           isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#171b21] border-[#242932]'
         }`}

@@ -8,6 +8,7 @@ import {
   LayoutGrid,
 } from 'lucide-react';
 import { ModFolderInfo } from '../types/wormforge';
+import type { AppSurfaces } from '../services/appTheme';
 
 // Packs deliberately NOT offered by the "Load Mod / Script" menu. These would
 // be examples that are also loaded by the mod loader, so offering them here as
@@ -30,6 +31,8 @@ interface StudioHeaderProps {
   // mods grid from the editor without opening Config.
   onOpenModsList?: () => void;
   isLight?: boolean;
+  /** Optional custom app-surface palette; omitted = stock theme classes. */
+  surface?: AppSurfaces;
 }
 
 export const StudioHeader: React.FC<StudioHeaderProps> = ({
@@ -42,6 +45,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   existingMods,
   onOpenModsList,
   isLight = false,
+  surface,
 }) => {
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
 
@@ -67,6 +71,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
 
   return (
     <header
+      style={surface ? { backgroundColor: surface.header } : undefined}
       className={`border-b text-xs select-none transition-colors ${
         isLight
           ? 'bg-slate-100 border-slate-300 text-slate-800'
@@ -220,6 +225,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
 
       {/* Editor Tabs Bar */}
       <div
+        style={surface ? { backgroundColor: surface.tabs } : undefined}
         className={`px-2 flex items-center gap-1 overflow-x-auto border-t ${
           isLight ? 'bg-slate-200 border-slate-300' : 'bg-[#101317] border-[#1e232c]'
         }`}

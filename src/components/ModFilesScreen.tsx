@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { AlertTriangle, ArrowLeft, Code2, FileCode, FileText, Package, Sliders, Zap } from 'lucide-react';
 import type { WorkspaceFile, WorkspaceModel } from '../services/workspaceTree';
 import { listModFiles } from '../services/workspaceTree';
+import type { AppSurfaces } from '../services/appTheme';
 
 interface ModFilesScreenProps {
   /** Folder name on disk, e.g. `tools`. */
@@ -14,6 +15,7 @@ interface ModFilesScreenProps {
   official?: boolean;
   model: WorkspaceModel;
   isLight?: boolean;
+  surface?: AppSurfaces;
   onOpenFile: (path: string) => void;
   onBack: () => void;
   onOpenConfig: () => void;
@@ -38,6 +40,7 @@ export const ModFilesScreen: React.FC<ModFilesScreenProps> = ({
   official = false,
   model,
   isLight = false,
+  surface,
   onOpenFile,
   onBack,
   onOpenConfig,
@@ -132,12 +135,14 @@ export const ModFilesScreen: React.FC<ModFilesScreenProps> = ({
 
   return (
     <div
+      style={surface ? { backgroundColor: surface.app } : undefined}
       className={`h-full flex flex-col select-none transition-colors ${
         isLight ? 'bg-slate-100 text-slate-800' : 'bg-[#0e1115] text-[#cfdbe8]'
       }`}
     >
       {/* Header -- same bar as the mod grid, with a back step in front. */}
       <div
+        style={surface ? { backgroundColor: surface.header } : undefined}
         className={`px-4 py-3 border-b flex items-center gap-3 shrink-0 transition-colors ${
           isLight ? 'bg-white border-slate-300' : 'bg-[#171b21] border-[#242b35]'
         }`}
@@ -249,6 +254,7 @@ export const ModFilesScreen: React.FC<ModFilesScreenProps> = ({
           every Lua file, so a `require`d module is never hidden behind the
           manifest. */}
       <div
+        style={surface ? { backgroundColor: surface.header } : undefined}
         className={`px-4 py-2 border-t text-[10.5px] shrink-0 transition-colors ${
           isLight ? 'bg-white border-slate-300 text-slate-500' : 'bg-[#14171c] border-[#242932] text-[#63758b]'
         }`}

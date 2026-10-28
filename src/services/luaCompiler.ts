@@ -143,6 +143,147 @@ export interface AstOutcome {
 
 const RULE = 'lua-ast';
 
+/** One current-bundle buffer sent to the full-mod resolver. */
+export interface ModCheckFile {
+  path: string;
+  text: string;
+}
+
+export interface ModCheckSharedExport {
+  name: string;
+  provider: string;
+  path: string;
+}
+
+export interface ModCheckGraph {
+  nodes: number;
+  edges: number;
+  localModules: string[];
+  sharedExports: ModCheckSharedExport[];
+  dependencyIds: string[];
+  dynamicRequires: number;
+  unresolved: number;
+}
+
+export interface ModCheckFingerprint {
+  path: string;
+  hash: string;
+  length: number;
+}
+
+/**
+ * The batch result. `diagnostics` is already shaped like SyntaxDiagnostic, but
+ * carries `file` and `dependency` so the console can label cross-file findings
+ * and App can keep the gutter limited to the active file.
+ */
+export interface ModCheckReport {
+  ok: boolean;
+  cancelled: boolean;
+  checkedRoot: string;
+  modsRoot: string | null;
+  currentBundle: string | null;
+  diagnostics: SyntaxDiagnostic[];
+  graph: ModCheckGraph;
+  fingerprints: ModCheckFingerprint[];
+}
+
+export interface ModCheckOutcome {
+  available: boolean;
+  report?: ModCheckReport;
+  reason?: string;
+}
+
+/** Rust's FileDiagnostic before it is validated into SyntaxDiagnostic. */
+interface RawFileDiagnostic {
+  file?: string;
+  bundle?: string;
+  dependency?: boolean;
+  line?: number;
+  column?: number;
+  severity?: string;
+  rule?: string;
+  message?: string;
+  detail?: string;
+}
+
+interface RawModCheckReport {
+  ok?: boolean;
+  cancelled?: boolean;
+  checkedRoot?: string;
+  modsRoot?: string | null;
+  currentBundle?: string | null;
+  diagnostics?: RawFileDiagnostic[];
+  graph?: Partial<ModCheckGraph>;
+  fingerprints?: ModCheckFingerprint[];
+}
+
+/**
+ * Full-mod require check. Desktop only, and deliberately called only by the
+ * SYNTAX CHECK button -- never by typing, tab switches, completion, formatting
+ * or snippet insertion.
+ */
+export async function checkModModules(args: {
+  requestId: number;
+  root: string;
+  modsRoot?: string | null;
+  customVerbs?: [string, string][];
+  activeFile?: string;
+  files: ModCheckFile[];
+}): Promise<ModCheckOutcome> {
+  if (!isDesktop()) {
+    return { available: false, reason: 'no Rust runtime (this is not the desktop app)' };
+  }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const raw = (await invoke('check_mod_modules', {
+      requestId: args.requestId,
+      root: args.root,
+      ...(args.modsRoot ? { modsRoot: args.modsRoot } : {}),
+      ...(args.customVerbs && args.customVerbs.length > 0
+        ? { customVerbs: args.customVerbs }
+        : {}),
+      ...(args.activeFile ? { activeFile: args.activeFile } : {}),
+      files: args.files,
+    })) as RawModCheckReport;
+
+    const diagnostics: SyntaxDiagnostic[] = (raw.diagnostics ?? []).map((d) => ({
+      line: Number.isFinite(d.line) && (d.line as number) > 0 ? (d.line as number) : 1,
+      column: Number.isFinite(d.column) && (d.column as number) > 0 ? (d.column as number) : 1,
+      message: d.message ?? 'require check failed',
+      severity: asSeverity(d.severity),
+      rule: d.rule || 'require',
+      ...(d.detail ? { detail: d.detail } : {}),
+      ...(d.file ? { file: d.file } : {}),
+      ...(d.dependency ? { dependency: true } : {}),
+    }));
+
+    return {
+      available: true,
+      report: {
+        ok: raw.ok ?? false,
+        cancelled: raw.cancelled ?? false,
+        checkedRoot: raw.checkedRoot ?? args.root,
+        modsRoot: raw.modsRoot ?? null,
+        currentBundle: raw.currentBundle ?? null,
+        diagnostics,
+        graph: {
+          nodes: raw.graph?.nodes ?? 0,
+          edges: raw.graph?.edges ?? 0,
+          localModules: raw.graph?.localModules ?? [],
+          sharedExports: raw.graph?.sharedExports ?? [],
+          dependencyIds: raw.graph?.dependencyIds ?? [],
+          dynamicRequires: raw.graph?.dynamicRequires ?? 0,
+          unresolved: raw.graph?.unresolved ?? 0,
+        },
+        fingerprints: raw.fingerprints ?? [],
+      },
+    };
+  } catch (err) {
+    const raw = typeof err === 'string' ? err : String((err as any)?.message ?? err);
+    return { available: false, reason: raw.trim() || 'the command returned no error message' };
+  }
+}
+
 /**
  * The severities the console understands. `parse_lua_ast` sends `severity` as a plain
  * string over IPC, and TS cannot check a value that arrives from JSON, so it is

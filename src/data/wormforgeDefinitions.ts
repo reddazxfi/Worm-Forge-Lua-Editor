@@ -354,6 +354,22 @@ export const BUILTIN_ENUMERATIONS: EnumDef[] = [
 
 export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
+    name: 'require',
+    namespace: 'global',
+    parameters: [
+      {
+        name: 'name',
+        type: 'string',
+        description: 'Bundle-local module name, or a wf-lib/... export name',
+      },
+    ],
+    returnType: 'any',
+    description:
+      'Loads a module from this bundle (`require("lib/util")` -> `lib/util.lua`) or a shared export declared by this bundle or a direct dependency (`require("wf-lib/effects/trail")`). The engine caches the module return value per consuming bundle and reports cycles. `wa` is restricted while a component and its modules load.',
+    example: 'local util = require("lib/util")',
+    scope: 'global',
+  },
+  {
     name: 'wa.log',
     parameters: [{ name: 'message', type: 'string', description: 'Log message to output to console and wkLua.log' }],
     returnType: 'void',

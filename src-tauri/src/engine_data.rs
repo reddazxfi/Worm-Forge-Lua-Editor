@@ -541,6 +541,7 @@ pub static SPEC_KEYS: &[&str] = &[
     "id",
     "actor",
     "airborne",
+    "available_in_caves",
     "click_finish",
     "stock_fire_choice",
     "panel_icons",

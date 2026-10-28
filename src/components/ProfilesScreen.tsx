@@ -13,6 +13,7 @@ import {
 import type { InstalledProfile } from '../services/profilesFolder';
 import type { ModsListTile } from './ModsListScreen';
 import { bundledBy, linkFeatures, type ComponentSource, type FeatureLink } from '../services/profile';
+import type { AppSurfaces } from '../services/appTheme';
 
 interface ProfilesScreenProps {
   /** `WormForge/Profiles`, derived from the mods folder. '' when it cannot be derived. */
@@ -24,6 +25,7 @@ interface ProfilesScreenProps {
   /** Installed mods, for turning a feature id into a file. */
   mods: ModsListTile[];
   isLight?: boolean;
+  surface?: AppSurfaces;
   onBack: () => void;
   onRefresh: () => void;
   onOpenConfig: () => void;
@@ -48,6 +50,7 @@ export const ProfilesScreen: React.FC<ProfilesScreenProps> = ({
   error,
   mods,
   isLight = false,
+  surface,
   onBack,
   onRefresh,
   onOpenConfig,
@@ -112,11 +115,13 @@ export const ProfilesScreen: React.FC<ProfilesScreenProps> = ({
 
   return (
     <div
+      style={surface ? { backgroundColor: surface.app } : undefined}
       className={`h-full flex flex-col select-none transition-colors ${
         isLight ? 'bg-slate-100 text-slate-800' : 'bg-[#0e1115] text-[#cfdbe8]'
       }`}
     >
       <div
+        style={surface ? { backgroundColor: surface.header } : undefined}
         className={`px-4 py-3 border-b flex items-center gap-3 shrink-0 transition-colors ${
           isLight ? 'bg-white border-slate-300' : 'bg-[#171b21] border-[#242b35]'
         }`}
@@ -305,6 +310,7 @@ export const ProfilesScreen: React.FC<ProfilesScreenProps> = ({
       </div>
 
       <div
+        style={surface ? { backgroundColor: surface.header } : undefined}
         className={`px-4 py-2 border-t text-[10.5px] shrink-0 transition-colors ${
           isLight ? 'bg-white border-slate-300 text-slate-500' : 'bg-[#14171c] border-[#242932] text-[#63758b]'
         }`}

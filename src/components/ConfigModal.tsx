@@ -16,8 +16,18 @@ import {
   Database,
   Palette,
   Trash2,
+  PanelLeft,
+  PanelRight,
+  PaintBucket,
 } from 'lucide-react';
 import { EditorConfig, DEFAULT_CONFIG, exportConfigAsIni, parseIniConfig } from '../services/config';
+import {
+  APP_BACKGROUND_PRESETS,
+  DEFAULT_APP_BACKGROUNDS,
+  getAppSurfaces,
+  isUsableBackground,
+  normalizeHexColor,
+} from '../services/appTheme';
 import {
   SYNTAX_PRESETS,
   SYNTAX_TOKENS,
@@ -101,10 +111,58 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
   // whole list for the file -- the escape hatch when a method was renamed
   // and the old name would otherwise linger as a stale row.
   const [verbImportMode, setVerbImportMode] = useState<'merge' | 'replace'>('merge');
+  // The colour picker is allowed to reject a value (too light for dark mode, or
+  // too dark for light mode). Keeping the reason next to the picker is clearer
+  // than silently snapping the swatch back.
+  const [backgroundError, setBackgroundError] = useState<string | null>(null);
+  useEffect(() => {
+    setBackgroundError(null);
+  }, [isOpen, config.theme]);
 
   if (!isOpen) return null;
 
   const isLight = config.theme === 'light';
+
+  // ---- 1.0 app background --------------------------------------------------
+  // One background per theme. The picker edits the mode currently selected in
+  // the dialog, exactly like the per-token syntax overrides below, so a colour
+  // chosen for dark mode cannot make the light theme unreadable.
+  const backgroundMode = isLight ? 'light' : 'dark';
+  const activeBackground = isLight ? config.backgroundLight : config.backgroundDark;
+  const defaultBackground = DEFAULT_APP_BACKGROUNDS[backgroundMode];
+  const effectiveBackground = activeBackground || defaultBackground;
+  const previewSurfaces = getAppSurfaces(backgroundMode, effectiveBackground);
+
+  const applyBackground = (raw: string) => {
+    const normalized = normalizeHexColor(raw);
+    if (!normalized) {
+      setBackgroundError('Enter a valid hex colour, such as #0e1115.');
+      return;
+    }
+    if (!isUsableBackground(normalized, backgroundMode)) {
+      setBackgroundError(
+        backgroundMode === 'dark'
+          ? 'Dark mode needs a dark background so the light code and labels stay readable.'
+          : 'Light mode needs a light background so the dark code and labels stay readable.',
+      );
+      return;
+    }
+    setBackgroundError(null);
+    onUpdateConfig(
+      isLight
+        ? { ...config, backgroundLight: normalized }
+        : { ...config, backgroundDark: normalized },
+    );
+  };
+
+  const resetBackground = () => {
+    setBackgroundError(null);
+    onUpdateConfig(
+      isLight
+        ? { ...config, backgroundLight: '' }
+        : { ...config, backgroundDark: '' },
+    );
+  };
 
   // ---- §34 Syntax palette -------------------------------------------------
   // Overrides are kept per mode, so every edit below targets whichever mode is
@@ -461,6 +519,106 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
           {/* ----- §34 Syntax palette: the "Edit Colors" tab ----- */}
           {tab === 'colors' && (
           <div className="space-y-3">
+            {/* App background: one base colour per theme, with the derived
+                header/sidebar/editor/console surfaces computed from it. */}
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <label className="font-semibold uppercase tracking-wider text-[11px] text-amber-500 flex items-center gap-1.5">
+                  <PaintBucket className="w-3.5 h-3.5" />
+                  <span>App Background</span>
+                </label>
+                <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-[#6c7d91]'}`}>
+                  editing the {isLight ? 'light' : 'dark'} theme
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {APP_BACKGROUND_PRESETS.map((preset) => {
+                  const hex = isLight ? preset.light : preset.dark;
+                  const selected = effectiveBackground.toLowerCase() === hex.toLowerCase();
+                  return (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      onClick={() => applyBackground(hex)}
+                      title={`${preset.name} (${hex})`}
+                      className={`p-1 rounded-lg border text-[9.5px] transition-all ${
+                        selected
+                          ? 'border-amber-500 bg-amber-500/10 text-amber-600'
+                          : isLight
+                          ? 'border-slate-200 hover:border-amber-400 text-slate-500'
+                          : 'border-[#2d3542] hover:border-amber-500/60 text-[#8ea0b5]'
+                      }`}
+                    >
+                      <span
+                        className={`relative block h-7 w-full rounded border ${
+                          isLight ? 'border-black/10' : 'border-white/10'
+                        }`}
+                        style={{ backgroundColor: hex }}
+                      >
+                        {selected && (
+                          <span className="absolute inset-0 flex items-center justify-center">
+                            <Check className="w-3.5 h-3.5 text-amber-500 drop-shadow" />
+                          </span>
+                        )}
+                      </span>
+                      <span className="mt-0.5 block truncate">{preset.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2">
+                <label
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded border transition-colors ${
+                    isLight
+                      ? 'bg-slate-50 border-slate-200'
+                      : 'bg-[#171b22] border-[#28313e]'
+                  }`}
+                  title="Pick an exact background colour for the current theme"
+                >
+                  <input
+                    type="color"
+                    value={effectiveBackground}
+                    onChange={(e) => applyBackground(e.target.value)}
+                    className="w-7 h-7 rounded border border-slate-300 bg-transparent p-0 cursor-pointer"
+                    aria-label="Custom app background colour"
+                  />
+                  <span className="font-mono text-[10.5px]">{effectiveBackground}</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={resetBackground}
+                  disabled={!activeBackground}
+                  title="Restore the stock background for this theme"
+                  className={`text-[10.5px] px-2 py-1 rounded font-mono border flex items-center gap-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    isLight
+                      ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
+                      : 'bg-[#252d3a] hover:bg-[#313b4c] border-[#384354] text-[#cfdbe8]'
+                  }`}
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Default</span>
+                </button>
+              </div>
+              <div
+                className={`h-7 rounded-lg border overflow-hidden flex ${
+                  isLight ? 'border-slate-200' : 'border-[#28313e]'
+                }`}
+                title="Header / sidebar / editor / console preview"
+              >
+                <span className="w-1/6" style={{ backgroundColor: previewSurfaces.header }} />
+                <span className="w-1/4" style={{ backgroundColor: previewSurfaces.sidebar }} />
+                <span className="flex-1" style={{ backgroundColor: previewSurfaces.editor }} />
+                <span className="w-1/5" style={{ backgroundColor: previewSurfaces.console }} />
+              </div>
+              {backgroundError && (
+                <p className="text-[10.5px] leading-relaxed text-rose-500">{backgroundError}</p>
+              )}
+              <p className={`text-[10px] leading-relaxed ${isLight ? 'text-slate-500' : 'text-[#6c7d91]'}`}>
+                Paints the header, sidebar, tree, editor and console. Stored separately for dark and
+                light, and limited to colours that keep the text readable.
+              </p>
+            </div>
+
             <div className="flex items-baseline justify-between gap-2">
               <label className="font-semibold uppercase tracking-wider text-[11px] text-amber-500 flex items-center gap-1.5">
                 <Palette className="w-3.5 h-3.5" />
@@ -1031,20 +1189,55 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                 <span>Reset to Defaults</span>
               </button>
             </label>
-            <div className={`p-2.5 rounded-lg border text-[11px] flex justify-between gap-4 ${
+            <div className={`p-2.5 rounded-lg border text-[11px] space-y-2 ${
               isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#171b22] border-[#28313e]'
             }`}>
-              <div>
-                <span className={isLight ? 'text-slate-500' : 'text-[#697b8f]'}>Sidebar: </span>
-                <span className="font-mono font-semibold">{config.sidebarWidth}px</span>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <span className={isLight ? 'text-slate-600' : 'text-[#9dafc2]'}>Sidebar position</span>
+                  <p className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-[#5f7185]'}`}>
+                    Tree and docs on either side of the editor.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {([
+                    { value: 'left' as const, label: 'Left', Icon: PanelLeft },
+                    { value: 'right' as const, label: 'Right', Icon: PanelRight },
+                  ]).map(({ value, label, Icon }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => onUpdateConfig({ ...config, sidebarSide: value })}
+                      className={`px-2 py-1 rounded border flex items-center gap-1 font-medium transition-colors ${
+                        config.sidebarSide === value
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-500'
+                          : isLight
+                          ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600'
+                          : 'bg-[#20252e] hover:bg-[#2b3341] border-[#2e3745] text-[#8ea0b5]'
+                      }`}
+                    >
+                      <Icon className="w-3 h-3" />
+                      <span>{label}</span>
+                      {config.sidebarSide === value && <Check className="w-3 h-3" />}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div>
-                <span className={isLight ? 'text-slate-500' : 'text-[#697b8f]'}>Tree Height: </span>
-                <span className="font-mono font-semibold">{config.treeHeightPercent}%</span>
-              </div>
-              <div>
-                <span className={isLight ? 'text-slate-500' : 'text-[#697b8f]'}>Console: </span>
-                <span className="font-mono font-semibold">{config.consoleHeight}px</span>
+              <div className={`flex justify-between gap-4 pt-2 border-t ${
+                isLight ? 'border-slate-200' : 'border-[#28313e]'
+              }`}>
+                <div>
+                  <span className={isLight ? 'text-slate-500' : 'text-[#697b8f]'}>Sidebar: </span>
+                  <span className="font-mono font-semibold">{config.sidebarWidth}px</span>
+                </div>
+                <div>
+                  <span className={isLight ? 'text-slate-500' : 'text-[#697b8f]'}>Tree Height: </span>
+                  <span className="font-mono font-semibold">{config.treeHeightPercent}%</span>
+                </div>
+                <div>
+                  <span className={isLight ? 'text-slate-500' : 'text-[#697b8f]'}>Console: </span>
+                  <span className="font-mono font-semibold">{config.consoleHeight}px</span>
+                </div>
               </div>
             </div>
           </div>

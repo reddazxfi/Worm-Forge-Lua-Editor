@@ -69,6 +69,10 @@ export const WEAPON_SPEC_KEYS: string[] = [
   'id',
   'actor',
   'airborne',
+  // Direct spec field read by `table_to_claim` (api.rs:2346). It is also
+  // mirrored as `handling.available_in_caves` in the weapon record, but the
+  // direct key is the one a `wa.weapons.replace{...}` table uses.
+  'available_in_caves',
   'click_finish',
   'stock_fire_choice',
   'panel_icons',

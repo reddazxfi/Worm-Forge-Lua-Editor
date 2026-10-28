@@ -21,10 +21,11 @@ import {
   type TokenClasses,
 } from '../services/editorHighlight';
 import { LUA_GLOBALS_SET } from '../data/luaGlobals';
-import { planInsertion } from '../services/completion';
+import { planInsertion, planRequireInsertion } from '../services/completion';
 import { lineStateBeforeCaret } from '../services/lineState';
 import { tableKeySuggestions, tableValueSuggestions, tableContextAt } from '../services/tableContext';
 import { startsNewUndoEntry, isWordBoundary } from '../services/undoPolicy';
+import type { AppSurfaces } from '../services/appTheme';
 
 export const STOCK_WA_WEAPON_SLOTS = [
   // Standard & Explosives
@@ -162,6 +163,8 @@ interface AutocompleteItem {
    * Ties keep insertion order, which is why the items are appended scope-first.
    */
   rank?: number;
+  /** Replace the whole string path, not just the last identifier. */
+  requireInsert?: boolean;
 }
 
 /** Anything from the engine definitions, sorted below every local name. */
@@ -213,6 +216,12 @@ interface CodeEditorProps {
    * hidden setting: Tab then indents and nothing opens under the caret.
    */
   autocompleteEnabled?: boolean;
+  /** Bundle-local module names (no `.lua`) for `require("...")` completion. */
+  localModules?: string[];
+  /** Shared exports from the last full-mod check, offered inside require. */
+  sharedExports?: { name: string; provider: string; path: string }[];
+  /** Optional custom app-surface palette; omitted = stock theme classes. */
+  surface?: AppSurfaces;
 }
 
 // Imperative handle exposed to App.tsx. Lets the DocPane / API Tree / Keycode
@@ -288,6 +297,9 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     jumpTarget,
     customVerbs = [],
     autocompleteEnabled = true,
+    localModules = [],
+    sharedExports = [],
+    surface,
   },
   ref
 ) {
@@ -898,6 +910,9 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       else if (obj === 'wa') {
         // Functions
         for (const fn of BUILTIN_FUNCTIONS) {
+          // `require` is a global, not a member of `wa`. Without this guard the
+          // bare entry would appear as `wa.require` in this branch.
+          if (!fn.name.startsWith('wa.')) continue;
           const sub = fn.name.replace(/^wa\./, '');
           if (!query || sub.toLowerCase().includes(query) || fn.name.toLowerCase().includes(query)) {
             const params = fn.parameters.map((p) => p.name).join(', ');
@@ -1107,11 +1122,11 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     // four worm-state tables are genuinely different and offering the wrong one
     // is a false promise:
     //   .kind         -> 9 kind_name() strings (a union, not a class)
-    //   .state        -> 12 READABLE: what worm.state actually returns
+    //   .state        -> 26 READABLE: what worm.state actually returns
     //   .state_label  -> 28 WORM_STATES: the DEBUG label table, log-only
     //   :set_state(   -> 6 SETTABLE: anything else is a hard engine error
-    // `state_label` deliberately offers the full 28 while `state` offers 12 --
-    // suggesting `walking` after `.state` would hand back nil at runtime.
+    // `state_label` deliberately offers the full 28 while `state` offers 26 --
+    // the two are different engine tables and must not be merged.
     const stringMatch = lineText.match(
       /([a-zA-Z0-9_]+)([.:])([a-zA-Z0-9_]+)\s*(==|~=)\s*"([^"]*)$/
     );
@@ -1177,6 +1192,47 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
             documentation: c.description,
           }));
 
+        if (items.length > 0) {
+          showAutocomplete(items, lineNum, colNum);
+          return;
+        }
+      }
+    }
+
+    // 1.6 require("..."): local modules from the open buffers, plus shared
+    // exports from the last full-mod check. This must run before the prose
+    // bailout below, because the caret is inside a string. It never reads the
+    // filesystem: local names come from `files`, shared names from the cached
+    // report, so a keystroke cannot trigger a sibling-pack scan.
+    if (lineState.inString) {
+      const reqMatch = lineText.match(/\brequire\s*\(?\s*["']([^"']*)$/);
+      if (reqMatch) {
+        const query = reqMatch[1].toLowerCase();
+        const items: AutocompleteItem[] = [];
+        const seen = new Set<string>();
+        const add = (name: string, detail: string, documentation: string) => {
+          if (!name || seen.has(name)) return;
+          if (query && !name.toLowerCase().includes(query)) return;
+          seen.add(name);
+          items.push({
+            label: name,
+            kind: 'variable',
+            detail,
+            insertText: name,
+            documentation,
+            requireInsert: true,
+          });
+        };
+        for (const name of localModules) {
+          add(name, 'local module', `Bundle-local module: ${name}.lua`);
+        }
+        for (const e of sharedExports) {
+          add(
+            e.name,
+            `shared export from ${e.provider}`,
+            `Exported by ${e.provider} as ${e.path}`
+          );
+        }
         if (items.length > 0) {
           showAutocomplete(items, lineNum, colNum);
           return;
@@ -1542,7 +1598,11 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     const lineBreakIdx = textBefore.lastIndexOf('\n');
     const currentLine = textBefore.slice(lineBreakIdx + 1);
     const caretInLine = selStart - (lineBreakIdx + 1);
-    const plan = planInsertion(currentLine, caretInLine, item.insertText, item.cursorBack ?? 0);
+    const plan =
+      (item.requireInsert
+        ? planRequireInsertion(currentLine, caretInLine, item.insertText)
+        : null) ??
+      planInsertion(currentLine, caretInLine, item.insertText, item.cursorBack ?? 0);
 
     const replaceStart = lineBreakIdx + 1 + plan.start;
     const newCode = code.slice(0, replaceStart) + plan.text + code.slice(selStart);
@@ -2028,6 +2088,7 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
   return (
     <div
       ref={editorContainerRef}
+      style={surface ? { backgroundColor: surface.editor } : undefined}
       className={`relative flex-1 flex flex-col h-full overflow-hidden select-none font-mono transition-colors ${
         isLight ? 'bg-white text-slate-800' : 'bg-[#111418] text-[#e0e6ed]'
       }`}
@@ -2134,6 +2195,7 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       {/* Exclusive TOML Stock Weapons Dropdown Toolbar */}
       {isToml && (
         <div
+          style={surface ? { backgroundColor: surface.panel } : undefined}
           className={`px-3 py-1.5 border-b flex flex-wrap items-center justify-between gap-2 text-xs font-sans transition-colors ${
             isLight
               ? 'bg-amber-50/90 border-amber-200 text-amber-950'
@@ -2226,6 +2288,7 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
         {/* Line Numbers Gutter */}
         <div
           ref={gutterRef}
+          style={surface ? { backgroundColor: surface.gutter } : undefined}
           className={`w-12 py-2 flex flex-col items-end pr-2.5 font-mono select-none overflow-hidden shrink-0 border-r transition-colors ${
             isLight
               ? 'bg-slate-50 border-slate-200 text-slate-400'

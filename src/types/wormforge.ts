@@ -8,6 +8,13 @@ export interface SyntaxDiagnostic {
   severity: SyntaxSeverity;
   rule?: string;
   /**
+   * Bundle-relative path for a full-mod finding. Absent on a single-file check,
+   * where every finding belongs to the active buffer.
+   */
+  file?: string;
+  /** True when the finding is inside a dependency bundle, not the open pack. */
+  dependency?: boolean;
+  /**
    * The long-form explanation, shown only when the user expands the row.
    *
    * WHY THIS IS SPLIT OUT

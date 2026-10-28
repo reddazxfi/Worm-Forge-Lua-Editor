@@ -45,7 +45,11 @@ export function mergeDiagnostics(
   fromTs: SyntaxDiagnostic[],
   fromRust: SyntaxDiagnostic[]
 ): SyntaxDiagnostic[] {
-  const key = (d: SyntaxDiagnostic) => `${d.line}|${d.column}|${d.rule}`;
+  // A full-mod check can report the same line/column/rule in several files.
+  // The file is part of the identity; a single-file check has no `file`, which
+  // keeps its old dedup behaviour exactly.
+  const key = (d: SyntaxDiagnostic) =>
+    `${d.file ?? ''}|${d.line}|${d.column}|${d.rule}`;
   const seen = new Set<string>();
   const out: SyntaxDiagnostic[] = [];
   // TypeScript first, so its wording wins every collision -- see the note above.

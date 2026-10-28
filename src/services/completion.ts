@@ -81,3 +81,25 @@ export function planInsertion(
 
   return { start, text, cursorBack };
 }
+
+/**
+ * Plans a require-path insertion inside the string the user is typing.
+ *
+ * The generic `planInsertion` replaces only the last `[A-Za-z0-9_]*`, which is
+ * right for `wa.world` but wrong for `lib/ut`: inserting `lib/util` there gives
+ * `lib/lib/util`. A require name is a whole path, so replace everything between
+ * the opening quote and the caret with the suggestion. That also handles
+ * `wf-lib/effects/tr` and `lib/foo-` without a second prefix.
+ */
+export function planRequireInsertion(
+  currentLine: string,
+  caretInLine: number,
+  insertText: string
+): InsertionPlan | null {
+  const beforeCaret = currentLine.slice(0, caretInLine);
+  const doubleQuote = beforeCaret.lastIndexOf('"');
+  const singleQuote = beforeCaret.lastIndexOf("'");
+  const quote = Math.max(doubleQuote, singleQuote);
+  if (quote === -1) return null;
+  return { start: quote + 1, text: insertText, cursorBack: 0 };
+}

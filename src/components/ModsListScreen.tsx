@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, Package, Plus, RefreshCw, FolderOpen } from 'lucide-react';
+import type { AppSurfaces } from '../services/appTheme';
 
 export interface ModsListTile {
   folderName: string;
@@ -28,6 +29,7 @@ interface ModsListScreenProps {
   openingPath?: string | null;
   error?: string | null;
   isLight?: boolean;
+  surface?: AppSurfaces;
   onOpenMod: (mod: ModsListTile) => void;
   onRefresh: () => void;
   onCreateNew: () => void;
@@ -44,6 +46,7 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
   openingPath = null,
   error = null,
   isLight = false,
+  surface,
   onOpenMod,
   onRefresh,
   onCreateNew,
@@ -143,12 +146,14 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
 
   return (
     <div
+      style={surface ? { backgroundColor: surface.app } : undefined}
       className={`h-full flex flex-col select-none transition-colors ${
         isLight ? 'bg-slate-100 text-slate-800' : 'bg-[#0e1115] text-[#cfdbe8]'
       }`}
     >
       {/* Header */}
       <div
+        style={surface ? { backgroundColor: surface.header } : undefined}
         className={`px-4 py-3 border-b flex items-center gap-3 shrink-0 transition-colors ${
           isLight ? 'bg-white border-slate-300' : 'bg-[#171b21] border-[#242b35]'
         }`}
@@ -318,6 +323,7 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
       </div>
 
       <div
+        style={surface ? { backgroundColor: surface.header } : undefined}
         className={`px-4 py-2 border-t text-[10.5px] shrink-0 transition-colors ${
           isLight ? 'bg-white border-slate-300 text-slate-500' : 'bg-[#14171c] border-[#242932] text-[#63758b]'
         }`}

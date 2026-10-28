@@ -4330,10 +4330,18 @@ end
     fn spec_key_data_survived_the_move_into_the_generator() {
         assert_eq!(
             SPEC_KEYS.len(),
-            50,
+            51,
             "spec key count changed -- check src/data/specKeys.ts was not truncated"
         );
-        for required in ["weapon", "copy_from", "patch", "on_fire", "sprite", "ends_invisibility"] {
+        for required in [
+            "weapon",
+            "copy_from",
+            "patch",
+            "on_fire",
+            "sprite",
+            "ends_invisibility",
+            "available_in_caves",
+        ] {
             assert!(
                 SPEC_KEYS.contains(&required),
                 "`{required}` must stay in SPEC_KEYS; its absence is a false positive"

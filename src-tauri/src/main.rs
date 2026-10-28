@@ -8,6 +8,7 @@ use serde::Serialize;
 
 mod checks;
 mod engine_data;
+mod mod_requires;
 mod scopes;
 
 /// Compiles a Lua 5.4 chunk without running it.
@@ -650,11 +651,47 @@ async fn parse_lua_ast(source: String, custom: Option<Vec<CustomVerbPair>>) -> R
     }
 }
 
+/// Full-mod require check. Deliberately a separate command from
+/// `parse_lua_ast`: only SYNTAX CHECK calls it, and only the desktop build can
+/// reach the filesystem. The blocking resolver runs off the UI thread.
+#[tauri::command]
+async fn check_mod_modules(
+    request_id: u64,
+    root: String,
+    mods_root: Option<String>,
+    custom_verbs: Option<Vec<CustomVerbPair>>,
+    active_file: Option<String>,
+    files: Vec<mod_requires::FileInput>,
+) -> Result<mod_requires::ModCheckReport, String> {
+    let verbs: Vec<(String, String)> = custom_verbs
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|CustomVerbPair(c, m)| !c.is_empty() && !m.is_empty())
+        .map(|CustomVerbPair(c, m)| (c, m))
+        .collect();
+    tauri::async_runtime::spawn_blocking(move || {
+        mod_requires::check(
+            request_id,
+            &root,
+            mods_root.as_deref(),
+            verbs,
+            active_file.as_deref(),
+            &files,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![compile_lua, parse_lua_ast])
+        .invoke_handler(tauri::generate_handler![
+            compile_lua,
+            parse_lua_ast,
+            check_mod_modules
+        ])
         .run(tauri::generate_context!())
         .expect("error while running WormForge Editor");
 }
