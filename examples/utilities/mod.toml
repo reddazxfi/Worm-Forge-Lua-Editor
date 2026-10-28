@@ -1,0 +1,303 @@
+# Core utilities (format_version 2): one feature with the match settings the
+# lobby scheme doesn't have and some players' favourite packs as switches,
+# fog of war, an instant utility of our own (+N Seconds) and the Cursor.
+# Nothing runs until a profile selects it (the mod loader's Profile tab).
+# See README.md.
+id = "core.utilities"
+name = "Core utilities"
+version = "0.6.0"
+author = "WormForge"
+api_version = 4
+format_version = 2
+
+# Fog of war and the Cursor Suite were their own packs until 0.5.0:
+# installing this one retires them.
+replaces = ["core.fog", "example.cursor_suite"]
+
+# The fog of war add-on (core.fog) drives the fog renderer.
+[fog]
+enable = true
+[[components]]
+
+id = "core.utilities"
+type = "feature"
+name = "Utilities"
+description = "Match settings the lobby scheme doesn't have, and some players' favourite packs as switches."
+entry = "features/utilities.lua"
+credits = "ExTurnSide by red, Live HP by reddaz, Agility by Zed and 0rang3 (port by red)"
+
+[[components.options]]
+key = "heal_per_turn"
+type = "int"
+default = 0
+min = 0
+max = 50
+label = "Heal at turn start (HP)"
+description = "Health the worm whose turn starts gets."
+
+[[components.options]]
+key = "ex_turn_side"
+type = "bool"
+default = false
+label = "ExTurnSide"
+description = "Left and right turn the worm during rope swings and other actions. By red."
+
+[[components.options]]
+key = "agility"
+type = "bool"
+default = false
+label = "Agility"
+description = "The arrow keys steer the worm a little in the air. By Zed and 0rang3, port by red."
+
+[[components.options]]
+key = "parkour"
+type = "bool"
+default = false
+label = "Parkour"
+description = "In the air, Enter kicks the worm off a wall within 20 pixels and Backspace bunny-hops it off the land below. From Project X."
+
+[[components.options]]
+key = "live_hp"
+type = "bool"
+default = false
+label = "Live HP"
+description = "Non-active worms' health bars follow damage immediately, down to zero, preserving frozen state and momentum. Death timing stays with WA. Originally by reddaz."
+
+[[components.options]]
+key = "instant_death"
+type = "bool"
+default = false
+label = "Instant Death"
+description = "Zero-HP non-active worms begin their normal death sequence once their own motion settles, without waiting for other objects. Works independently of Live HP."
+
+[[components.options]]
+key = "collect_viewer"
+type = "bool"
+default = false
+label = "Collect viewer"
+description = "What a crate gave pops up over it, for the team that took it."
+
+[[components.options]]
+key = "damage_numbers"
+type = "bool"
+default = false
+label = "Damage numbers"
+description = "Damage and healing float over the worm, Worms Reloaded style. Uses Live HP's frame snapshot."
+
+[[components.options]]
+key = "damage_numbers_side"
+type = "choice"
+choices = ["alternate", "facing", "random"]
+default = "alternate"
+label = "Damage number side"
+description = "alternate starts on the worm's facing side, then flips left/right per worm so hits stay readable; facing always follows the worm; random is a local coin."
+
+# An instant utility of our own: configurable extra time, in utility crates.
+# Auto-Use is configured by the profile's compatible on_collect use/keep choice.
+[[components]]
+
+id = "utilities.plus_ten"
+type = "weapon"
+name = "+N Seconds"
+description = "Adds configurable turn time. Choose whether bonuses stack and how automatic pickups behave during retreat. Manual use does not end the turn."
+entry = "weapons/plus_n.lua"
+icon = "sprites/plus_n.png"
+default_position = { row = "utility", column = 6 }
+
+[[components.options]]
+key = "seconds"
+type = "int"
+default = 10
+min = 1
+max = 500
+label = "Seconds added"
+description = "Time added by each activated unit."
+
+[[components.options]]
+key = "bonus_mode"
+type = "choice"
+choices = ["stack", "once_keep", "once_discard"]
+default = "once_keep"
+label = "Time bonus mode"
+description = "stack: every activated unit adds time. once_keep: one bonus per turn, banking extra pickups. once_discard: one bonus per turn, discarding surplus pickups. With Auto-Use off, all pickups stay in inventory."
+
+[[components.options]]
+key = "retreat_collect"
+type = "choice"
+choices = ["activate", "keep", "nothing"]
+default = "keep"
+label = "On collect during retreat"
+description = "With Auto-Use on: activate adds retreat time; keep saves for the next turn; nothing discards the pickup. With Auto-Use off, every pickup goes into inventory."
+
+# Fog of war (wkFOW's renderer): until 0.5.0 its own bundle, core.fog.
+[[components]]
+
+id = "core.fog"
+type = "feature"
+name = "Fog of war"
+description = "Vision, terrain memory and lighting. Select this add-on in a profile to enable fog."
+entry = "features/fog.lua"
+credits = "wkFOW"
+
+[[components.options]]
+key = "circle_radius"
+type = "int"
+default = 250
+min = 0
+max = 700
+label = "Circle radius"
+description = "Awareness circle around worms, in pixels, independent of aim."
+
+[[components.options]]
+key = "cone_width"
+type = "int"
+default = 45
+min = 45
+max = 360
+label = "Cone width"
+description = "Width of the aim-directed view cone, in degrees. 360 is a full circle."
+
+[[components.options]]
+key = "cone_length"
+type = "int"
+default = 0
+min = 0
+max = 700
+label = "Cone length"
+description = "Reach of the aim-directed view cone, in pixels. 0 means no cone."
+
+[[components.options]]
+key = "shadow_cast"
+type = "bool"
+default = true
+label = "Shadow casting"
+description = "Shadow casting: terrain blocks worms' and animals' vision. Off lights the full circle, whatever the terrain."
+
+[[components.options]]
+key = "discover"
+type = "choice"
+choices = ["off", "texture", "live", "premapped"]
+default = "texture"
+label = "Terrain memory"
+description = "Terrain memory: 0 off, 1 stale terrain, 2 live terrain, 3 premapped."
+
+[[components.options]]
+key = "view_ownership"
+type = "choice"
+choices = ["alliance", "active", "everyone"]
+default = "alliance"
+label = "Vision ownership"
+description = "Whose vision lights the map: 1 my alliance, 2 the active worm only, 3 everyone."
+
+[[components.options]]
+key = "animal_circle_radius"
+type = "int"
+default = 150
+min = 0
+max = 700
+label = "Animal circle radius"
+description = "Awareness circle around every animal, in pixels. 0 means animals see nothing."
+
+[[components.options]]
+key = "animal_cone_length"
+type = "int"
+default = 0
+min = 0
+max = 700
+label = "Animal cone length"
+description = "Reach of an animal's view cone, in pixels. 0 means no cone."
+
+[[components.options]]
+key = "animal_cone_width"
+type = "int"
+default = 45
+min = 45
+max = 360
+label = "Animal cone width"
+description = "Width of an animal's view cone, in degrees. 360 is a full circle."
+
+[[components.options]]
+key = "proj_circle"
+type = "int"
+default = 5
+min = 0
+max = 700
+label = "Proj circle"
+description = "Extra pixels of awareness outside each projectile's live sprite bounds."
+
+[[components.options]]
+key = "proj_cone_length"
+type = "int"
+default = 0
+min = 0
+max = 700
+label = "Proj cone length"
+description = "Reach of a projectile's view cone, in pixels. 0 means no cone."
+
+[[components.options]]
+key = "proj_cone_width"
+type = "int"
+default = 45
+min = 45
+max = 360
+label = "Proj cone width"
+description = "Width of a projectile's view cone, in degrees. 360 is a full circle."
+
+[[components.options]]
+key = "proj_shadow_cast"
+type = "bool"
+default = false
+label = "Projectile shadow casting"
+description = "Shadow casting for projectiles' light: terrain blocks it."
+
+[[components.options]]
+key = "explosion_circle"
+type = "int"
+default = 40
+min = 0
+max = 700
+label = "Explosion circle"
+description = "Temporary public light radius past a crater's rim after explosions."
+
+[[components.options]]
+key = "crate_circle"
+type = "int"
+default = 20
+min = 0
+max = 700
+label = "Crate circle"
+description = "Terrain-blocked awareness circle around supply crates."
+
+[[components.options]]
+key = "spectator_mode"
+type = "bool"
+default = true
+label = "Reveal map for spectators"
+description = "Reveal the whole map to spectators and alliances with no surviving worms. Living allies keep their shared vision."
+
+[[components.options]]
+key = "placement_vision"
+type = "bool"
+default = false
+label = "Reveal map during placement"
+description = "Map visible during manual worm placement."
+
+[[components.options]]
+key = "fog_floor"
+type = "int"
+default = 0
+min = 0
+max = 100
+label = "Minimum brightness (%)"
+description = "Fog brightness floor, percent. 0 is full darkness; higher values lift the whole map toward visibility."
+
+# One Cursor weapon with seven modes: until 0.5.0 the Cursor Suite bundle.
+[[components]]
+
+id = "cursors.cursor"
+type = "weapon"
+name = "Cursor"
+description = "Press + to cycle Light, Magnet attract, Magnet repel, Revive, Freeze, Fire and Hurt. Click to revive/freeze or deal 10 HP damage; hold left mouse for rainbow fire."
+entry = "weapons/cursor.lua"
+icon = "sprites/cursor.png"
+default_position = { row = "F8", column = 1 }

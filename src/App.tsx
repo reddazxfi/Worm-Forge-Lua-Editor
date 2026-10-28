@@ -42,7 +42,7 @@ import {
 } from './data/wormforgeDefinitions';
 import { EXISTING_MODS } from './data/existingMods';
 import { TABLE_DOCS } from './data/tableDocs';
-import { INITIAL_TEMPLATE } from './data/templates';
+import { INITIAL_TEMPLATE, migrateInitialTemplate } from './data/templates';
 import { parseAndValidate } from './services/parser';
 import {
   loadCustomVerbs,
@@ -95,7 +95,7 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-          return parsed;
+          return migrateInitialTemplate(parsed);
         }
       }
     } catch {}
@@ -165,7 +165,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-        return { ...parsed };
+        return migrateInitialTemplate({ ...parsed });
       }
     }
   } catch {}
@@ -867,17 +867,20 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       const mod = EXISTING_MODS.find((m) => m.id === templateId);
       if (mod && mod.files.length > 0) {
         const newFiles = { ...files };
-        const prefix = mod.id.replace(/^(example|gameplay)\./, '').replace(/\./g, '_');
+        const prefix =
+          mod.workspacePrefix ?? mod.id.replace(/^(example|gameplay)\./, '').replace(/\./g, '_');
+        const primaryRel = mod.primaryFile ?? mod.files[0].name;
         let primaryFile = '';
 
-        for (let i = 0; i < mod.files.length; i++) {
-          const f = mod.files[i];
+        for (const f of mod.files) {
           const filePath = `${prefix}/${f.name}`;
           newFiles[filePath] = f.content;
-          if (i === 0) {
+          if (f.name === primaryRel) {
             primaryFile = filePath;
           }
         }
+        // A typo in primaryFile must not leave the editor with no active tab.
+        if (!primaryFile) primaryFile = `${prefix}/${mod.files[0].name}`;
 
         // QOL: Only open primary .lua file in tabs to prevent tab bar bloat.
         // Supporting files (.toml, .md) are neatly organized inside the mod subfolder in the tree!

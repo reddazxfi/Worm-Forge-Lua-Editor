@@ -146,22 +146,39 @@ describe('the example corpus', () => {
   );
 
   it('contains the curated packs it claims to', () => {
-    // The bundled set is deliberately seven small, focused packs. This is the
-    // corpus contract: one example per idea, not the engine's whole example
-    // tree. Adding or removing an example is a deliberate edit here and in
-    // scripts/__gen_corpus.ts, not something that happens by regenerating.
-    expect(EXISTING_MODS).toHaveLength(7);
-    expect(files).toHaveLength(8);
+    // The bundled set is deliberately eight focused entry points into modern
+    // packs. This is the corpus contract: one example per idea, not the
+    // engine's whole example tree. Adding or removing an example is a
+    // deliberate edit here and in scripts/__gen_corpus.ts, not something that
+    // happens by regenerating.
+    expect(EXISTING_MODS).toHaveLength(8);
+    expect(files).toHaveLength(449);
     const ids = EXISTING_MODS.map((m) => m.id);
     expect(ids).toEqual([
-      'example.agility',
-      'example.sentry_gun',
-      'example.bee',
-      'example.highlander_pure_lua',
-      'example.swim_suit',
+      'px.highlander',
+      'px.ktk',
+      'px.sentry',
+      'spawn.bees',
       'example.pooz',
-      'example.kill_the_king',
+      'example.ripper_star',
+      'px.swim',
+      'utilities.agility',
     ]);
+  });
+
+  it('opens the modern component file for each shared pack entry', () => {
+    const byId = new Map(EXISTING_MODS.map((m) => [m.id, m]));
+    expect(byId.get('px.highlander')?.primaryFile).toBe('components/highlander.lua');
+    expect(byId.get('px.ktk')?.primaryFile).toBe('components/kill_the_king.lua');
+    expect(byId.get('px.sentry')?.primaryFile).toBe('weapons/sentry_gun.lua');
+    expect(byId.get('px.swim')?.primaryFile).toBe('weapons/swim_suit.lua');
+    expect(byId.get('utilities.agility')?.primaryFile).toBe('features/agility.lua');
+    expect(byId.get('spawn.bees')?.primaryFile).toBe('weapons/keeper_bee.lua');
+    expect(byId.get('example.pooz')?.primaryFile).toBe('weapons.lua');
+    expect(byId.get('example.ripper_star')?.primaryFile).toBe('weapons/ripper_star.lua');
+    // The px entries share one source array, not four copies of it.
+    expect(byId.get('px.swim')?.files).toBe(byId.get('px.sentry')?.files);
+    expect(byId.get('px.swim')?.workspacePrefix).toBe('px');
   });
 
   it('every pack id is the one its own mod.toml declares', () => {
@@ -175,8 +192,8 @@ describe('the example corpus', () => {
   });
 
   it('never tells users that require is nil in the sandbox', () => {
-    // KNOWN UPSTREAM, not ours. One engine-checkout file still carries the old
-    // advice -- `mods/KillTheKing/init.lua:6`, saying:
+    // KNOWN UPSTREAM, not ours. The modern PX source still carries the old
+    // advice in `wf-lib/px/components/kill_the_king.lua`, saying:
     //
     //   INLINED CONFIG: No require("config") because require/dofile are nil in sandbox.
     //
@@ -193,8 +210,15 @@ describe('the example corpus', () => {
     // corpus: our own hand-written entries asserted the same thing, and nothing
     // noticed when it stopped being true.
     // Keyed `mod/path`, not path alone: several packs have an `init.lua`, so the
-    // bare filename does not identify which one is stale.
-    const KNOWN_STALE = ['example.kill_the_king/init.lua'];
+    // bare filename does not identify which one is stale. The modern px source
+    // is shared by four menu entries, so the same upstream comment appears once
+    // per entry.
+    const KNOWN_STALE = [
+      'px.highlander/components/kill_the_king.lua',
+      'px.ktk/components/kill_the_king.lua',
+      'px.sentry/components/kill_the_king.lua',
+      'px.swim/components/kill_the_king.lua',
+    ];
 
     const stale = files
       .filter((f) => /require.*\bnil\b/i.test(f.content))
@@ -242,10 +266,10 @@ describe('the example corpus', () => {
   // The whole point of generating the corpus: the checker must be SILENT on the
   // bundled examples. Anything it raises there is the checker's, not the pack's.
   //
-  // The curated packs were selected because they check clean at API 4.0; sentry
-  // and bee were ported from `math.sin`/`math.cos`/`math.atan` to `wa.math.*`,
-  // and bee's spawned-actor initialisation was corrected. The map stays empty
-  // until an example genuinely needs an engine-specific pin.
+  // The modern px, utilities, pooz, bee and ripper sources check clean at API
+  // 4.0 after the checker learned the health-timing verbs (`allow_death`,
+  // `commit_health`, `show_health`, `die`) used by Core Utilities. The map stays
+  // empty until an example genuinely needs an engine-specific pin.
   //
   // The value is a LIST because `undefined-global` legitimately arrives TWICE at one
   // position: parser.ts runs a flat pass and a scope-aware pass that share the rule

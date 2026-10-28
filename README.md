@@ -26,7 +26,7 @@ WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully cr
 - 📂 **Open / Save Mod Folders** — Open a pack folder (`mod.toml` + Lua), edit its files in tabs, and save straight back to disk with Ctrl+S. 🗂️
 - 🧠 **Scope-Aware Suggestions** — Autocomplete is ranked by *where you actually are*. A local declared two lines up always outranks the entire engine API, and a name from an unrelated function never shows up at all. 🎯
 - 🧹 **Structure-Aware Format** — Re-indents Lua by blocks and brackets, not by regex guesswork. Strings and comments can't fool it, and it tells you when a chunk doesn't balance instead of silently mangling it. ✨
-- 🧩 **Example Mods & Templates** — **7 focused packs** bundled in: Agility, Sentry Gun, Spawn Bees, Highlander Rules, Swim Suit, POOZ, and Kill The King. One clear idea per pack, not a copy of the engine's whole example tree. 🔫
+- 🧩 **Example Mods & Templates** — **8 focused entry points** into modern packs: Agility, Sentry Gun, Keeper Bee, Highlander Rules, Swim Suit, POOZ, Kill The King, and Ripper Star. The `px` entries share the current `px.ports` source, so the require graph stays visible. 🔫
 - 🧰 **Parameterized New Mods** — Create Mod asks for behavior switches or weapon values, writes the Lua under `code/`, and ships a profile under `profiles/` with the chosen defaults. The loader shows the same fields, and `ctx.option("key")` reads them in Lua.
 - 🖥️ **Native Desktop App** — Powered by Tauri for a **lightweight**, **lightning-quick** Windows executable. No bloated Chromium bundle required! 🪶
 
@@ -176,7 +176,7 @@ src-tauri\target\release\wormforge-code-editor.exe
 │   ├── data/         # 📚 Engine definitions, templates, the generated example corpus
 │   ├── services/     # ⚙️ lexer, parser/checker, formatter, luaCompiler, mod folder, config
 │   └── types/        # 🧾 TypeScript types
-├── examples/         # 🧩 7 curated example packs (source for src/data/existingMods.ts)
+├── examples/         # 🧩 8 curated entry points (modern px/utilities/pooz/bees/ripper)
 ├── src-tauri/
 │   ├── src/          # 🦀 Rust: full_moon semantic checker + the compile_lua command
 │   └── capabilities/ # 🔐 Plugin permissions (fs, dialog)

@@ -1,0 +1,73 @@
+# WormForge profile "0.9.3 demo profile": made in the mod loader; safe to edit by hand.
+description = "Pointer"
+features = ["core.fog", "core.utilities"]
+
+[options."core.fog"]
+fog_floor = 40
+
+[options."core.utilities"]
+instant_death = true
+live_hp = true
+
+[scheme]
+angle_cheat_glitch = false
+automatic_end_of_turn_retreat = true
+block_roofing = "block_everywhere"
+blood = true
+donor_cards = true
+expedite_instant_utilities = true
+floating_weapon_glitch = false
+glide_glitch = false
+hazards = 245
+health_crate_energy = 100
+health_crate_weight = 60
+health_crates_cure_poison = "collector"
+herd_doubling_glitch = "off"
+hot_seat_delay = 0
+indian_rope_glitch = "off"
+jet_pack_bungee_glitch = false
+loss_of_control_doesn_t_end_turn = true
+maximum_crate_count_on_map_at_once = 40
+maximum_flamelet_count = 65535
+pause_timer_while_firing = false
+rope_retreat_time = 3
+rubberworm_crate_rate = 10
+sheep_heaven_effects = 1
+skipwalking = "disabled"
+stockpiling = "anti"
+sudden_death = "nuke"
+sudden_death_worm_damage_per_turn = 50
+terrain_overlap_phasing_glitch = "off"
+turn_time = "unlimited"
+unrestricted_weapon_use = true
+utility_crate_weight = 80
+water_rise_rate = 0
+weapon_crate_weight = 100
+weapon_use_doesn_t_end_turn = true
+wins = 3
+worm_energy = 200
+worm_select = "on"
+
+[weapon_settings."stock.skip_go"]
+crate_pct = 0.0
+stockpiling = "anti"
+
+[weapon_settings."stock.surrender"]
+crate_pct = 0.0
+stockpiling = "anti"
+
+[weapons."cursors.cursor"]
+column = 1
+row = "F8"
+
+[weapons."px.bowling_ball_strike"]
+column = 4
+row = "F10"
+
+[weapons."stock.skip_go"]
+column = 1
+row = "F12"
+
+[weapons."stock.surrender"]
+column = 2
+row = "F12"

@@ -1,0 +1,24 @@
+# Focused excerpt from `px_fire_seq` (Project X Sequential Fire).
+#
+# The real bundle declares four weapons and shares one `lib/fire_seq.lua`.
+# This example keeps only the Ripper Star so the missile code and its
+# `require("lib/fire_seq")` / `require("wf-lib/effects/trail")` calls are easy
+# to read. The Lua files are verbatim; the bundle id is changed so the editor
+# can load it as one example. Install the full `px_fire_seq` pack for the other
+# three weapons and the art/sound assets.
+id = "example.ripper_star"
+name = "Ripper Star"
+version = "1.3.1"
+author = "reddaz"
+api_version = 4
+format_version = 2
+dependencies = ["effects.sdk"]
+
+[[components]]
+id = "px.ripper_star"
+type = "weapon"
+name = "Ripper Star"
+description = "PX's Ripper: a flurry of fifteen shurikens, one every four frames, thrown along the worm's live aim. Each bites a worm, mine, barrel or crate within 20 pixels of its impact for 4 damage and a shove, or sticks in the land."
+entry = "weapons/ripper_star.lua"
+credits = "Ripper Star by reddaz (Project X port)"
+default_position = { row = "F10", column = 1 }

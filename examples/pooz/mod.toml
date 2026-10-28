@@ -1,11 +1,11 @@
 # POOZ: selecting the weapon turns its worm into a runner (a Lua actor).
 id = "example.pooz"
-version = "0.2.0"
+version = "0.2.1"
 author = "wkLua"
 api_version = 4
 format_version = 2
-
 [[components]]
+
 id = "pooz.runner"
 type = "weapon"
 name = "POOZ"

@@ -13,6 +13,8 @@ const NO_SHIPPED_USAGE = new Set([
   'LuaActor:spawn',
   'WormEntity:clear_keys',
   'WormEntity:air_fire',
+  'WormEntity:show_health',
+  'WormEntity:die',
   'WorldHandle:impulse',
   'LightHandle:move',
   'LightHandle:set',

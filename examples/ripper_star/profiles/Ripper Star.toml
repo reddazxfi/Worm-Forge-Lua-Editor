@@ -1,0 +1,20 @@
+# The Ripper Star on its own, with infinite ammo and no weapon delay, so it can
+# be tested at once. Load it from the mod loader's Profile tab once the loader
+# has copied it into WormForge/Profiles, or copy this file there by hand. Move
+# it anywhere on the panel; any weapon may go any place.
+#
+# Aim, fire once, and fifteen stars leave the gun four frames apart, following
+# your aim through the burst.
+#
+# A component in no panel slot registers nothing (REPORT.md 11.13), so removing
+# the weapon from a profile leaves the match working.
+description = "PX's Ripper Star: fifteen shurikens in one burst, 4 damage and a shove on anything within 20 pixels of where one lands, or a star left in the land."
+features = []
+
+[weapons]
+"px.ripper_star" = { row = "F10", column = 1 }
+
+[weapon_settings."px.ripper_star"]
+ammo = -1
+delay = 0
+crate = 0

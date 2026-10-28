@@ -124,6 +124,10 @@ export interface ModFolderInfo {
   installed?: boolean;
   enabled?: boolean;
   isOnlineAvailable?: boolean;
+  /** Example entry point to open; defaults to the first file. */
+  primaryFile?: string;
+  /** Shared workspace folder for variants of one source pack. */
+  workspacePrefix?: string;
   files: ModFileInfo[];
   declaredMethods?: string[];
   declaredVariables?: string[];

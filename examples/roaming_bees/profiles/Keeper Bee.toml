@@ -1,0 +1,24 @@
+# The Keeper Bee and its map swarm, with infinite ammo, so it can be tested at
+# once. Load it from the mod loader's Profile tab once the loader has copied it
+# into WormForge/Profiles, or copy this file there by hand. Move the weapon
+# anywhere on the panel; any weapon may go any place.
+#
+# The swarm is an add-on, not the weapon: leaving it out of `features` keeps the
+# map clear, and its two settings are in [options] below.
+#
+# A component in no panel slot registers nothing, so removing the weapon from a
+# profile leaves the match working.
+description = "reddaz's Keeper Bee (Project X): a bee launcher, and a map seeded with rogue bees on the first turn."
+features = ["spawn.bees.swarm"]
+
+[weapons]
+"spawn.bees.keeper" = { row = "F1", column = 1 }
+
+[weapon_settings."spawn.bees.keeper"]
+ammo = -1
+delay = 0
+crate = 0
+
+[options."spawn.bees.swarm"]
+spawn_map_bees = true
+bee_amount = 22

@@ -81,6 +81,12 @@ export interface CorpusMod {
   replacesSlot?: string;
   tags: string[];
   files: CorpusFile[];
+  /** File to open when this entry loads; defaults to the first file. */
+  primaryFile?: string;
+  /** Workspace folder shared by variants of one source pack (e.g. all px entries). */
+  workspacePrefix?: string;
+  /** Emit `files: <key>` and hoist the array once, instead of duplicating it. */
+  filesKey?: string;
 }
 
 /** Every `wa.weapons.replace({ weapon = "x" })` slot in a pack, for the picker. */
@@ -111,10 +117,20 @@ export function readLuaFiles(dir: string, prefix = ''): CorpusFile[] {
 }
 export function modsFromPack(
   dirName: string,
-  opts: { category: string; name?: string; description?: string; tags?: string[] }
+  opts: {
+    category: string;
+    name?: string;
+    description?: string;
+    tags?: string[];
+    id?: string;
+    primaryFile?: string;
+    workspacePrefix?: string;
+    filesKey?: string;
+  },
+  filesOverride?: CorpusFile[]
 ): CorpusMod[] {
   const dir = path.join(MODS, dirName);
-  const files = readLuaFiles(dir);
+  const files = filesOverride ?? readLuaFiles(dir);
   if (!files.length) {
     throw new Error(
       `mods/${dirName} has no readable .lua files. A pack that silently contributes ` +
@@ -148,7 +164,7 @@ export function modsFromPack(
   const isModulePack = files.some((f) => /(^|\W)require\s*\(/.test(f.body));
 
   return [{
-    id: manifestId ?? `example.${slug}`,
+    id: opts.id ?? manifestId ?? `example.${slug}`,
     name: opts.name ?? dirName.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
     author,
     version,
@@ -159,37 +175,136 @@ export function modsFromPack(
     replacesSlot: slots[0],
     tags: opts.tags ?? ['example', opts.category],
     files,
+    primaryFile: opts.primaryFile,
+    workspacePrefix: opts.workspacePrefix,
+    filesKey: opts.filesKey,
   }];
 }
 // ---------------------------------------------------------------------------
 // The pack list -- the curated folders under examples/.
 //
 // Kept EXPLICIT rather than discovered, so adding an example is a decision
-// someone makes here instead of something that happens silently. The set is
-// intentionally small: one pack per idea, because users who want breadth open
-// the engine's real mods folder. The old 25-example engine tree grew without
-// anyone deciding it should, and the PX packs in it change constantly.
+// someone makes here instead of something that happens silently. The entries
+// are the modern component versions of the old standalone scripts: the px
+// entries all share the same px.ports source pack, and the Core Utilities
+// entry shares that bundle's source. `filesKey` hoists the shared array once
+// in the generated file instead of duplicating 100+ files per menu entry.
 // ---------------------------------------------------------------------------
-const PACKS: { dir: string; category: string; name?: string; description?: string; tags?: string[] }[] = [
-  { dir: 'agility', category: 'utility', name: 'Agility', description: 'Worm manipulation: nudge worm.vx / worm.vy from the synchronized keys while airborne. Small enough to read in one sitting.', tags: ['example', 'worm', 'movement'] },
-  { dir: 'sentry', category: 'weapons', name: 'Sentry Gun', description: 'An object example: a placed sentry with its own state, target selection, aiming, firing and collision.', tags: ['example', 'weapon', 'object'] },
-  { dir: 'bee', category: 'weapons', name: 'Spawn Bees', description: 'A flying object: the replaced Skunk spawns a bee that steers, roams, picks targets and animates in flight.', tags: ['example', 'weapon', 'actor'] },
-  { dir: 'highlander', category: 'rules', name: 'Highlander Rules', description: 'A pure-Lua scheme: deal one weapon from each pool, track each worm\'s inventory, and take a killed worm\'s kit.', tags: ['example', 'rules', 'scheme'] },
-  { dir: 'swimsuit', category: 'utility', name: 'Swim Suit', description: 'Worm manipulation: take a worm into water, swim under four-key control, dive, float and drown. Extracted from Project X.', tags: ['example', 'worm', 'water'] },
-  { dir: 'pooz', category: 'weapons', name: 'POOZ', description: 'A weapon-as-actor: selecting POOZ turns the worm into a controllable runner and drops it back out on a weapon switch.' },
-  { dir: 'kill_the_king', category: 'gameplay', name: 'Kill The King', description: 'A complete game mode as a component pack: destroy the defenders\' king before the round timer expires.' },
+interface PackSpec {
+  dir: string;
+  category: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  id?: string;
+  primaryFile?: string;
+  workspacePrefix?: string;
+  filesKey?: string;
+}
+
+const PACKS: PackSpec[] = [
+  {
+    dir: 'px',
+    category: 'rules',
+    id: 'px.highlander',
+    name: 'Highlander (PX)',
+    description: 'Modern PX component: hl.rules. The full px.ports bundle loads so the weapon index and scheme modules are visible; this entry opens components/highlander.lua.',
+    tags: ['example', 'rules', 'scheme', 'modern'],
+    primaryFile: 'components/highlander.lua',
+    filesKey: 'PX_FILES',
+    workspacePrefix: 'px',
+  },
+  {
+    dir: 'px',
+    category: 'gameplay',
+    id: 'px.ktk',
+    name: 'Kill The King (PX)',
+    description: 'Modern PX component: ktk.control. The full px.ports bundle loads so the feature and its dependencies are visible; this entry opens components/kill_the_king.lua.',
+    tags: ['example', 'gameplay', 'modern'],
+    primaryFile: 'components/kill_the_king.lua',
+    filesKey: 'PX_FILES',
+    workspacePrefix: 'px',
+  },
+  {
+    dir: 'px',
+    category: 'weapons',
+    id: 'px.sentry',
+    name: 'Sentry Gun (PX)',
+    description: 'Modern PX component: px.sentry_gun. The full px.ports bundle loads so its require graph is visible; this entry opens weapons/sentry_gun.lua.',
+    tags: ['example', 'weapon', 'object', 'modern'],
+    primaryFile: 'weapons/sentry_gun.lua',
+    filesKey: 'PX_FILES',
+    workspacePrefix: 'px',
+  },
+  {
+    dir: 'roaming_bees',
+    category: 'weapons',
+    name: 'Keeper Bee',
+    description: 'Modern component bundle: the Keeper Bee launcher and the map swarm share lib/bee.lua through require. Replaces the old Spawn Bees script.',
+    tags: ['example', 'weapon', 'actor', 'modern'],
+    primaryFile: 'weapons/keeper_bee.lua',
+    workspacePrefix: 'roaming_bees',
+  },
+  {
+    dir: 'pooz',
+    category: 'weapons',
+    name: 'POOZ',
+    description: 'Modern component bundle: selecting POOZ turns the worm into a controllable runner and drops it back out on a weapon switch.',
+    tags: ['example', 'weapon', 'actor', 'modern'],
+    primaryFile: 'weapons.lua',
+    workspacePrefix: 'pooz',
+  },
+  {
+    dir: 'ripper_star',
+    category: 'weapons',
+    name: 'Ripper Star',
+    description: 'A missile example from px_fire_seq: fifteen shurikens on the worm\'s live aim, with require("lib/fire_seq") and require("wf-lib/effects/trail") visible.',
+    tags: ['example', 'weapon', 'missile', 'require', 'modern'],
+    primaryFile: 'weapons/ripper_star.lua',
+    workspacePrefix: 'ripper_star',
+  },
+  {
+    dir: 'px',
+    category: 'utility',
+    id: 'px.swim',
+    name: 'Swim Suit (PX)',
+    description: 'Modern PX component: px.swim_suit. The full px.ports bundle loads so its lib/shared and weapon dependencies are visible; this entry opens weapons/swim_suit.lua.',
+    tags: ['example', 'worm', 'water', 'modern'],
+    primaryFile: 'weapons/swim_suit.lua',
+    filesKey: 'PX_FILES',
+    workspacePrefix: 'px',
+  },
+  {
+    dir: 'utilities',
+    category: 'utility',
+    id: 'utilities.agility',
+    name: 'Agility (Core Utilities)',
+    description: 'Modern component version: the agility switch in Core Utilities. Arrow keys nudge worm.vx / worm.vy while airborne; features/utilities.lua loads features/agility.lua when the profile turns it on.',
+    tags: ['example', 'worm', 'movement', 'modern'],
+    primaryFile: 'features/agility.lua',
+    filesKey: 'UTILITY_FILES',
+    workspacePrefix: 'utilities',
+  },
 ];
 
 export function buildCorpus(): CorpusMod[] {
   assertExamples();
   const mods: CorpusMod[] = [];
-  for (const p of PACKS) mods.push(...modsFromPack(p.dir, p));
+  const filesByDir = new Map<string, CorpusFile[]>();
+  for (const p of PACKS) {
+    let files = filesByDir.get(p.dir);
+    if (!files) {
+      files = readLuaFiles(path.join(MODS, p.dir));
+      filesByDir.set(p.dir, files);
+    }
+    mods.push(...modsFromPack(p.dir, p, files));
+  }
   return mods;
 }
 
-/** Renders one mod as a `ModFolderInfo` literal. */
-export function renderMod(m: CorpusMod): string {
-  const files = m.files
+/** Renders a file array body, indented for a `ModFolderInfo['files']` literal. */
+export function renderFiles(files: CorpusFile[]): string {
+  return files
     .map((f) =>
       `      {\n` +
       `        path: ${sq(f.rel)},\n` +
@@ -199,6 +314,11 @@ export function renderMod(m: CorpusMod): string {
       `      }`
     )
     .join(',\n');
+}
+
+/** Renders one mod as a `ModFolderInfo` literal. */
+export function renderMod(m: CorpusMod): string {
+  const files = m.filesKey ? m.filesKey : `[\n${renderFiles(m.files)}\n    ]`;
   return [
     `  {`,
     `    id: ${sq(m.id)},`,
@@ -207,9 +327,11 @@ export function renderMod(m: CorpusMod): string {
     `    author: ${sq(m.author)},`,
     `    category: ${sq(m.category)},`,
     m.replacesSlot ? `    replacesSlot: ${sq(m.replacesSlot)},` : '',
+    m.primaryFile ? `    primaryFile: ${sq(m.primaryFile)},` : '',
+    m.workspacePrefix ? `    workspacePrefix: ${sq(m.workspacePrefix)},` : '',
     `    description: ${sq(m.description)},`,
     `    tags: [${m.tags.map(sq).join(', ')}],`,
-    `    files: [\n${files}\n    ],`,
+    `    files: ${files},`,
     `  },`,
   ]
     .filter(Boolean)
@@ -230,9 +352,8 @@ export const HEADER = `import { ModFolderInfo } from '../types/wormforge';
 // file below is read straight out of the curated examples/ folder instead, so it
 // cannot go stale without the change showing up in git.
 //
-// The set is curated: one pack per idea, not the engine's full example tree.
-// Users who want breadth open the engine's real mods folder. \`buildCorpus\`
-// throws if examples/ is missing or empty instead of silently writing a smaller
-// corpus.
-export const EXISTING_MODS: ModFolderInfo[] = [
+// The set is curated: modern component entry points, not the engine's full
+// example tree. Users who want breadth open the engine's real mods folder.
+// \`buildCorpus\` throws if examples/ is missing or empty instead of silently
+// writing a smaller corpus.
 `;

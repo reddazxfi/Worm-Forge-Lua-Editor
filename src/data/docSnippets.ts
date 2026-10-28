@@ -1546,6 +1546,31 @@ end, { msgs = { wa.msg.FRAME_FINISH } })`,
   end
 end`,
   },
+  "WormEntity:commit_health": {
+    source: "WormForgeNew/mods/utilities/features/live_hp.lua",
+    code: `-- Live HP, originally by reddaz. Commit WA's pending health display directly;
+-- native hit, movement, freeze and death handling retain their own states.
+wa.on.hurt(function(hit)
+  if hit.phase ~= "post" or hit.lost <= 0 then return end
+  local worm = hit.worm
+  -- Keep the active worm's normal health timing. A zero-HP victim can
+  -- update its label now while WA still owns its later death sequence.
+  if not worm.turn and worm.hp >= 0 then
+    worm:commit_health()
+  end
+end)`,
+  },
+  "WormEntity:allow_death": {
+    source: "WormForgeNew/mods/utilities/features/instant_death.lua",
+    code: `-- Let each zero-HP victim die once its own movement settles, without waiting
+-- for the battlefield. Frame polling also covers falls and direct HP writes.
+-- WA owns the death animation, explosion and grave; repeat requests are inert.
+wa.on.worm_message(function(worm)
+  if not worm.turn and worm.hp == 0 then
+    worm:allow_death()
+  end
+end, { msgs = { wa.msg.FRAME_FINISH } })`,
+  },
   "WormEntity:hurt": {
     source: "WormForgeNew/mods/examples/labs/hurt_lab.lua",
     code: `local TEN = "labs.hurt_lab"

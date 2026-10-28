@@ -55,6 +55,17 @@ bundles. A component that is not selected never runs at all.
 
 ---
 
+## Units: pixels, not 16.16
+
+API 4 positions and speeds are **plain pixels**, with fractions allowed. Do not
+define `local PX = 0x10000` and do not scale coordinates by hand. The engine
+converts pixels to WA's internal fixed-point units once, internally.
+
+If an older pack or bundled example still multiplies or divides by `0x10000`,
+that is pre-API-4 code. Do not copy it into a new mod.
+
+---
+
 ## Step 1: Make the folder
 
 Put your own bundle directly under the game's `WormForge/Mods/` folder:
@@ -686,11 +697,19 @@ In your WormForge mods folder:
 
 In this repository:
 
-- `examples/` contains the focused packs (Agility, Sentry, Bee, Highlander,
-  Swimsuit, POOZ, Kill the King).
-- `examples/sentry/` — an object with state, targeting, firing and collision.
-- `examples/highlander/` — a pure-Lua rule set as a feature.
-- `examples/pooz/` — a weapon that turns a worm into a controllable actor.
+- `examples/` contains the focused entry points (Agility, Sentry, Keeper Bee,
+  Highlander, Swimsuit, POOZ, Kill the King, Ripper Star).
+- `examples/px/` — the modern `px.ports` component bundle: Swim Suit, Sentry
+  Gun, Highlander, Kill the King, and the shared weapon index/loader. The
+  menu's `px.swim`, `px.sentry`, `px.highlander`, and `px.ktk` entries all load
+  this source and open the relevant file.
+- `examples/utilities/` — the modern `core.utilities` bundle. Agility is
+  `features/agility.lua`, loaded by `features/utilities.lua` when the profile
+  turns that option on.
+- `examples/pooz/` — the modern POOZ component bundle.
+- `examples/roaming_bees/` — the modern Keeper Bee launcher and map swarm.
+- `examples/ripper_star/` — a focused `px_fire_seq` excerpt showing a missile
+  and the `require("lib/fire_seq")` / `require("wf-lib/effects/trail")` pattern.
 
 Read one small pack end to end, then change one line and reload. That is faster
 than reading every API page first.

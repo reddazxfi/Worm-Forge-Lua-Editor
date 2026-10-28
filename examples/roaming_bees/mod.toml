@@ -1,0 +1,48 @@
+# Keeper Bee (format_version 2): reddaz's Project X bee, ported from the API 1.0
+# script (`bee.lua`, beside the porting report). Two components: the launcher on
+# the panel, and the map swarm as an add-on with the two settings a profile can
+# change (whether the map is seeded, and with how many bees).
+# Nothing runs until a profile selects it (the mod loader's Profile tab).
+# See README.md.
+id = "spawn.bees"
+name = "Keeper Bee"
+version = "1.0.2"
+author = "reddaz"
+api_version = 4
+format_version = 2
+mod_icon = "mod_icon.png"
+
+[[components]]
+id = "spawn.bees.keeper"
+type = "weapon"
+name = "Keeper Bee"
+description = "Fires a bee that spins out of the muzzle, then hunts the first worm that moves. It stings on contact and bursts."
+entry = "weapons/keeper_bee.lua"
+icon = "sprites/beeico.png"
+credits = "Keeper Bee by reddaz (Project X port)"
+default_position = { row = "F1", column = 1 }
+
+[[components]]
+id = "spawn.bees.swarm"
+type = "feature"
+name = "Map bee swarm"
+description = "Seeds the map with rogue bees on the first turn. Each slice of the map gets one bee, on ground the worms can stand on."
+entry = "features/bee_swarm.lua"
+credits = "bee AI by reddaz (Project X port)"
+authors = ["reddaz"]
+
+[[components.options]]
+key = "spawn_map_bees"
+type = "bool"
+default = true
+label = "Bees on the map"
+description = "Seed the map with bees when the first turn starts. Off: the swarm stays out of the match."
+
+[[components.options]]
+key = "bee_amount"
+type = "int"
+default = 22
+min = 1
+max = 60
+label = "Map bees"
+description = "How many bees to spread across the map, one per slice."
