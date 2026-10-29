@@ -822,7 +822,7 @@ export interface ModListEntry {
   id: string;
   author: string;
   version: string;
-  /** data: URL for mod_icon.png, or null when absent/unreadable. */
+  /** data: URL for the first readable `mod_icon` candidate, or null. */
   iconUrl: string | null;
   /** Folder mtime; null when the filesystem did not report one. */
   mtime: number | null;
@@ -832,6 +832,8 @@ export interface ModListEntry {
    * without scanning every mod a second time.
    */
   components: ComponentEntry[];
+  /** Number of public modules declared in `[exports]`. */
+  exportCount: number;
   /**
    * File stems of `profiles/*.toml` inside the mod, e.g. ["Highlander"].
    *
@@ -874,7 +876,69 @@ export interface ModManifest {
   author?: string;
   version?: string;
   entry?: string;
+  /**
+   * `mod_icon` candidates in declaration order. The engine accepts either a
+   * string or an array and uses the first readable PNG. Empty when omitted;
+   * callers may keep their legacy root `mod_icon.png` fallback.
+   */
+  modIcon: string[];
+  /** `[exports]` public require name -> pack-relative Lua entry. */
+  exports: Record<string, string>;
   components: ComponentEntry[];
+}
+
+type ManifestSection = 'top' | 'components' | 'exports' | 'other';
+
+/** Strips a TOML inline comment without cutting a `#` inside a quoted value. */
+function stripTomlComment(value: string): string {
+  let quote: string | null = null;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (quote) {
+      if (ch === quote && value[i - 1] !== '\\') quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '#') {
+      return value.slice(0, i).trim();
+    }
+  }
+  return value.trim();
+}
+
+function unquoteTomlString(value: string): string {
+  const v = stripTomlComment(value);
+  if (
+    v.length >= 2 &&
+    ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))
+  ) {
+    return v.slice(1, -1).trim();
+  }
+  return v;
+}
+
+/**
+ * Reads `mod_icon = "a.png"` or `mod_icon = ["a.png", "b.png"]`.
+ *
+ * A tiny scanner rather than a full TOML parser: the manifest reader has always
+ * been deliberately tolerant, and this only needs the two shapes the engine
+ * accepts. Multi-line arrays are rare enough that the first line's strings are
+ * still useful; missing the rest degrades to a placeholder icon, not a crash.
+ */
+function parseTomlStringList(raw: string): string[] {
+  const value = stripTomlComment(raw);
+  if (!value) return [];
+  if (!value.startsWith('[')) {
+    const one = unquoteTomlString(value);
+    return one ? [one] : [];
+  }
+  const out: string[] = [];
+  const re = /"((?:\\.|[^"\\])*)"|'([^']*)'/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(value))) {
+    const item = (match[1] ?? match[2] ?? '').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    if (item) out.push(item);
+  }
+  return out;
 }
 
 export function parseModManifest(toml: string): ModManifest {
@@ -884,61 +948,81 @@ export function parseModManifest(toml: string): ModManifest {
     author: undefined,
     version: undefined,
     entry: undefined,
+    modIcon: [],
+    exports: {},
     components: [],
   };
   let current: ComponentEntry | null = null;
-  // Inside a non-component table (e.g. [[components.options]]): ignore keys so
-  // they are not misattributed to a component or to the top level.
-  let skipping = false;
+  let section: ManifestSection = 'top';
 
   for (const rawLine of toml.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#') || line.startsWith(';')) continue;
 
-    // [[components]] -- start a new component block. Any other [[table]] (including
-    // [[components.options]]) is skipped so its keys are not misattributed.
+    // [[components]] -- start a new component block. Any other [[table]]
+    // (including [[components.options]]) is skipped so its keys are not
+    // misattributed to a component or to the top level.
     const arr = line.match(/^\[\[([^\]]+)\]\]\s*$/);
     if (arr) {
       if (arr[1].trim() === 'components') {
         current = { id: undefined, type: undefined, entry: undefined } as ComponentEntry;
         out.components.push(current);
-        skipping = false;
+        section = 'components';
       } else {
         current = null;
-        skipping = true;
+        section = 'other';
       }
       continue;
     }
-    // [section] -- leave any component or skip block, back to top level.
-    if (/^\[[^\]]+\]\s*$/.test(line)) {
+
+    // [section] -- `[exports]` is data we need; every other table is skipped.
+    const table = line.match(/^\[([^\]]+)\]\s*$/);
+    if (table) {
       current = null;
-      skipping = false;
+      section = table[1].trim() === 'exports' ? 'exports' : 'other';
       continue;
     }
 
-    if (skipping) continue;
+    if (section === 'other') continue;
 
-    const kv = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/);
+    // Quoted keys are required for `[exports]` names; bare keys cover the
+    // ordinary top-level and component fields.
+    const kv = line.match(
+      /^(?:"([^"]+)"|'([^']+)'|([A-Za-z_][A-Za-z0-9_.-]*))\s*=\s*(.+)$/
+    );
     if (!kv) continue;
-    const key = kv[1].toLowerCase();
-    let val = kv[2].trim();
-    // Strip trailing inline comment and surrounding quotes.
-    const hash = val.indexOf('#');
-    if (hash !== -1) val = val.slice(0, hash).trim();
-    val = val.replace(/^["']/, '').replace(/["']$/, '').trim();
-    if (!val) continue;
+    const key = (kv[1] ?? kv[2] ?? kv[3]).trim();
+    const rawVal = kv[4];
+    const lowerKey = key.toLowerCase();
 
-    if (current) {
-      if (key === 'id' && current.id === undefined) current.id = val;
-      else if (key === 'type' && current.type === undefined) current.type = val;
-      else if (key === 'entry' && current.entry === undefined) current.entry = val;
-    } else {
-      if (key === 'id' && out.id === undefined) out.id = val;
-      else if (key === 'name' && out.name === undefined) out.name = val;
-      else if ((key === 'author' || key === 'author_name') && out.author === undefined) out.author = val;
-      else if (key === 'version' && out.version === undefined) out.version = val;
-      else if (key === 'entry' && out.entry === undefined) out.entry = val;
+    if (section === 'exports') {
+      const entry = unquoteTomlString(rawVal);
+      if (entry) out.exports[key] = entry;
+      continue;
     }
+
+    if (section === 'components' && current) {
+      const val = unquoteTomlString(rawVal);
+      if (!val) continue;
+      if (lowerKey === 'id' && current.id === undefined) current.id = val;
+      else if (lowerKey === 'type' && current.type === undefined) current.type = val;
+      else if (lowerKey === 'entry' && current.entry === undefined) current.entry = val;
+      continue;
+    }
+
+    if (section !== 'top') continue;
+    if (lowerKey === 'mod_icon') {
+      if (out.modIcon.length === 0) out.modIcon = parseTomlStringList(rawVal);
+      continue;
+    }
+    const val = unquoteTomlString(rawVal);
+    if (!val) continue;
+    if (lowerKey === 'id' && out.id === undefined) out.id = val;
+    else if (lowerKey === 'name' && out.name === undefined) out.name = val;
+    else if ((lowerKey === 'author' || lowerKey === 'author_name') && out.author === undefined)
+      out.author = val;
+    else if (lowerKey === 'version' && out.version === undefined) out.version = val;
+    else if (lowerKey === 'entry' && out.entry === undefined) out.entry = val;
   }
 
   // Back-compat: if there is no top-level `entry` but the bundle declares
@@ -1140,6 +1224,25 @@ export function pickStartupFile(files: Record<string, string>): string | null {
   return startupSelection(files).file;
 }
 
+/** A data URL for a PNG, or null when the bytes are unusable/too large. */
+function pngDataUrl(bytes: Uint8Array): string | null {
+  // Cap icon size: a data URL for a huge PNG would bloat memory and DOM.
+  if (bytes.byteLength === 0 || bytes.byteLength > 4 * 1024 * 1024) return null;
+  // Copy into a fresh ArrayBuffer: the Uint8Array view may sit in a larger
+  // pooled buffer, which would encode garbage after the end.
+  const buf = new ArrayBuffer(bytes.byteLength);
+  const view = new Uint8Array(buf);
+  view.set(bytes);
+  // Chunked so a large icon cannot blow the argument limit of
+  // String.fromCharCode(...spread).
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < view.length; i += CHUNK) {
+    bin += String.fromCharCode(...view.subarray(i, i + CHUNK));
+  }
+  return `data:image/png;base64,${btoa(bin)}`;
+}
+
 /**
  * Lists the mod folders directly under `rootPath`.
  *
@@ -1184,12 +1287,16 @@ export async function listModEntries(rootPath: string): Promise<ModListEntry[] |
         let author = 'Unknown';
         let version = 'Unknown';
         let components: ComponentEntry[] = [];
+        let modIcon: string[] = [];
+        let exportCount = 0;
         try {
           const parsed = parseModManifest(await readTextFile(manifestPath));
           if (parsed.id) id = parsed.id;
           if (parsed.author) author = parsed.author;
           if (parsed.version) version = parsed.version;
           components = parsed.components;
+          modIcon = parsed.modIcon;
+          exportCount = Object.keys(parsed.exports).length;
         } catch {
           // Keep placeholders; the mod is still listed.
         }
@@ -1207,31 +1314,22 @@ export async function listModEntries(rootPath: string): Promise<ModListEntry[] |
           // No profiles folder (or unreadable): not an error.
         }
 
+        // `mod_icon` is a string or an array of candidates; the engine takes the
+        // first readable PNG. Only fall back to the legacy root file when the
+        // manifest says nothing, so a declared-but-missing icon stays visible as
+        // "no icon" instead of silently using an unrelated file.
         let iconUrl: string | null = null;
-        try {
-          const iconPath = `${modPath}${sep}mod_icon.png`;
-          if (await exists(iconPath)) {
-            const bytes = await readFile(iconPath);
-            // Cap icon size: a data URL for a huge PNG would bloat memory and
-            // DOM. Anything larger simply falls back to the placeholder icon.
-            if (bytes.byteLength > 0 && bytes.byteLength <= 4 * 1024 * 1024) {
-              // Copy into a fresh ArrayBuffer: the Uint8Array view may sit in a
-              // larger pooled buffer, which would encode garbage after the end.
-              const buf = new ArrayBuffer(bytes.byteLength);
-              const view = new Uint8Array(buf);
-              view.set(bytes);
-              // Chunked so a large icon cannot blow the argument limit of
-              // String.fromCharCode(...spread).
-              let bin = '';
-              const CHUNK = 0x8000;
-              for (let i = 0; i < view.length; i += CHUNK) {
-                bin += String.fromCharCode(...view.subarray(i, i + CHUNK));
-              }
-              iconUrl = `data:image/png;base64,${btoa(bin)}`;
-            }
+        const iconCandidates = modIcon.length > 0 ? modIcon : ['mod_icon.png'];
+        for (const candidate of iconCandidates) {
+          if (!isSafeModRelativePath(candidate)) continue;
+          const iconPath = `${modPath}${sep}${candidate.split(/[\\/]+/).join(sep)}`;
+          try {
+            if (!(await exists(iconPath))) continue;
+            iconUrl = pngDataUrl(await readFile(iconPath));
+            if (iconUrl) break;
+          } catch {
+            // Try the next candidate; a corrupt icon is not a broken mod.
           }
-        } catch {
-          iconUrl = null;
         }
 
         let mtime: number | null = null;
@@ -1252,6 +1350,7 @@ export async function listModEntries(rootPath: string): Promise<ModListEntry[] |
           iconUrl,
           mtime,
           components,
+          exportCount,
           bundledProfiles,
         };
       } catch {

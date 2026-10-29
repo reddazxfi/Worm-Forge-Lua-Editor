@@ -44,6 +44,18 @@ export interface WorkspaceFile {
   kind: WorkspaceFileKind;
   /** Component ids whose manifest `entry` resolves to this file. Usually empty. */
   componentIds: string[];
+  /**
+   * `[exports]` public names that resolve to this file. Usually empty; one file
+   * may be exported under more than one name.
+   */
+  exportNames: string[];
+}
+
+export interface WorkspaceExport {
+  /** Public require name, e.g. `wf-lib/shared`. */
+  name: string;
+  /** Resolved buffer key, e.g. `shared.lua`. */
+  path: string;
 }
 
 export interface WorkspaceEntryPoint {
@@ -72,6 +84,8 @@ export interface WorkspaceModel {
   entryPoints: WorkspaceEntryPoint[];
   /** Declared entries that name a file this folder does not contain. */
   unresolvedEntries: WorkspaceUnresolvedEntry[];
+  /** `[exports]` names resolved against the files in this folder. */
+  exports: WorkspaceExport[];
   /** Every `.lua`, including helpers the manifest never mentions. */
   lua: WorkspaceFile[];
   /** Bundled `profiles/*.toml`. */
@@ -149,6 +163,22 @@ export function buildWorkspaceModel(files: Record<string, string>): WorkspaceMod
     }
   }
 
+  // `[exports]` is a second way a manifest names a file. Resolve it with the
+  // same layered matcher as component entries, so `shared.lua`, `./shared.lua`
+  // and `lib/shared.lua` cannot disagree between the tree and the engine.
+  const exports: WorkspaceExport[] = [];
+  const exportNamesByPath = new Map<string, string[]>();
+  if (manifest) {
+    for (const [name, entry] of Object.entries(manifest.exports)) {
+      const resolved = matchEntryFile(files, entry);
+      if (!resolved) continue;
+      exports.push({ name, path: resolved });
+      const names = exportNamesByPath.get(resolved) ?? [];
+      if (!names.includes(name)) names.push(name);
+      exportNamesByPath.set(resolved, names);
+    }
+  }
+
   const lua: WorkspaceFile[] = [];
   const profiles: WorkspaceFile[] = [];
   const docs: WorkspaceFile[] = [];
@@ -161,6 +191,7 @@ export function buildWorkspaceModel(files: Record<string, string>): WorkspaceMod
       name: baseName(path),
       kind: 'doc',
       componentIds: entryPoints.find((e) => e.path === path)?.componentIds ?? [],
+      exportNames: exportNamesByPath.get(path) ?? [],
     };
 
     if (lower === 'mod.toml') {
@@ -183,6 +214,7 @@ export function buildWorkspaceModel(files: Record<string, string>): WorkspaceMod
     name: manifest?.name ?? null,
     entryPoints,
     unresolvedEntries,
+    exports,
     lua,
     profiles,
     manifestFile,

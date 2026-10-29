@@ -19,8 +19,17 @@ import {
   PanelLeft,
   PanelRight,
   PaintBucket,
+  Package,
 } from 'lucide-react';
-import { EditorConfig, DEFAULT_CONFIG, exportConfigAsIni, parseIniConfig } from '../services/config';
+import {
+  EditorConfig,
+  DEFAULT_CONFIG,
+  MOD_ICON_MAX,
+  MOD_ICON_MIN,
+  exportConfigAsIni,
+  normalizeModIconSize,
+  parseIniConfig,
+} from '../services/config';
 import {
   APP_BACKGROUND_PRESETS,
   DEFAULT_APP_BACKGROUNDS,
@@ -817,6 +826,55 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* Mod browser tile size. Manifest icons are usually 32x32, so this
+              is intentionally a separate scale from the editor font. */}
+          <div className="space-y-2">
+            <label className="font-semibold uppercase tracking-wider text-[11px] text-amber-500 flex items-center gap-1.5">
+              <Package className="w-3.5 h-3.5" />
+              <span>Mod Browser</span>
+            </label>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className={isLight ? 'text-slate-600' : 'text-[#8f9faf]'}>Mod icon size:</span>
+              <span className="font-mono font-bold text-amber-500">{config.modIconSize}px</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min={MOD_ICON_MIN}
+                max={MOD_ICON_MAX}
+                step={8}
+                value={config.modIconSize}
+                onChange={(e) =>
+                  onUpdateConfig({ ...config, modIconSize: normalizeModIconSize(e.target.value) })
+                }
+                className="flex-1 accent-amber-500"
+                aria-label="Mod icon size"
+              />
+              <div className="flex items-center gap-1">
+                {[48, 64, 80, 96, 128].map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => onUpdateConfig({ ...config, modIconSize: size })}
+                    className={`px-1.5 py-0.5 rounded border font-mono text-[10px] transition-colors ${
+                      config.modIconSize === size
+                        ? 'bg-amber-500 text-slate-950 font-bold border-amber-600'
+                        : isLight
+                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                        : 'bg-[#20252e] hover:bg-[#2b3340] border-[#2d3542] text-[#9bb0c4]'
+                    }`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className={`text-[10px] leading-relaxed ${isLight ? 'text-slate-500' : 'text-[#6c7d91]'}`}>
+              Used by the mods grid. A manifest&apos;s <span className="font-mono">mod_icon</span> is
+              scaled to fit, so a 32x32 PNG stays sharp.
+            </p>
           </div>
 
           {/* Autocomplete. A real preference: some editors want the list, some

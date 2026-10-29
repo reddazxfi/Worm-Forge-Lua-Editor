@@ -99,6 +99,30 @@ describe('buildWorkspaceModel: every file is reachable, once', () => {
     expect(model.id).toBe('px.ports');
     expect(model.name).toBe('Project X ports');
   });
+
+  it('resolves [exports] to the same file keys and marks the file', () => {
+    const model = buildWorkspaceModel({
+      'mod.toml':
+        'id = "lib"\n' +
+        '[exports]\n' +
+        '"wf-lib/shared" = "shared.lua"\n' +
+        '"wf-lib/holder" = "lib/holder.lua"\n' +
+        '"wf-lib/alias" = "shared.lua"\n',
+      'shared.lua': 'return {}',
+      'lib/holder.lua': 'return {}',
+      'lib/helper.lua': 'return {}',
+    });
+    expect(model.exports).toEqual([
+      { name: 'wf-lib/shared', path: 'shared.lua' },
+      { name: 'wf-lib/holder', path: 'lib/holder.lua' },
+      { name: 'wf-lib/alias', path: 'shared.lua' },
+    ]);
+    expect(model.lua.find((f) => f.path === 'shared.lua')?.exportNames).toEqual([
+      'wf-lib/shared',
+      'wf-lib/alias',
+    ]);
+    expect(model.lua.find((f) => f.path === 'lib/helper.lua')?.exportNames).toEqual([]);
+  });
 });
 
 describe('buildWorkspaceModel: entrypoints are declarations, not guesses', () => {

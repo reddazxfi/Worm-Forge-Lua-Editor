@@ -151,6 +151,19 @@ describe('§35 ini round-trip for the startup mod', () => {
     expect(loadConfig().startupModFolder).toBe('bee');
   });
 });
+describe('mod icon size preference', () => {
+  it('defaults to the historical 64px tile', () => {
+    expect(loadConfig().modIconSize).toBe(64);
+  });
+
+  it('clamps a hand-edited or out-of-range value', () => {
+    seedStored({ modIconSize: 400 });
+    expect(loadConfig().modIconSize).toBe(160);
+    seedStored({ modIconSize: 'huge' });
+    expect(loadConfig().modIconSize).toBe(64);
+  });
+});
+
 describe('autocomplete preference', () => {
   it('defaults to on', () => {
     expect(loadConfig().autocomplete).toBe(true);

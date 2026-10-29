@@ -72,7 +72,7 @@ import {
   profilesDirFromModsRoot,
   type InstalledProfile,
 } from './services/profilesFolder';
-import { EditorConfig, loadConfig, saveConfig } from './services/config';
+import { EditorConfig, loadConfig, normalizeModIconSize, saveConfig } from './services/config';
 import { getAppSurfaces, sanitizeBackground } from './services/appTheme';
 import { resetPersistedSession } from './services/session';
 
@@ -488,6 +488,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       sidebarSide: newConfig.sidebarSide === 'right' ? 'right' : 'left',
       backgroundDark: sanitizeBackground(newConfig.backgroundDark, 'dark'),
       backgroundLight: sanitizeBackground(newConfig.backgroundLight, 'light'),
+      modIconSize: normalizeModIconSize(newConfig.modIconSize),
     };
     setConfig(next);
     setSidebarWidth(next.sidebarWidth);
@@ -2515,6 +2516,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
               folderName={modFilesView.mod.folderName}
               modId={modFilesView.model.id}
               modName={modFilesView.model.name}
+              iconUrl={modFilesView.mod.iconUrl}
               official={modFilesView.mod.official}
               model={modFilesView.model}
               isLight={isLight}
@@ -2529,6 +2531,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
               isLoading={modsLoading}
               openingPath={openingModPath}
               error={modsError}
+              iconSize={config.modIconSize}
               isLight={isLight}
               surface={appSurfaces}
               onOpenMod={handleOpenModTile}

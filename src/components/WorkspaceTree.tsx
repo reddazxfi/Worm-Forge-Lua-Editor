@@ -9,6 +9,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  Share2,
   Sliders,
   Zap,
 } from 'lucide-react';
@@ -126,14 +127,22 @@ export const WorkspaceTree: React.FC<WorkspaceTreeProps> = ({
   const fileRow = (path: string, label: string) => {
     const file = byPath.get(path);
     const ids = file?.componentIds ?? [];
+    const exported = file?.exportNames ?? [];
     const isEntry = ids.length > 0;
     const isDirty = dirtyFiles.includes(path);
     const isActive = activeFile === path;
+    const title = [
+      path,
+      isEntry ? `Entrypoint for ${componentTitle(ids)}` : '',
+      exported.length ? `Exported as ${componentTitle(exported)}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
     return (
       <div
         key={`ws_${path}`}
         onClick={() => onOpenFile(path)}
-        title={isEntry ? `${path}\nEntrypoint for ${componentTitle(ids)}` : path}
+        title={title}
         className={rowClass(isActive)}
       >
         <div className="flex items-center gap-1.5 min-w-0">
@@ -145,6 +154,12 @@ export const WorkspaceTree: React.FC<WorkspaceTreeProps> = ({
           <span className="truncate">{label}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {exported.length > 0 && (
+            <Share2
+              className="w-3 h-3 text-sky-400 shrink-0"
+              aria-label={`Exported as ${exported.join(', ')}`}
+            />
+          )}
           {isEntry && (
             <span
               className={`text-[9.5px] font-sans px-1 rounded border max-w-[8.5rem] truncate ${

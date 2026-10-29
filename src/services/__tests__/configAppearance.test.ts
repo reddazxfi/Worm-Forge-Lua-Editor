@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIG, exportConfigAsIni, parseIniConfig, type EditorConfig } from '../config';
+import {
+  DEFAULT_CONFIG,
+  exportConfigAsIni,
+  normalizeModIconSize,
+  parseIniConfig,
+  type EditorConfig,
+} from '../config';
 
 describe('appearance config round-trip', () => {
   const configured: EditorConfig = {
@@ -29,5 +35,17 @@ describe('appearance config round-trip', () => {
     expect(parsed.backgroundDark).toBeUndefined();
     expect(parsed.backgroundLight).toBeUndefined();
     expect(parsed.sidebarSide).toBeUndefined();
+  });
+
+  it('defaults, clamps and round-trips the mod icon size', () => {
+    expect(DEFAULT_CONFIG.modIconSize).toBe(64);
+    expect(normalizeModIconSize(undefined)).toBe(64);
+    expect(normalizeModIconSize(0)).toBe(32);
+    expect(normalizeModIconSize(999)).toBe(160);
+
+    const parsed = parseIniConfig(
+      exportConfigAsIni({ ...DEFAULT_CONFIG, modIconSize: 96 })
+    );
+    expect(parsed.modIconSize).toBe(96);
   });
 });

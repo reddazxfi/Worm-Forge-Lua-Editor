@@ -20,6 +20,9 @@ export interface EditorConfig {
   syntaxOverridesLight: SyntaxOverrides;
   fontSize: number; // px, e.g. 11, 12, 13, 14, 16, 18
   lineHeight: number; // relative, e.g. 1.3, 1.5, 1.8
+  // Mods-grid tile art size in px. Manifest icons are usually 32x32, so this
+  // scales them up; 64 preserves the historical tile.
+  modIconSize: number;
   // Offer the suggestion popup while typing. Off is a supported editor mode,
   // not a hidden flag: no popup opens, and Tab indents as usual.
   autocomplete: boolean;
@@ -49,6 +52,16 @@ export interface EditorConfig {
   consoleHeight: number; // px, e.g. 230
 }
 
+export const MOD_ICON_MIN = 32;
+export const MOD_ICON_MAX = 160;
+
+/** Clamps a stored/imported mod icon size to the range the grid can render. */
+export function normalizeModIconSize(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return 64;
+  return Math.max(MOD_ICON_MIN, Math.min(MOD_ICON_MAX, Math.round(n)));
+}
+
 export const DEFAULT_CONFIG: EditorConfig = {
   theme: 'dark',
   backgroundDark: '',
@@ -59,6 +72,7 @@ export const DEFAULT_CONFIG: EditorConfig = {
   syntaxOverridesLight: {},
   fontSize: 13,
   lineHeight: 1.5,
+  modIconSize: 64,
   autocomplete: true,
   autoLoadFolder: '',
   startupModFolder: '',
@@ -86,6 +100,9 @@ export function loadConfig(): EditorConfig {
     merged.syntaxOverridesDark = sanitizeOverrides(parsed?.syntaxOverridesDark);
     merged.syntaxOverridesLight = sanitizeOverrides(parsed?.syntaxOverridesLight);
     if (typeof merged.syntaxPreset !== 'string') merged.syntaxPreset = DEFAULT_CONFIG.syntaxPreset;
+    // A config written before this setting existed has no key, and a hand-edited
+    // one may hold a string or NaN. Both fall back to the historical 64px tile.
+    merged.modIconSize = normalizeModIconSize(parsed?.modIconSize);
     // A config saved before this option existed has no key at all (`undefined`
     // from the spread), and one edited by hand could hold a non-boolean. Only an
     // explicit `false` turns the popup off; everything else stays on.
@@ -240,6 +257,7 @@ mods_root_path = ${cfg.modsRootPath || ''}
 
 [Layout]
 sidebar_side = ${cfg.sidebarSide}
+mod_icon_size = ${cfg.modIconSize}
 sidebar_width = ${cfg.sidebarWidth}
 tree_height_percent = ${cfg.treeHeightPercent}
 console_height = ${cfg.consoleHeight}
@@ -330,6 +348,9 @@ export function parseIniConfig(iniText: string): Partial<EditorConfig> {
       // Be lenient: an unknown value falls back to today's behaviour rather
       // than putting the app into a state it cannot recover from.
       if (val === 'modsList' || val === 'lastFile') result.launchMode = val;
+    } else if (cleanKey === 'mod_icon_size') {
+      const n = parseInt(val, 10);
+      if (!isNaN(n)) result.modIconSize = normalizeModIconSize(n);
     } else if (cleanKey === 'sidebar_width') {
       const n = parseInt(val, 10);
       if (!isNaN(n) && n >= 200 && n <= 700) result.sidebarWidth = n;

@@ -48,7 +48,7 @@ const mockFs = vi.hoisted(() => {
       if (text === undefined) throw new Error(`no such file: ${path}`);
       return text;
     }),
-    readFile: vi.fn(async () => new Uint8Array()),
+    readFile: vi.fn(async (path: string) => new TextEncoder().encode(files.get(path) ?? '')),
     stat: vi.fn(async () => ({ mtime: 0 })),
     reset() {
       files.clear();
@@ -631,6 +631,50 @@ describe('parseModManifest name', () => {
   });
 });
 
+describe('parseModManifest icons and exports', () => {
+  it('reads mod_icon as either a string or an array', () => {
+    expect(parseModManifest("id = 'x'\nmod_icon = 'icon.png'\n").modIcon).toEqual(['icon.png']);
+    expect(
+      parseModManifest(
+        'id = "x"\nmod_icon = ["profiles/first.png", "sprites/second.png"] # fallback\n'
+      ).modIcon
+    ).toEqual(['profiles/first.png', 'sprites/second.png']);
+    expect(parseModManifest('id = "x"\n').modIcon).toEqual([]);
+  });
+
+  it('reads quoted [exports] keys without leaking them into components', () => {
+    const m = parseModManifest(
+      'id = "lib"\n' +
+        '[exports]\n' +
+        '"wf-lib/shared" = "shared.lua"\n' +
+        "'wf-lib/holder' = 'lib/holder.lua'  # public alias\n" +
+        '[[components]]\n' +
+        'id = "lib.main"\n' +
+        'entry = "main.lua"\n'
+    );
+    expect(m.exports).toEqual({
+      'wf-lib/shared': 'shared.lua',
+      'wf-lib/holder': 'lib/holder.lua',
+    });
+    expect(m.components).toEqual([{ id: 'lib.main', type: undefined, entry: 'main.lua' }]);
+    expect(m.entry).toBe('main.lua');
+  });
+
+  it('does not treat a component name/description as top-level fields', () => {
+    const m = parseModManifest(
+      'id = "bundle"\n' +
+        '[[components]]\n' +
+        'id = "bundle.main"\n' +
+        'name = "Display name"\n' +
+        'description = "not the bundle name"\n' +
+        'entry = "main.lua"\n'
+    );
+    expect(m.id).toBe('bundle');
+    expect(m.name).toBeUndefined();
+    expect(m.components[0]).toMatchObject({ id: 'bundle.main', entry: 'main.lua' });
+  });
+});
+
 describe('hasProfilesDir', () => {
   it('detects a profiles directory at the mod root', () => {
     expect(hasProfilesDir({ 'mod.toml': 'x', 'profiles': '', 'profiles/home.toml': 'y' })).toBe(true);
@@ -771,6 +815,39 @@ describe('the official wf-lib shelf', () => {
         id: 'px',
         path: `${root}\\wf-lib\\px`,
       });
+    } finally {
+      g.window = previous;
+    }
+  });
+
+  it('uses the first readable manifest mod_icon before the legacy root file', async () => {
+    mockFs.reset();
+    const root = 'C:\\Mods';
+    const modPath = `${root}\\my_mod`;
+    mockFs.dirs.add(root);
+    mockFs.dirs.add(modPath);
+    mockFs.files.set(
+      `${modPath}\\mod.toml`,
+      'id = "my_mod"\n' +
+        'mod_icon = ["profiles/icon.png", "sprites/fallback.png"]\n' +
+        '[exports]\n' +
+        '"wf-lib/shared" = "shared.lua"\n'
+    );
+    mockFs.files.set(`${modPath}\\profiles\\icon.png`, 'first-png');
+    mockFs.files.set(`${modPath}\\sprites\\fallback.png`, 'second-png');
+    // The old hardcoded root file must not win when the manifest names another.
+    mockFs.files.set(`${modPath}\\mod_icon.png`, 'legacy-png');
+
+    const g = globalThis as { window?: unknown };
+    const previous = g.window;
+    g.window = { __TAURI_INTERNALS__: {} };
+    try {
+      const entries = await listModEntries(root);
+      const entry = entries?.find((e) => e.folderName === 'my_mod');
+      expect(entry?.iconUrl).toMatch(/^data:image\/png;base64,/);
+      expect(entry?.exportCount).toBe(1);
+      expect(mockFs.readFile).toHaveBeenCalledWith(`${modPath}\\profiles\\icon.png`);
+      expect(mockFs.readFile).not.toHaveBeenCalledWith(`${modPath}\\mod_icon.png`);
     } finally {
       g.window = previous;
     }

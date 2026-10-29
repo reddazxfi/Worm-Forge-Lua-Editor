@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { AlertTriangle, Package, Plus, RefreshCw, FolderOpen } from 'lucide-react';
+import React, { useDeferredValue, useMemo, useState } from 'react';
+import { AlertTriangle, Package, Plus, RefreshCw, FolderOpen, Search, Share2, X } from 'lucide-react';
 import type { AppSurfaces } from '../services/appTheme';
 
 export interface ModsListTile {
@@ -14,6 +14,8 @@ export interface ModsListTile {
   mtime: number | null;
   /** Components declared by mod.toml, for resolving a profile's features. */
   components?: { id?: string; type?: string; entry?: string }[];
+  /** Number of public modules declared in `[exports]`. */
+  exportCount?: number;
   /** Stems of the `profiles/*.toml` this mod ships. */
   bundledProfiles?: string[];
 }
@@ -28,6 +30,8 @@ interface ModsListScreenProps {
    */
   openingPath?: string | null;
   error?: string | null;
+  /** Tile art size in px. Defaults to the historical 64px. */
+  iconSize?: number;
   isLight?: boolean;
   surface?: AppSurfaces;
   onOpenMod: (mod: ModsListTile) => void;
@@ -37,14 +41,15 @@ interface ModsListScreenProps {
   onOpenConfig: () => void;
 }
 
-/** Fixed tile art size, in px. Same for every tile by design. */
-const ICON_PX = 64;
+/** Historical tile art size, in px. Every tile uses the configured value. */
+const DEFAULT_ICON_PX = 64;
 
 export const ModsListScreen: React.FC<ModsListScreenProps> = ({
   mods,
   isLoading = false,
   openingPath = null,
   error = null,
+  iconSize = DEFAULT_ICON_PX,
   isLight = false,
   surface,
   onOpenMod,
@@ -54,6 +59,12 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
   onOpenConfig,
 }) => {
   const [sortBy, setSortBy] = useState<'name' | 'date'>('name');
+  const [searchTerm, setSearchTerm] = useState('');
+  // Config import can hand us anything; keep the grid safe even before the
+  // App-level normaliser has a chance to run.
+  const artSize = Number.isFinite(iconSize)
+    ? Math.max(32, Math.min(160, Math.round(iconSize)))
+    : DEFAULT_ICON_PX;
 
   const sorted = useMemo(() => {
     const copy = [...mods];
@@ -67,8 +78,21 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
     return copy;
   }, [mods, sortBy]);
 
-  const officialMods = useMemo(() => sorted.filter((m) => m.official), [sorted]);
-  const localMods = useMemo(() => sorted.filter((m) => !m.official), [sorted]);
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const needle = deferredSearchTerm.trim().toLowerCase();
+  const hasSearch = searchTerm.trim().length > 0;
+  const filtered = useMemo(() => {
+    if (!needle) return sorted;
+    return sorted.filter((m) =>
+      [m.id, m.folderName, m.author, m.version].some((value) =>
+        value.toLowerCase().includes(needle)
+      )
+    );
+  }, [sorted, needle]);
+
+  const officialMods = useMemo(() => filtered.filter((m) => m.official), [filtered]);
+  const localMods = useMemo(() => filtered.filter((m) => !m.official), [filtered]);
+  const allOfficialCount = useMemo(() => sorted.filter((m) => m.official).length, [sorted]);
 
   const sectionLabel = (text: string) => (
     <h2
@@ -106,14 +130,16 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
         className={`relative flex items-center justify-center rounded border overflow-hidden shrink-0 ${
           isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0e1115] border-[#242b35]'
         }`}
-        style={{ width: `${ICON_PX}px`, height: `${ICON_PX}px` }}
+        style={{ width: `${artSize}px`, height: `${artSize}px` }}
       >
         {mod.iconUrl ? (
           <img
             src={mod.iconUrl}
             alt=""
-            // Fit, never upscale beyond the tile box.
+            // Manifest icons are usually 32x32; fit them into the configured
+            // tile and keep the pixels crisp instead of blurring the upscale.
             className="w-full h-full object-contain"
+            style={{ imageRendering: 'pixelated' }}
           />
         ) : (
           <Package
@@ -126,6 +152,16 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
             title="Official WormForge library mod"
           >
             WF
+          </span>
+        )}
+        {(mod.exportCount ?? 0) > 0 && (
+          <span
+            className="absolute top-0 right-0 p-0.5 rounded-bl bg-sky-500/90"
+            title={`Library: exports ${mod.exportCount} module${
+              mod.exportCount === 1 ? '' : 's'
+            }`}
+          >
+            <Share2 className="w-3 h-3 text-slate-950" />
           </span>
         )}
       </div>
@@ -169,7 +205,7 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
               : isLoading
               ? 'Scanning mods folder...'
               : `${mods.length} mod${mods.length === 1 ? '' : 's'} found${
-                  officialMods.length > 0 ? ` · ${officialMods.length} official` : ''
+                  allOfficialCount > 0 ? ` · ${allOfficialCount} official` : ''
                 }`}
           </p>
         </div>
@@ -264,7 +300,7 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
           </div>
         )}
 
-        {!isLoading && mods.length === 0 && !error && (
+        {!isLoading && mods.length === 0 && !error && !hasSearch && (
           <div className={`h-full flex flex-col items-center justify-center gap-2 text-center ${
             isLight ? 'text-slate-500' : 'text-[#5b6b7e]'
           }`}>
@@ -282,7 +318,50 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
           </div>
         )}
 
-        {officialMods.length > 0 && (
+        <div className="relative max-w-xl mb-5">
+          <Search
+            className={`w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 ${
+              isLight ? 'text-slate-400' : 'text-[#6c7889]'
+            }`}
+          />
+          <input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search mods by id, folder, author or version..."
+            spellCheck={false}
+            className={`w-full pl-8 pr-8 py-1.5 rounded border text-[11px] outline-none transition-colors ${
+              isLight
+                ? 'bg-white border-slate-300 text-slate-800 placeholder:text-slate-400 focus:border-amber-500'
+                : 'bg-[#11161c] border-[#2b3442] text-[#dce7f3] placeholder:text-[#5f7085] focus:border-amber-500'
+            }`}
+          />
+          {hasSearch && (
+            <button
+              onClick={() => setSearchTerm('')}
+              title="Clear search"
+              className={`absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded ${
+                isLight ? 'text-slate-400 hover:text-slate-700' : 'text-[#6c7889] hover:text-[#dce7f3]'
+              }`}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {hasSearch && filtered.length === 0 && (
+          <div
+            className={`rounded border px-4 py-6 text-center text-[11px] mb-5 ${
+              isLight ? 'bg-white border-slate-300 text-slate-600' : 'bg-[#171b21] border-[#242b35] text-[#8b9cb0]'
+            }`}
+          >
+            No mod matches <span className="font-mono">{searchTerm.trim()}</span>.
+            <button onClick={() => setSearchTerm('')} className="ml-2 text-amber-500 hover:underline">
+              Clear search
+            </button>
+          </div>
+        )}
+
+        {allOfficialCount > 0 && (
           <div
             className={`rounded border px-3 py-2.5 mb-5 flex items-start gap-2 ${
               isLight
@@ -316,7 +395,7 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
 
         {localMods.length > 0 && (
           <div>
-            {officialMods.length > 0 && sectionLabel(`Your mods (${localMods.length})`)}
+            {allOfficialCount > 0 && sectionLabel(`Your mods (${localMods.length})`)}
             <div className={gridClass}>{localMods.map(tile)}</div>
           </div>
         )}
