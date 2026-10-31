@@ -826,12 +826,17 @@ impl Visitor for Checker {
         {
             // math.cos/sin/atan inside wa.on.draw is presentation-only: per-client
             // drawing never desyncs a match, so it is safe there. Everywhere else
-            // (gameplay logic, helpers, ...) it is a real desync risk and stays an error.
+            // (gameplay logic, helpers, ...) it is a real desync risk.
+            //
+            // WARNING, not ERROR: the sandbox only nils `math.random` and
+            // `math.randomseed` (sandbox.rs `strip_unsafe`). `math.sin`/`cos`/`atan`
+            // still run, so calling them "disabled" and failing the build on working
+            // code was a false positive. The advice to use `wa.math` stays.
             let (line, column) = pos(call);
             if !in_render_region(line, column, &self.render_regions) {
                 self.add(
                     call,
-                    SEVERITY_ERROR,
+                    SEVERITY_WARNING,
                     "lockstep-rng",
                     format!(
                         "math.{0}() is not lockstep-safe: the C library result can differ \
@@ -2607,8 +2612,17 @@ mod tests {
     /// The other value entirely. The trace must not reach a `missile_frame` table.
     #[test]
     fn a_missile_frame_table_is_still_a_missile_entity() {
-        let src = "wa.on.missile_frame(function(missile)\n  missile:impulses(1, 2)\nend)";
+        let src = "wa.on.missile_frame(function(m)\n  m:impulses(1, 2)\nend)";
         assert_eq!(rules(src), vec!["missile-api"]);
+    }
+
+    /// `missile` is ambiguous: it is also the natural name for a WorldHandle from
+    /// `wa.missiles.all()`, which HAS `remove`. The name table no longer claims
+    /// it, so this is silent; the indexed/loop trace proves the handle cases.
+    #[test]
+    fn a_missile_frame_table_named_missile_is_not_diagnosed_by_name() {
+        let src = "wa.on.missile_frame(function(missile)\n  missile:remove()\nend)";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
     }
 
     /// THE LEAK THIS WAS MEASURED AGAINST, and the reason the trace is scoped.
@@ -2685,10 +2699,13 @@ mod tests {
         assert!(rules(src).is_empty(), "got {:?}", rules(src));
     }
 
-    /// math.cos outside render context is a desync error.
+    /// math.cos outside render context is a determinism WARNING, not an error:
+    /// the sandbox only nils math.random/randomseed, so the call still runs.
     #[test]
-    fn api4_math_cos_outside_draw_is_error() {
-        assert_eq!(rules("local x = math.cos(1)"), vec!["lockstep-rng"]);
+    fn api4_math_cos_outside_draw_is_a_warning() {
+        let (rule, severity, ..) = only_finding("local x = math.cos(1)");
+        assert_eq!(rule, "lockstep-rng");
+        assert_eq!(severity, "warning");
     }
 
     /// wa.audit only exists in diagnostics builds, so it still typos on release.
@@ -2735,7 +2752,7 @@ mod tests {
         assert_eq!(
             rng.len(),
             2,
-            "expected exactly 2 lockstep-rng errors (math.random + math.cos outside draw), got {rng:?}",
+            "expected exactly 2 lockstep-rng findings (math.random + math.cos outside draw), got {rng:?}",
         );
     }
 
@@ -3509,7 +3526,7 @@ mod tests {
         }
     }
 
-    /// Baseline (TS): `missile:hurtt()` → one `missile-api`.
+    /// Baseline (TS): `m:hurtt()` → one `missile-api`.
     ///
     /// MissileEntity is the class that produced NINE false positives once, when
     /// `M.sounds[1]:find("inflate")` in `test_rules.lua` was read as a call on receiver
@@ -3518,12 +3535,12 @@ mod tests {
     #[test]
     fn a_misspelled_missile_method_is_caught() {
         let (rule, severity, line, col) = only_finding(
-            "local function f(missile)\n  missile:collision_mask()\n  missile:hurtt()\nend",
+            "local function f(m)\n  m:collision_mask()\n  m:hurtt()\nend",
         );
         assert_eq!(rule, "missile-api");
         assert_eq!(severity, "warning");
-        // Column 11: `  missile:` is 10 characters.
-        assert_eq!((line, col), (3, 11));
+        // Column 5: `  m:` is 4 characters.
+        assert_eq!((line, col), (3, 5));
     }
 
     /// The regression that `UNCHECKED_CLASSES` was masking. A BRACKETED receiver is not
@@ -4356,10 +4373,16 @@ end
     // `warning` here and `info` in parser.ts, so the same finding landed under a
     // different console filter depending on which side won the mergeDiagnostics dedup.
 
-    /// The severity each shared rule must carry on BOTH sides.
+    /// The severity each shared rule must carry on BOTH sides, measured on the
+    /// fixture below.
     ///
     /// A rule missing from this table has not been reconciled yet -- add it rather than
     /// letting the two implementations choose independently.
+    ///
+    /// `lockstep-rng` is MIXED on purpose: the fixture calls `math.random`, which the
+    /// sandbox nils (ERROR); `math.cos`/`sin`/`atan` still run and are WARNINGs. This
+    /// entry pins the fixture's severity, and `trig_is_a_warning_not_an_error` pins
+    /// the other half.
     const AGREED_SEVERITY: &[(&str, &str)] = &[
         ("lockstep-rng", SEVERITY_ERROR),
         ("lockstep-pairs", SEVERITY_INFO),

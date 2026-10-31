@@ -130,8 +130,20 @@ export const RECEIVER_REGISTRY: ReceiverRow[] = [
   },
   {
     // The missile_frame payload table, not a handle.
+    //
+    // `m` is the missile_frame convention, so the checker still claims it.
+    //
+    // `missile` is NOT diagnosed: it is also the most natural name for a
+    // WorldHandle from `wa.missiles.all()` -- and that handle HAS
+    // `remove`/`impulse`/`warp`, which the missile_frame table does not. The
+    // engine itself says a receiver named `missile` says nothing about which of
+    // the two it is (spawn.rs binds `.all()` through WorldHandle::new). Warning
+    // by that name produced a false `missile-api` on valid
+    // `local missile = wa.missiles.all()[i]; missile:remove()`. The indexed
+    // assignment trace and the loop binding prove the WorldHandle case; the
+    // bare `missile` name is left to autocomplete.
     prefixes: ['m', 'missile', 'mis'],
-    diagnose: ['m', 'missile'],
+    diagnose: ['m'],
     className: 'MissileEntity',
     rule: 'missile-api',
     note: 'In-flight missile tables provide properties: id, weapon, sprite, collision_mask, x, y, vx, vy, damp, wind_scale, gravity_scale',
@@ -264,6 +276,10 @@ export function rowForClass(className: HandleClassName): ReceiverRow | null {
 // match in a 169 KB file, 147 matches down to 0.
 const CALL_ASSIGNMENT =
   /(?<!\.)\b(?:local\s+)?([A-Za-z_]\w*)\s*=\s*([A-Za-z_][\w.]*)\s*\(/g;
+// `local missile = wa.missiles.all()[i]` -- one indexed element of a declared
+// iterator. The element type comes from ITERATOR_ELEMENT, not the local's name.
+const ITERATOR_INDEX_ASSIGNMENT =
+  /(?<!\.)\b(?:local\s+)?([A-Za-z_]\w*)\s*=\s*([A-Za-z_][\w.]*)\s*\(\s*\)\s*\[/g;
 const CALLABLE_NAMES: Map<string, string> = (() => {
   const map = new Map<string, string>();
   for (const fn of BUILTIN_FUNCTIONS) map.set(fn.name, fn.returnType ?? '');
@@ -333,6 +349,13 @@ export const LOOP_ITERATOR_WRAPPERS = ['ipairs', 'pairs'] as const;
  * does not try to follow a value through tables, returns or several
  * reassignments -- that is where a plausible-looking guess starts producing
  * wrong suggestions, which is worse than silence.
+ *
+ * The second form is still one hop: `local missile = wa.missiles.all()[i]`.
+ * The array's element type is already declared in `ITERATOR_ELEMENT`, so this
+ * is a FACT about the call, not a guess from the variable's name. Without it,
+ * the very common `local missile = wa.missiles.all()[1]` fell back to the name
+ * table and warned `missile:remove() is not a MissileEntity method` on a real
+ * WorldHandle.
  */
 export function traceLocalTypes(source: string): Map<string, HandleClassName> {
   const traced = new Map<string, HandleClassName>();
@@ -341,6 +364,12 @@ export function traceLocalTypes(source: string): Map<string, HandleClassName> {
     const [, varName, callName] = m;
     const declared = CALLABLE_NAMES.get(callName);
     const cls = normalizeReturnType(declared || undefined);
+    if (cls) traced.set(varName, cls);
+  }
+  ITERATOR_INDEX_ASSIGNMENT.lastIndex = 0;
+  for (const m of source.matchAll(ITERATOR_INDEX_ASSIGNMENT)) {
+    const [, varName, callName] = m;
+    const cls = ITERATOR_ELEMENT[callName.toLowerCase()];
     if (cls) traced.set(varName, cls);
   }
   return traced;

@@ -15,6 +15,8 @@ const NO_SHIPPED_USAGE = new Set([
   'WormEntity:air_fire',
   'WormEntity:show_health',
   'WormEntity:die',
+  'WormEntity:poison',
+  'WormEntity:input',
   'WorldHandle:impulse',
   'LightHandle:move',
   'LightHandle:set',

@@ -1470,11 +1470,14 @@ export function parseAndValidate(
     // wa.math.* forms, which the user replaces them with because the engine
     // forms are deterministic across every lockstep peer.
     const bannedLockstep = [
-      { name: 'random', hint: 'Use "wa.random(min, max)" to draw from Worms Armageddon\'s shared lockstep RNG.' },
-      { name: 'randomseed', hint: 'Use "wa.random(min, max)" to draw from Worms Armageddon\'s shared lockstep RNG.' },
-      { name: 'cos', hint: 'Use "wa.math.cos(...)" -- the engine\'s deterministic sine table -- instead.' },
-      { name: 'sin', hint: 'Use "wa.math.sin(...)" -- the engine\'s deterministic sine table -- instead.' },
-      { name: 'atan', hint: 'Use "wa.math.atan(y, x)" -- the engine\'s deterministic arctangent -- instead.' },
+      // The sandbox NILS these two, so the call raises at run time.
+      { name: 'random', disabled: true, hint: 'Use "wa.random(min, max)" to draw from Worms Armageddon\'s shared lockstep RNG.' },
+      { name: 'randomseed', disabled: true, hint: 'Use "wa.random(min, max)" to draw from Worms Armageddon\'s shared lockstep RNG.' },
+      // These stay callable (sandbox.rs only nils random/randomseed). They are a
+      // cross-machine determinism RISK, not a disabled API: warning, not error.
+      { name: 'cos', disabled: false, hint: 'Use "wa.math.cos(...)" -- the engine\'s deterministic sine table -- instead.' },
+      { name: 'sin', disabled: false, hint: 'Use "wa.math.sin(...)" -- the engine\'s deterministic sine table -- instead.' },
+      { name: 'atan', disabled: false, hint: 'Use "wa.math.atan(y, x)" -- the engine\'s deterministic arctangent -- instead.' },
     ] as const;
     const afterDot = meaningfulTokens[idx - 1]?.value === '.';
     for (const b of bannedLockstep) {
@@ -1500,8 +1503,14 @@ export function parseAndValidate(
         diagnostics.push({
           line: t.line,
           column: t.column,
-          message: `Lockstep Violation: "math.${b.name}" is disabled in WormForge to prevent desyncs. ${b.hint}`,
-          severity: 'error',
+          message: b.disabled
+            ? `Lockstep Violation: "math.${b.name}" is disabled in WormForge to prevent desyncs. ${b.hint}`
+            : `Lockstep Warning: "math.${b.name}" is not lockstep-safe: the C library result can differ between machines and desync the match. ${b.hint}`,
+          // `math.random`/`randomseed` really are nil in the sandbox, so the
+          // call raises. `math.cos`/`sin`/`atan` still run; they are a
+          // determinism risk, and calling that an error on working code is
+          // exactly the false positive this rule used to produce.
+          severity: b.disabled ? 'error' : 'warning',
           rule: 'lockstep-rng',
         });
       }

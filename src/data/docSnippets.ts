@@ -1417,6 +1417,32 @@ wa.on.worm_message(function(worm, msg)
   return "eat"
 end, { msgs = { wa.msg.FIRE_WEAPON } })`,
   },
+  "WormEntity:delay": {
+    source: "WormForgeNew/mods/px/scheme/specialists_rules.lua",
+    code: `wa.on.worm_message(function(worm, msg)
+  if msg == wa.msg.TURN_STARTED and worm.turn then
+    -- Native upkeep handles positive values; only PX's temporary -1
+    -- locks are restored here, once on an actual team-turn start.
+    local locks = temporary_locks[worm.ammo_group] or {}
+    for _, id in ipairs(wa.sorted(locks)) do
+      if worm:delay(id) == -1 then worm:delay(id, 0) end
+    end
+    temporary_locks[worm.ammo_group] = nil
+  end
+end, { msgs = { wa.msg.TURN_STARTED } })`,
+  },
+  "WormEntity:reduce_health": {
+    source: "WormForgeNew/mods/px/weapons/sacrifice.lua",
+    code: `local function fire(worm)
+  local steps = math.min(choice, math.floor((worm.hp - 1) / 50))
+  if steps < 1 or not worm:reduce_health(50 * steps) then
+    wa.sound.play(worm, "sounds/sacrifice/sacrifice_error.wav")
+    return
+  end
+  wa.world.set_turn_clock(math.min(3600000, wa.world.turn_clock() + 5000 * steps))
+  wa.sound.play(worm, "sounds/sacrifice/sacrifice_sound.wav")
+end`,
+  },
   "WormEntity:carry": {
     source: "WormForgeNew/mods/examples/labs/worm_toss.lua",
     code: `local function tick(a)

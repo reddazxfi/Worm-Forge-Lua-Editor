@@ -176,6 +176,20 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
     example: 'wa.assets.load({ sprites = { "sprites/star.png" }, gpu_prefix = "sprites/" })',
   },
   {
+    name: 'wa.camera',
+    type: 'table',
+    description: "WA's automatic camera: follow rule and per-frame look requests. Presentation only; the simulation never reads it.",
+    scope: 'global',
+    example: 'wa.camera.follow("owned")',
+  },
+  {
+    name: 'wa.fog',
+    type: 'table',
+    description: 'Fog of war settings, queries, and free light handles. Needs [fog] in mod.toml for writes; reads are open to any pack.',
+    scope: 'global',
+    example: 'wa.fog.visible(x, y)',
+  },
+  {
     name: 'wa.depth',
     type: 'table',
     description: 'Named draw depths; lower is nearer. Plain numbers, so wa.depth.OBJECTS - 1 sits just in front.',
@@ -808,6 +822,13 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'local jitter = (wa.draw.random() - 0.5) * 4',
   },
   {
+    name: 'wa.draw.fraction',
+    parameters: [],
+    returnType: 'float',
+    description: "How far this rendered frame is past the last simulation frame, 0..1: WA's interpolation. Inside wa.on.draw only; an error elsewhere. Use it to draw a body the pack tracks itself as smoothly as a Lua actor.",
+    example: 'local t = wa.draw.fraction()\nlocal x = c.x + c.vx * t',
+  },
+  {
     name: 'wa.hud.line',
     parameters: [
       { name: 'text', type: 'string', description: 'Text string to display' },
@@ -838,6 +859,27 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'local window = wa.hud.window({ text = "Turn 3", x = 10, y = 10, align = "top_left" })',
   },
   {
+    name: 'wa.camera.follow',
+    parameters: [
+      { name: 'rule', type: 'string', optional: true, description: '"all" (WA\'s own) or "owned" (drop requests from sides this viewer does not own)' },
+      { name: 'opts', type: 'table', optional: true, description: '{ public = bool } -- with "owned", also drop requests of no side when public = false' },
+    ],
+    returnType: 'string, bool',
+    description: 'Sets or reads WA\'s automatic camera rule. With no argument it reads: the rule in force and whether objects of no side still move the camera. Presentation only; any callback.',
+    example: 'wa.camera.follow("owned", { public = false })',
+  },
+  {
+    name: 'wa.camera.look',
+    parameters: [
+      { name: 'x', type: 'number', description: 'World X in px' },
+      { name: 'y', type: 'number', description: 'World Y in px' },
+      { name: 'opts', type: 'table', optional: true, description: '{ priority = 0..13, fixed = bool, owner = <worm|actor|object> }' },
+    ],
+    returnType: 'void',
+    description: "Asks for the camera this frame as a WA object does. WA forgets every request each frame, so call it every frame it should hold. Simulation callbacks only. fixed = true takes the fixed point; owner lets the follow rule drop it as that owner's.",
+    example: 'wa.camera.look(target.x, target.y, { priority = 2, owner = worm })',
+  },
+  {
     name: 'wa.fire.spawn',
     parameters: [
       { name: 'spec', type: 'table', description: '{ owner = <worm|actor>, x = number, y = number, [vx], [vy], [count], [duration], [up_power], [damage], [damage_scale], [knock_scale], [tint = 0xRRGGBB] } -- x/y in px and required; duration in ms; up_power a native integer; damage_scale/knock_scale factors; the rest default to WA' }
@@ -845,6 +887,15 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     returnType: 'void',
     description: "Spawns one of WA's fire entities, as a Petrol Bomb does. Valid only inside a simulation callback, and owner must resolve to a worm or actor.",
     example: 'wa.fire.spawn({ owner = worm, x = target.x, y = target.y, damage = 20 })',
+  },
+  {
+    name: 'wa.fire.repel',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ x, y, radius, power } -- x/y and radius in px; radius 1..8192; power a native strength 0..1000. Every field required.' },
+    ],
+    returnType: 'int',
+    description: "Pushes existing non-melting WA flames within a circle, using WA's own flame explosion response. Creates no blast, fire, sound or terrain hole and damages nothing. Returns the number of flames selected. Simulation callbacks only.",
+    example: 'local moved = wa.fire.repel({ x = x, y = y, radius = 80, power = 40 })',
   },
   {
     name: 'wa.perf.enable',
@@ -1038,6 +1089,15 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     returnType: 'bool, table | nil',
     description: 'Tests a circle against terrain and/or world objects. Returns whether it collides, plus the first object hit.',
     example: 'local hit, obj = wa.world.collides({ x = a.x, y = a.y, radius = 8, with = { "worms" } })',
+  },
+  {
+    name: 'wa.world.blast',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ x, y, owner = <worm|actor>, damage = 90, radius = 184, push_pct = 60, terrain_radius = 90 } -- all distances in px; damage 0..10000, radius 1..8192, push_pct 0..1000, terrain_radius 0..200' },
+    ],
+    returnType: 'void',
+    description: 'Delivers ordinary radial blast hits with linear falloff from each body centre, plus the terrain hole. Simulation callbacks only.',
+    example: 'wa.world.blast({ x = x, y = y, owner = worm, damage = 60, radius = 120 })',
   },
   {
     name: 'wa.on.body_move',
@@ -1267,6 +1327,10 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'fits', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'Target X in px' }, { name: 'y', type: 'number', description: 'Target Y in px' }, { name: 'mode', type: 'string', optional: true, description: '"terrain" to test land only, else the actor\'s own collision mask' }], returnType: 'bool', description: "WA's collision test of the actor's shape at a place. A read, so safe outside a simulation callback.", example: 'if a:fits(x, y, "terrain") then a:warp{ x = x, y = y } end' },
       // Magnetism. A finite multiplier; 0 opts out.
       { name: 'magnetic', kind: 'variable', returnType: 'number', description: 'Automatic magnetic response multiplier, 0..1000 (default 0; simulation callback only). Fields are summed in creation order and applied before movement.', example: 'a.magnetic = 0.25' },
+      { name: 'hits', kind: 'variable', returnType: 'table', description: 'Outgoing movement layers: { land, worms, mines, crates, objects, missiles }. Reads return booleans; writes need simulation callbacks.' },
+      { name: 'hit_by', kind: 'variable', returnType: 'string | table', description: 'Incoming categories: "all" or { worms, missiles, arrows, mines, actors, bullets, melee, fire, dragon_ball, blasts }. Writes need simulation callbacks.' },
+      { name: 'owner', kind: 'property', returnType: 'WormEntity | nil', description: 'The worm that spawned this actor, when it has one (read only).' },
+      { name: 'solid', kind: 'variable', returnType: 'bool', description: "Whether the actor is solid to WA's own collision. Writes need simulation callbacks." },
       // Fog of war (0.9.11). Presentation only, so it is safe in any callback.
       { name: 'light', kind: 'variable', returnType: 'string | false | table', description: "The actor's fog-of-war light. A visible world actor has its profile's projectile light by default; invisible (sprite = false), cursor and screen-space actors have none until given one. A preset string (worm, animal, projectile, crate) uses that kind's profile settings; false removes the light; a table replaces the whole spec, and omitted geometry and shadow_cast come from its kind. mode is light (default), dark (shades what its cast sees) or shadow (shades what is hidden from it within reach); darkness wins over light. cone.toward is velocity (default), angle (the a:gfx rotation), facing or degrees. seen_by is owner (default: the owning worm's side, per view_ownership; public without an owning worm) or everyone. discover = true requires seen_by = owner; dark and shadow never record terrain memory. strength (0..255) is for dark and shadow only. Presentation only: any callback may set it. Reading returns the spec table, or false.", example: 'a.light = "projectile"\na.light = { kind = "dark", circle = { radius = 120 } }' },
     ],
@@ -1314,6 +1378,8 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'windup', kind: 'variable', returnType: 'int', description: 'Wind-up frames counted by the engine instead of WA; 0 skips it, nil hands it back to WA (writable, sim callback only)' },
       { name: 'ammo_group', kind: 'property', returnType: 'int', description: 'Separate physical ammo row index; may differ from the visible alliance colour (read only)' },
       { name: 'taken', kind: 'property', returnType: 'bool', description: 'True while the engine still holds this worm for the pack after worm:take (read only)' },
+      { name: 'name', kind: 'variable', returnType: 'string', description: 'The worm\'s name. Writes from simulation callbacks keep the first 16 printable ASCII bytes and change both the native name and label.', example: 'worm.name = "Reinforcement"' },
+      { name: 'camera', kind: 'variable', returnType: 'nil | bool | int', description: 'This worm\'s camera requests: nil is WA\'s, false never moves the camera, 0..13 asks at that priority instead. wa.camera.follow still applies. Any callback.' },
       // Exactly the six names `settable_worm_state()` accepts (crates/lua-host).
       // Five states, because "sinking" is the legacy alias of tumbling. A real
       // state that is not settable -- "jetpacking", say -- is REJECTED by the
@@ -1331,6 +1397,10 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'jetpack_steer', kind: 'method', parameters: [{ name: 'on', type: 'bool', optional: true, description: 'Steer the jet pack (default true)' }], returnType: 'void', description: 'While the engine\'s jet pack runs you steer it, and the engine neither thrusts nor burns fuel from the keys. It keeps its collisions, fuel HUD and landing. The claim lapses when the jet pack ends (sim callback only).', example: 'worm:jetpack_steer(true)' },
       { name: 'equip', kind: 'method', parameters: [{ name: 'weaponName', type: 'string', description: 'Stock weapon slot name' }], returnType: 'int', description: 'Arms this worm with weapon and selects slot. Returns remaining ammo.', example: 'worm:equip("bazooka")' },
       { name: 'ammo', kind: 'method', parameters: [{ name: 'weaponName', type: 'string', description: 'Weapon name' }, { name: 'change', type: 'int | table', optional: true, description: 'Delta to add, or { set = count } (-1 is infinite)' }], returnType: 'int', description: 'Reads or modifies team ammo for this weapon. Returns ammo.', example: 'worm:ammo("bazooka", { set = 3 })' },
+      { name: 'delay', kind: 'method', parameters: [{ name: 'weaponName', type: 'string', description: 'Placed weapon id, e.g. "px.javelin"' }, { name: 'turns', type: 'int | nil', optional: true, description: 'New delay in turns; omit to read it' }], returnType: 'int', description: "Reads or sets the team's delay for a placed weapon, in turns. Writing needs a simulation callback and a live worm. Returns the delay now in force.", example: 'worm:delay("px.javelin", 2)' },
+      { name: 'input', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ fire = "press"|"release", aim = -90..90, fuse = 1..5, bounce = "min"|"max", click = { x, y }, key = ... }' }], returnType: 'void', description: "Feeds WA's own weapon input to this worm for the frame, as a debug aid. Needs debug_input = true in the pack's mod.toml and a simulation callback.", example: 'worm:input({ fire = "press", aim = 30 })' },
+      { name: 'poison', kind: 'method', parameters: [{ name: 'amount', type: 'int', description: 'Poison damage, 1..1000' }], returnType: 'bool', description: 'Poisons this worm through WA, crediting the current spawn owner. Simulation callbacks only. Returns whether the engine performed it.', example: 'worm:poison(20)' },
+      { name: 'reduce_health', kind: 'method', parameters: [{ name: 'amount', type: 'int', description: 'Damage to take, 0..10000' }], returnType: 'bool', description: "Takes health from this worm through WA's damage path without a synthetic hit or knockback. Simulation callbacks only. Returns whether the engine performed it.", example: 'worm:reduce_health(15)' },
       { name: 'hurt', kind: 'method', parameters: [{ name: 'arg', type: 'int | table', description: 'Damage amount or { amount = int }' }], returnType: 'void', description: 'Deals direct special impact damage without impulse knockback.', example: 'worm:hurt(20)' },
       { name: 'heal', kind: 'method', parameters: [{ name: 'amount', type: 'int', description: 'HP to restore' }], returnType: 'int', description: 'Restores worm hit points (sim callback only). Returns new HP.', example: 'worm:heal(25)' },
       // Health-timing verbs used by Core Utilities. Worm-only and simulation-only,
@@ -1361,6 +1431,8 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'damage', kind: 'property', returnType: 'int | nil', description: "For oil drums: WA's damage count; nil for anything else (read only)." },
       { name: 'max_damage', kind: 'property', returnType: 'int | nil', description: "For oil drums: the damage at which the drum goes off (WA's 50); nil for anything else (read only)." },
       { name: 'visible', kind: 'variable', returnType: 'bool | nil', description: 'For oil drums: whether WA draws it. false lets a pack draw its own drum; only the draw changes, not the drum itself. nil for anything else; writable from any callback.' },
+      { name: 'gravity', kind: 'variable', returnType: 'number | nil', description: "The object's gravity factor: 1 WA's normal, 0 none. On mines, crates, oil drums, missiles, arrows and graves; nil on anything else. Writes from simulation callbacks." },
+      { name: 'camera', kind: 'variable', returnType: 'nil | bool | int', description: "This object's camera requests: nil is WA's, false never moves the camera, 0..13 asks at that priority instead. wa.camera.follow still applies. Any callback." },
       { name: 'x', kind: 'variable', returnType: 'number', description: 'Position X in px' },
       { name: 'y', kind: 'variable', returnType: 'number', description: 'Position Y in px' },
       { name: 'vx', kind: 'variable', returnType: 'number', description: 'Horizontal velocity in px/frame' },

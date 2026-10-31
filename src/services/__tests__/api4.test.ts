@@ -36,6 +36,23 @@ describe('Lua API 4 surface (WormForge 0.9.1/0.9.5)', () => {
     'local function f(a) local field = wa.magnetism.field({ source = a }) field:remove() end',
     'local function f(a) local fx, fy, inside, waking = wa.magnetism.sample(1, 2, a) end',
     'wa.on.oil_explode(function(ev) ev:replace() end)',
+    // 0.9.11 verbs the release list had not caught up with (engine api.rs /
+    // camera.rs / spawn.rs): a gap here is a false wa-namespace-typo.
+    'wa.camera.follow("owned", { public = false })',
+    'local rule, public_side = wa.camera.follow()',
+    'local function f(worm) wa.camera.look(100, 200, { priority = 2, owner = worm }) end',
+    'wa.fire.repel({ x = 100, y = 200, radius = 80, power = 40 })',
+    'local function f(worm) wa.world.blast({ x = 100, y = 200, owner = worm, damage = 60, radius = 120 }) end',
+    'wa.on.draw(function() local t = wa.draw.fraction() end)',
+    // Worm verbs present in actor.rs but missing from the old definitions.
+    'local function f(worm) return worm:delay("px.javelin", 2) end',
+    'local function f(worm) return worm:reduce_health(15) end',
+    'local function f(worm) return worm:poison(20) end',
+    'local function f(worm) worm:input({ fire = "press", aim = 30 }) end',
+    // `wa.missiles.all()` yields WorldHandle userdata, not the missile_frame
+    // table. A local holding one element has remove/impulse/warp.
+    'local missile = wa.missiles.all()[1]\nmissile:remove()',
+    'local function f() local missile = wa.missiles.all()[1]; missile:impulse(1, 2) end',
   ];
   it.each(silent)('%s is real API and produces no finding', (src) => {
     expect(rulesOf(src)).toEqual([]);
@@ -81,6 +98,51 @@ describe('Lua API 4 surface (WormForge 0.9.1/0.9.5)', () => {
       }
     }
     expect(missing, 'wa.* verbs in the release list missing from src/data').toEqual([]);
+  });
+
+  it('matches every verb and handle method in the current 0.9.53 verbs.md', () => {
+    // The release-page list (attached 2026-10-30) is the surface modders are
+    // told exists. A gap here is a false wa-namespace-typo / worm-api on valid
+    // code, which is the failure this guard exists to prevent. `ev:replace` is
+    // an event-table method, not a handle class, so it has no row here.
+    const VERBS = resolve(__dirname, '../../..', 'spec', 'verbs.md');
+    const md = readFileSync(VERBS, 'utf8');
+    const headings = [...md.matchAll(/^### `([^`]+)`/gm)].map((m) => m[1]);
+    const also = [...md.matchAll(/^Also: (.+)$/gm)].flatMap((m) =>
+      [...m[1].matchAll(/`([^`]+)`/g)].map((x) => x[1])
+    );
+    const known = new Set<string>([
+      ...BUILTIN_FUNCTIONS.map((f) => f.name),
+      ...BUILTIN_VARIABLES.map((v) => v.name),
+      ...BUILTIN_ENUMERATIONS.flatMap((e) => e.values.map((v) => `${e.name}.${v.name}`)),
+    ]);
+    const classFor: Record<string, string> = {
+      worm: 'WormEntity',
+      a: 'LuaActor',
+      actor: 'LuaActor',
+      object: 'WorldHandle',
+      mine: 'WorldHandle',
+      grave: 'WorldHandle',
+      light: 'LightHandle',
+      inventory: 'InventoryStore',
+      inv: 'InventoryStore',
+      window: 'WindowHandle',
+    };
+    const members = new Map(
+      BUILTIN_CLASSES.map((c) => [c.name, new Set(c.members.map((m) => m.name))])
+    );
+    const missing: string[] = [];
+    for (const key of new Set([...headings, ...also])) {
+      if (key.startsWith('wa.')) {
+        if (!known.has(key)) missing.push(key);
+        continue;
+      }
+      const m = /^([A-Za-z_]+):([A-Za-z_][\w]*)$/.exec(key);
+      if (!m) continue;
+      const cls = classFor[m[1]];
+      if (cls && !members.get(cls)?.has(m[2])) missing.push(`${cls}.${m[2]} (${key})`);
+    }
+    expect(missing).toEqual([]);
   });
 });
 
@@ -139,8 +201,18 @@ describe('render-context math (mirror of checks.rs RenderScan)', () => {
     expect(rulesOf(src)).toEqual([]);
   });
 
-  it('math.cos outside render context is an error', () => {
-    expect(rulesOf('local x = math.cos(1)')).toEqual(['lockstep-rng']);
+  it('math.cos outside render context is a determinism warning, not an error', () => {
+    // The engine's sandbox only nils math.random/randomseed. math.cos still
+    // runs; calling it "disabled" and failing the build was the false positive.
+    const d = parseAndValidate('local x = math.cos(1)').diagnostics[0];
+    expect(d.rule).toBe('lockstep-rng');
+    expect(d.severity).toBe('warning');
+  });
+
+  it('math.random is still an error: the sandbox nils it', () => {
+    const d = parseAndValidate('local x = math.random()').diagnostics[0];
+    expect(d.rule).toBe('lockstep-rng');
+    expect(d.severity).toBe('error');
   });
 
   it('a named callback body is NOT render context (conservative)', () => {
@@ -252,10 +324,25 @@ describe('method definitions are not invocations (mirrors checks.rs call-only ch
     expect(rulesOf(src)).toEqual([]);
   });
 
-  it('m:remove() as a call still reports missile-api', () => {
-    // `m` is bound as a local so only the unknown-method check fires.
-    const src = 'local m = {}\nm:remove()';
-    expect(rulesOf(src)).toEqual(['missile-api']);
+  it('m:remove() on an untyped local still reports missile-api', () => {
+    // `m` is the missile_frame convention, so the checker claims it. `missile`
+    // is not claimed: it is also the natural name for a WorldHandle.
+    expect(rulesOf('local m = {}\nm:remove()')).toEqual(['missile-api']);
+  });
+
+  it('a missile_frame callback named missile is silent (ambiguous receiver)', () => {
+    // The false positive that started this: `missile` is also the name of a
+    // WorldHandle from wa.missiles.all(), which HAS remove. The name alone
+    // cannot tell the two apart, so the checker does not guess.
+    expect(rulesOf('wa.on.missile_frame(function(missile) missile:remove() end)')).toEqual([]);
+  });
+
+  it('a loop directly over wa.missiles.all() resolves m to WorldHandle', () => {
+    expect(rulesOf('for _, m in ipairs(wa.missiles.all()) do m:remove() end')).toEqual([]);
+  });
+
+  it('an indexed element of wa.missiles.all() resolves to WorldHandle', () => {
+    expect(rulesOf('local missile = wa.missiles.all()[1]\nmissile:remove()')).toEqual([]);
   });
 });
 
@@ -437,11 +524,15 @@ describe('receiver resolution: wa.X.all() beats the name', () => {
     expect(rulesOf(src)).toEqual(['world-object-api']);
   });
 
-  it('a misspelled method on a missile_frame table is still missile-api', () => {
-    // The other value entirely, and the trace must not reach it.
+  it('a missile_frame callback parameter is not diagnosed by name alone', () => {
+    // `missile` is also the natural name for a WorldHandle from
+    // wa.missiles.all(), and that handle HAS remove/impulse. The engine says the
+    // name cannot tell the two apart, so the checker does not guess: the cost is
+    // missing a typo on a callback parameter, the benefit is no false positive
+    // on working code. The loop/index trace still resolves the proven cases.
     const src =
       'wa.on.missile_frame(function(missile)\n  missile:impulses(1, 2)\nend)';
-    expect(rulesOf(src)).toEqual(['missile-api']);
+    expect(rulesOf(src)).toEqual([]);
   });
 
   // THE LEAK THIS WAS MEASURED AGAINST. `mods/tools/audit/audit.lua` loops
@@ -477,8 +568,9 @@ describe('receiver resolution: wa.X.all() beats the name', () => {
 
   it('an iterator that is merely a variable is declined, not guessed', () => {
     const src = 'local t = wa.missiles.all()\nfor _, m in ipairs(t) do m:impulse(1, 2) end';
-    // `m` still falls back to the name table, which says MissileEntity -- so this
-    // warns. That is the honest answer: we cannot see where `t` came from.
+    // We cannot see where `t` came from, so the loop trace declines. `m` is
+    // still the missile_frame convention, so the name table answers. That is
+    // the honest answer: the checker will not guess a WorldHandle from `t`.
     expect(rulesOf(src)).toEqual(['missile-api']);
   });
 });
