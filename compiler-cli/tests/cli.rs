@@ -124,11 +124,11 @@ fn help_and_version_succeed_and_say_the_engine_version() {
     let help = run(&["--help"]);
     assert_eq!(help.code, 0);
     assert!(help.stdout.contains("wfcheck"), "{}", help.stdout);
-    assert!(help.stdout.contains("0.9.11"), "{}", help.stdout);
+    assert!(help.stdout.contains("0.9.61"), "{}", help.stdout);
 
     let version = run(&["--version"]);
     assert_eq!(version.code, 0);
-    assert!(version.stdout.contains("0.9.11"), "{}", version.stdout);
+    assert!(version.stdout.contains("0.9.61"), "{}", version.stdout);
 }
 
 #[test]
@@ -235,7 +235,7 @@ fn json_output_is_parseable_and_never_coloured() {
     assert!(!out.stdout.contains('\u{1b}'), "JSON must not be coloured");
     let parsed: serde_json::Value =
         serde_json::from_str(&out.stdout).unwrap_or_else(|e| panic!("{e}\n{}", out.stdout));
-    assert_eq!(parsed["engine"], "0.9.11");
+    assert_eq!(parsed["engine"], "0.9.61");
     assert_eq!(parsed["files"][0]["diagnostics"][0]["rule"], "lockstep-rng");
 }
 

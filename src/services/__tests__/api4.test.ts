@@ -324,10 +324,10 @@ describe('method definitions are not invocations (mirrors checks.rs call-only ch
     expect(rulesOf(src)).toEqual([]);
   });
 
-  it('m:remove() on an untyped local still reports missile-api', () => {
-    // `m` is the missile_frame convention, so the checker claims it. `missile`
-    // is not claimed: it is also the natural name for a WorldHandle.
-    expect(rulesOf('local m = {}\nm:remove()')).toEqual(['missile-api']);
+  it('m:remove() on an untyped local is silent (ambiguous receiver)', () => {
+    // `m` is the missile_frame convention AND a common WorldHandle name. The
+    // name alone cannot tell the two apart, so the checker does not guess.
+    expect(rulesOf('local m = {}\nm:remove()')).toEqual([]);
   });
 
   it('a missile_frame callback named missile is silent (ambiguous receiver)', () => {
@@ -569,8 +569,7 @@ describe('receiver resolution: wa.X.all() beats the name', () => {
   it('an iterator that is merely a variable is declined, not guessed', () => {
     const src = 'local t = wa.missiles.all()\nfor _, m in ipairs(t) do m:impulse(1, 2) end';
     // We cannot see where `t` came from, so the loop trace declines. `m` is
-    // still the missile_frame convention, so the name table answers. That is
-    // the honest answer: the checker will not guess a WorldHandle from `t`.
-    expect(rulesOf(src)).toEqual(['missile-api']);
+    // not claimed by name either, so the honest answer is silence.
+    expect(rulesOf(src)).toEqual([]);
   });
 });

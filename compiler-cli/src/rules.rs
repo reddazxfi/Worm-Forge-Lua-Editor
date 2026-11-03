@@ -68,11 +68,6 @@ pub const RULES: &[RuleInfo] = &[
         origin: "this tool",
     },
     RuleInfo {
-        id: "missile-api",
-        summary: "`m:`/`missile:` uses a member that MissileEntity does not have. Note missiles expose properties, not methods.",
-        origin: "engine_data.rs",
-    },
-    RuleInfo {
         id: "spec-key-typo",
         summary: "A weapon spec table key that is not in the spec key list. The weapon will load with that value ignored.",
         origin: "checks.rs",

@@ -45,7 +45,7 @@ const SEVERITY_WARNING: &str = "warning";
 /// compares only the SET of rule ids per file and never looks at severity.
 const SEVERITY_INFO: &str = "info";
 
-const ENGINE_VERSION: &str = "0.9.11";
+const ENGINE_VERSION: &str = "0.9.61";
 
 /// `wa.*` namespaces the engine installs only under a cargo feature, and so cannot
 /// appear in `engine_data.rs`'s function list.
@@ -2609,11 +2609,11 @@ mod tests {
         assert_eq!(rules(src), vec!["world-object-api"]);
     }
 
-    /// The other value entirely. The trace must not reach a `missile_frame` table.
+    /// The other value entirely, and the name cannot tell them apart: silent.
     #[test]
-    fn a_missile_frame_table_is_still_a_missile_entity() {
+    fn a_missile_frame_table_is_not_diagnosed_by_name() {
         let src = "wa.on.missile_frame(function(m)\n  m:impulses(1, 2)\nend)";
-        assert_eq!(rules(src), vec!["missile-api"]);
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
     }
 
     /// `missile` is ambiguous: it is also the natural name for a WorldHandle from
@@ -2651,7 +2651,7 @@ mod tests {
     #[test]
     fn an_iterator_that_is_only_a_variable_is_declined() {
         let src = "local t = wa.missiles.all()\nfor _, m in ipairs(t) do m:impulse(1, 2) end";
-        assert_eq!(rules(src), vec!["missile-api"]);
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
     }
 
     // ---- API 4 surface: exact snippets from SemanticChecksLua/semantic_all_rules.lua --
@@ -3342,11 +3342,10 @@ mod tests {
     }
 
     #[test]
-    fn a_missile_typo_still_warns_missile_api() {
-        // The union path must not swallow genuine typos on the empty-methods class:
-        // MissileEntity was the class UNCHECKED_CLASSES was pinned to, and `m:foo()`
-        // has no owner anywhere (measured as missile-api on the baseline).
-        assert_eq!(rules("m:foo()"), vec!["missile-api"]);
+    fn a_missile_name_is_not_diagnosed_without_a_trace() {
+        // `m` is also a WorldHandle name, and that handle HAS methods. The engine
+        // says the name cannot tell the two apart, so no finding without a trace.
+        assert!(rules("m:foo()").is_empty());
     }
 
     #[test]
@@ -3533,14 +3532,9 @@ mod tests {
     /// `m`. The real receiver there is a string. So the negative half matters as much as
     /// the positive: `missile-api` must not fire on a bracketed receiver.
     #[test]
-    fn a_misspelled_missile_method_is_caught() {
-        let (rule, severity, line, col) = only_finding(
-            "local function f(m)\n  m:collision_mask()\n  m:hurtt()\nend",
-        );
-        assert_eq!(rule, "missile-api");
-        assert_eq!(severity, "warning");
-        // Column 5: `  m:` is 4 characters.
-        assert_eq!((line, col), (3, 5));
+    fn a_missile_name_is_not_diagnosed_by_name_alone() {
+        let src = "local function f(m)\n  m:collision_mask()\n  m:hurtt()\nend";
+        assert!(rules(src).is_empty(), "got {:?}", rules(src));
     }
 
     /// The regression that `UNCHECKED_CLASSES` was masking. A BRACKETED receiver is not
@@ -3574,9 +3568,8 @@ mod tests {
     /// that genuinely does not exist, so the silence above cannot be an unchecked-alias
     /// bug in disguise.
     #[test]
-    fn the_m_alias_is_checked_for_methods() {
-        let (rule, ..) = only_finding("local function f(m)\n  m:hurtt()\nend");
-        assert_eq!(rule, "missile-api");
+    fn the_m_alias_is_not_checked_by_name() {
+        assert!(rules("local function f(m)\n  m:hurtt()\nend").is_empty());
     }
 
     /// A user's own table must never be judged against a registry row. This is the most

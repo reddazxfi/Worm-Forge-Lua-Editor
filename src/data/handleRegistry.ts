@@ -131,19 +131,16 @@ export const RECEIVER_REGISTRY: ReceiverRow[] = [
   {
     // The missile_frame payload table, not a handle.
     //
-    // `m` is the missile_frame convention, so the checker still claims it.
-    //
-    // `missile` is NOT diagnosed: it is also the most natural name for a
-    // WorldHandle from `wa.missiles.all()` -- and that handle HAS
+    // AUTOCOMPLETE ONLY. Both `m` and `missile` are also the most natural names
+    // for a WorldHandle from `wa.missiles.all()` -- and that handle HAS
     // `remove`/`impulse`/`warp`, which the missile_frame table does not. The
-    // engine itself says a receiver named `missile` says nothing about which of
-    // the two it is (spawn.rs binds `.all()` through WorldHandle::new). Warning
-    // by that name produced a false `missile-api` on valid
-    // `local missile = wa.missiles.all()[i]; missile:remove()`. The indexed
-    // assignment trace and the loop binding prove the WorldHandle case; the
-    // bare `missile` name is left to autocomplete.
+    // engine itself says a receiver name says nothing about which of the two it
+    // is (spawn.rs binds `.all()` through WorldHandle::new). Warning by name
+    // produced false `missile-api` on valid `m:remove()` / `missile:remove()`.
+    // The indexed assignment trace and the loop binding prove the WorldHandle
+    // cases; the bare names are left to autocomplete.
     prefixes: ['m', 'missile', 'mis'],
-    diagnose: ['m'],
+    diagnose: [],
     className: 'MissileEntity',
     rule: 'missile-api',
     note: 'In-flight missile tables provide properties: id, weapon, sprite, collision_mask, x, y, vx, vy, damp, wind_scale, gravity_scale',

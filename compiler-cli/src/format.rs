@@ -522,7 +522,7 @@ mod tests {
         assert!(text.contains("[wa-namespace-typo]"));
         assert!(text.contains("\n    = "), "detail was dropped: {text:?}");
         assert!(
-            text.contains("does not exist in WormForge 0.9.11"),
+            text.contains("does not exist in WormForge 0.9.61"),
             "wrong detail shown: {text:?}"
         );
         for line in text.lines().filter(|l| l.trim_start().starts_with("= ")) {

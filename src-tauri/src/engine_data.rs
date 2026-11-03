@@ -412,7 +412,6 @@ pub static RECEIVERS: &[(&str, &str, &str, &str)] = &[
     ("grave", "WorldHandle", "world-object-api", ""),
     ("obj", "WorldHandle", "world-object-api", ""),
     ("object", "WorldHandle", "world-object-api", ""),
-    ("m", "MissileEntity", "missile-api", "In-flight missile tables provide properties: id, weapon, sprite, collision_mask, x, y, vx, vy, damp, wind_scale, gravity_scale"),
 ];
 
 /// `(wa.X.all, handle class)` -- what a `for _, v in <wa.X.all()>` loop binds.
