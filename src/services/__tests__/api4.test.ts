@@ -190,6 +190,36 @@ describe('0.9.11 HUD windows and Invisibility', () => {
   });
 });
 
+describe('0.9.53 verbs.md additions (updated 2026-11-01)', () => {
+  // These are in the shipped verb list but were missing from the editor tables,
+  // so each one was a false wa-namespace-typo / worm-api finding on valid code.
+  const silent = [
+    'local speed = wa.world.speed()',
+    'wa.world.set_speed(0.5)',
+    'if wa.world.placing() then return end',
+    'if wa.world.worm_selecting() then return end',
+    'wa.draw.quads({ quads = {}, sprite = "spark" })',
+    'local t = wa.draw.trail({ sprite = "spark", width = 8 })\nt:push(1, 2)\nt:finish()\nt:remove()',
+    'wa.hud.fps_counter()',
+    'local e = wa.hud.tray.add({ weapon = "px.javelin", team = 1 })\ne:set({ lit = true, progress = 0.5 })\ne:remove()',
+    'wa.music.set_pitch(0.5)',
+    'local r = wa.view.ripple({ x = 1, y = 2 })\nr:stop()',
+    'local d = wa.fog.shade(1, 2)',
+    'local function f(worm) worm.selectable = false end',
+    'local function f(worm) worm.tint = 0xFF0000 end',
+    'local function f(worm) worm.body_scale = 0.85 end',
+    'local function f(worm) worm.hide_hud = true end',
+    'local function f(worm) worm.time_scale = 2 end',
+    'local function f(worm) return worm.aim_target, worm.click, worm.target end',
+    'local function f(worm) return worm:use("stock.jetpack") end',
+    'local function f(a) return a:hit(10, 1, 0, "bullet") end',
+  ];
+
+  it.each(silent)('%s is real 0.9.53 API and produces no finding', (src) => {
+    expect(rulesOf(src)).toEqual([]);
+  });
+});
+
 describe('render-context math (mirror of checks.rs RenderScan)', () => {
   it('math.sin inside wa.on.draw(function literal) is silent', () => {
     const src = 'wa.on.draw(function()\n  local x = math.sin(1)\nend)';

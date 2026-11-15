@@ -4094,6 +4094,9 @@ mod tests {
                 "LightHandle",
                 "MagneticField",
                 "WindowHandle",
+                "HudTrayEntry",
+                "TrailHandle",
+                "RippleHandle",
             ]
         );
     }

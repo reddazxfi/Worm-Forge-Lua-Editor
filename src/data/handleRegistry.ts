@@ -34,7 +34,10 @@ export type HandleClassName =
   | 'InventoryStore'
   | 'LightHandle'
   | 'MagneticField'
-  | 'WindowHandle';
+  | 'WindowHandle'
+  | 'HudTrayEntry'
+  | 'TrailHandle'
+  | 'RippleHandle';
 
 /**
  * returnType strings in wormforgeDefinitions.ts use the ENGINE's vocabulary
@@ -55,6 +58,9 @@ export const HANDLE_ALIASES: Record<string, HandleClassName> = {
   MagneticField: 'MagneticField',
   FieldHandle: 'MagneticField',
   WindowHandle: 'WindowHandle',
+  HudTrayEntry: 'HudTrayEntry',
+  TrailHandle: 'TrailHandle',
+  RippleHandle: 'RippleHandle',
 };
 
 /** Every class the union check may consult. */
@@ -67,6 +73,9 @@ export const ALL_HANDLE_CLASSES: HandleClassName[] = [
   'LightHandle',
   'MagneticField',
   'WindowHandle',
+  'HudTrayEntry',
+  'TrailHandle',
+  'RippleHandle',
 ];
 
 export interface ReceiverRow {
@@ -173,6 +182,30 @@ export const RECEIVER_REGISTRY: ReceiverRow[] = [
     diagnose: [],
     className: 'WindowHandle',
     rule: 'window-api',
+  },
+  {
+    // HUD weapon-tray entry (0.9.83): `local entry = wa.hud.tray.add{...}`.
+    // Auto-complete only, like the other lightweight handles.
+    prefixes: ['entry', 'tray'],
+    diagnose: [],
+    className: 'HudTrayEntry',
+    rule: 'hud-tray-api',
+  },
+  {
+    // Persistent draw trail (0.9.62): `local t = wa.draw.trail{...}`.
+    // Auto-complete only; `t` is too common a local name to diagnose.
+    prefixes: ['trail'],
+    diagnose: [],
+    className: 'TrailHandle',
+    rule: 'trail-api',
+  },
+  {
+    // Screen ripple (0.9.83): `local r = wa.view.ripple{...}`.
+    // Auto-complete only; `r` is too common a local name to diagnose.
+    prefixes: ['ripple'],
+    diagnose: [],
+    className: 'RippleHandle',
+    rule: 'ripple-api',
   },
 ];
 
