@@ -100,7 +100,7 @@ describe('Lua API 4 surface (WormForge 0.9.1/0.9.5)', () => {
     expect(missing, 'wa.* verbs in the release list missing from src/data').toEqual([]);
   });
 
-  it('matches every verb and handle method in the current 0.9.53 verbs.md', () => {
+  it('matches every verb and handle method in the current 0.9.9 verbs.md', () => {
     // The release-page list (attached 2026-10-30) is the surface modders are
     // told exists. A gap here is a false wa-namespace-typo / worm-api on valid
     // code, which is the failure this guard exists to prevent. `ev:replace` is
@@ -190,7 +190,7 @@ describe('0.9.11 HUD windows and Invisibility', () => {
   });
 });
 
-describe('0.9.53 verbs.md additions (updated 2026-11-01)', () => {
+describe('0.9.9 verbs.md additions (updated 2026-11-01)', () => {
   // These are in the shipped verb list but were missing from the editor tables,
   // so each one was a false wa-namespace-typo / worm-api finding on valid code.
   const silent = [
@@ -215,7 +215,7 @@ describe('0.9.53 verbs.md additions (updated 2026-11-01)', () => {
     'local function f(a) return a:hit(10, 1, 0, "bullet") end',
   ];
 
-  it.each(silent)('%s is real 0.9.53 API and produces no finding', (src) => {
+  it.each(silent)('%s is real 0.9.9 API and produces no finding', (src) => {
     expect(rulesOf(src)).toEqual([]);
   });
 });
@@ -510,20 +510,51 @@ describe('wa.audit is named, not called a typo (mirrors checks.rs)', () => {
 });
 
 describe('spec keys (API 4)', () => {
-  it('has exactly the 51 keys the checker test pins', () => {
-    // checks.rs: spec_key_data_survived_the_move_into_the_generator asserts 51.
+  it('has exactly the 62 keys the checker test pins', () => {
+    // checks.rs: spec_key_data_survived_the_move_into_the_generator asserts 62.
     // If this fails, the two lists drifted -- fix src/data/specKeys.ts and keep
     // both numbers in step.
-    expect(WEAPON_SPEC_KEYS.length).toBe(51);
+    expect(WEAPON_SPEC_KEYS.length).toBe(62);
   });
 
-  it.each(['fires', 'handling', 'missile', 'clusters', 'gun', 'strike', 'jet_pack', 'raw', 'panel_icons', 'hold', 'available_in_caves'])(
+  it.each([
+    'fires', 'handling', 'missile', 'clusters', 'gun', 'strike', 'jet_pack', 'raw',
+    'panel_icons', 'hold', 'available_in_caves',
+    // 0.9.9 additions: overlay projectile, homing click, sheep sheets, and the
+    // record groups the older list stopped short of.
+    'projectile', 'click', 'sheep_sprites', 'utility', 'parachute', 'sheep',
+    'fire_punch', 'drill', 'arrow', 'baseball_bat', 'flame_thrower',
+  ])(
     'accepts the API 4 claim key %s without a spec-key-typo',
     (key) => {
       const src = `wa.weapons.replace({ ${key} = {} })`;
       expect(rulesOf(src)).toEqual([]);
     }
   );
+
+  it.each(['copy_from', 'fires', 'missile', 'clusters', 'sprite', 'cluster', 'params', 'sprites'])(
+    'accepts the projectile subkey %s',
+    (key) => {
+      const src = `wa.weapons.replace({ weapon = "stock.minigun", projectile = { ${key} = {} } })`;
+      expect(rulesOf(src)).toEqual([]);
+    }
+  );
+
+  it('reports an unsupported projectile subkey', () => {
+    const src = 'wa.weapons.replace({ weapon = "stock.minigun", projectile = { copy_fromm = "stock.grenade" } })';
+    const d = parseAndValidate(src).diagnostics.find((x) => x.rule === 'spec-key-typo');
+    expect(d?.message).toContain('projectile');
+    expect(d?.message).toContain('copy_from');
+  });
+
+  it('checks the brace call form too', () => {
+    // `wa.weapons.replace{ ... }` is the idiomatic shape; it must not escape the
+    // check just because there is no `(`.
+    const src = 'wa.weapons.replace{ copy_fromm = "bazooka" }';
+    const d = parseAndValidate(src).diagnostics.find((x) => x.rule === 'spec-key-typo');
+    expect(d?.message).toContain('copy_from');
+    expect(rulesOf('wa.weapons.replace{ copy_from = "bazooka" }')).toEqual([]);
+  });
 });
 
 describe('receiver resolution: wa.X.all() beats the name', () => {

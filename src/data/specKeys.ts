@@ -66,6 +66,15 @@ export const WEAPON_SPEC_KEYS: string[] = [
   //   - `truecolor`, `gpu_worm_sprites` and `worm_sprites_animate` are read from
   //     the NESTED `params` table (api.rs:1687-1697), never directly off the
   //     spec, and spec-key-typo only checks direct keys -- so they stay out.
+  // Overlay weapon (a stock slot's projectile replaced by a record of its own,
+  // wa.weapons.launch builds the same shape). `projectile` is validated one
+  // level deeper against PROJECTILE_SPEC_KEYS below.
+  'projectile',
+  // `click = "homing"`: the click marks the target and Space fires, whatever
+  // the record. parse_click_kind (api.rs) is the only accepted value.
+  'click',
+  // The two flying sheep sheets, `{ first, second }` (api.rs).
+  'sheep_sprites',
   'id',
   'actor',
   'airborne',
@@ -87,8 +96,41 @@ export const WEAPON_SPEC_KEYS: string[] = [
   'gun',
   'strike',
   'jet_pack',
+  // The rest of record_table::GROUPS (record_table.rs:11). All 16 are writable
+  // through wa.weapons.replace; the older list stopped at jet_pack and so
+  // reported every utility/parachute/sheep/... group as a spec-key typo.
+  'utility',
+  'parachute',
+  'sheep',
+  'fire_punch',
+  'drill',
+  'arrow',
+  'baseball_bat',
+  'flame_thrower',
   'raw',
 ];
+
+/**
+ * The only keys `projectile = { ... }` accepts (api.rs, the `projectile`
+ * branch of `table_to_claim`). Unlike an unknown top-level key, which WA
+ * silently ignores, an unknown key here makes the install raise
+ * "projectile: unsupported field".
+ */
+export const PROJECTILE_SPEC_KEYS: string[] = [
+  'copy_from',
+  'fires',
+  'missile',
+  'clusters',
+  'sprite',
+  'cluster',
+  'params',
+  'sprites',
+];
+
+/** Keyed for O(1) lookup. */
+export const PROJECTILE_SPEC_KEY_SET: Set<string> = new Set(
+  PROJECTILE_SPEC_KEYS.map((k) => k.toLowerCase())
+);
 
 /** Keyed for O(1) lookup; the array above stays for display/ordering. */
 export const WEAPON_SPEC_KEY_SET: Set<string> = new Set(WEAPON_SPEC_KEYS.map((k) => k.toLowerCase()));
@@ -129,12 +171,12 @@ function editDistance(a: string, b: string, max: number): number {
  * a long one tolerates more noise: `icons` vs `icon` is one edit and certain, but
  * one edit on a 15-character key is weak evidence.
  */
-export function suggestSpecKey(typo: string): string | null {
+export function suggestSpecKey(typo: string, keys: string[] = WEAPON_SPEC_KEYS): string | null {
   const t = typo.toLowerCase();
   let best: string | null = null;
   let bestDist = Infinity;
 
-  for (const key of WEAPON_SPEC_KEYS) {
+  for (const key of keys) {
     const d = editDistance(t, key.toLowerCase(), 3);
     if (d < bestDist) {
       bestDist = d;

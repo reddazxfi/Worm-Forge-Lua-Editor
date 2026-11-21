@@ -60,4 +60,4 @@ pub use report::{check_file, check_source, CheckReport};
 /// (`checks.rs:48`) is a private constant in a module we include, and there is
 /// no way to reach it without editing the app. `tests/drift.rs` fails if the two
 /// ever disagree, so this cannot rot unnoticed.
-pub const ENGINE_VERSION: &str = "0.9.61";
+pub const ENGINE_VERSION: &str = "0.9.9";

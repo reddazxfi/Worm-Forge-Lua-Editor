@@ -30,6 +30,7 @@ use full_moon::visitors::{Visit, Visitor};
 
 use crate::engine_data;
 use crate::engine_data::SPEC_KEYS;
+use crate::engine_data::PROJECTILE_KEYS;
 use crate::AstDiagnostic;
 
 const SEVERITY_ERROR: &str = "error";
@@ -45,7 +46,7 @@ const SEVERITY_WARNING: &str = "warning";
 /// compares only the SET of rule ids per file and never looks at severity.
 const SEVERITY_INFO: &str = "info";
 
-const ENGINE_VERSION: &str = "0.9.61";
+const ENGINE_VERSION: &str = "0.9.9";
 
 /// `wa.*` namespaces the engine installs only under a cargo feature, and so cannot
 /// appear in `engine_data.rs`'s function list.
@@ -367,6 +368,7 @@ fn check_method_call(&mut self, call: &FunctionCall) {
 
         // The spec table is the FIRST argument, and only if it is a table literal.
         // `wa.weapons.replace(some_var)` cannot be judged: the keys are not visible here.
+        // Both call shapes count: `replace({ ... })` and the idiomatic `replace{ ... }`.
         let table = call.suffixes().find_map(|s| match s {
             Suffix::Call(full_moon::ast::Call::AnonymousCall(args)) => match args.as_ref() {
                 full_moon::ast::FunctionArgs::Parentheses { arguments, .. } => arguments
@@ -375,6 +377,7 @@ fn check_method_call(&mut self, call: &FunctionCall) {
                         Expression::TableConstructor(t) => Some(&**t),
                         _ => None,
                     }),
+                full_moon::ast::FunctionArgs::TableConstructor(t) => Some(&**t),
                 _ => None,
             },
             _ => None,
@@ -386,11 +389,50 @@ fn check_method_call(&mut self, call: &FunctionCall) {
         for field in table.fields() {
             // Only `key = value` is a spec key. `NameKey` is the ONLY variant carrying
             // a bare identifier, which is why this needs no further shape tests.
-            let full_moon::ast::Field::NameKey { key, .. } = field else {
+            let full_moon::ast::Field::NameKey { key, value, .. } = field else {
                 continue;
             };
             let key_text = name_of(key);
-            if key_text.is_empty() || spec_key_exists(&key_text) {
+            if key_text.is_empty() {
+                continue;
+            }
+            // `projectile = { ... }` is validated one level deeper. Unlike an unknown
+            // top-level key (which WA ignores), api.rs RAISES on an unsupported
+            // projectile field, so this one fails the install rather than doing nothing.
+            if key_text.eq_ignore_ascii_case("projectile") {
+                if let Expression::TableConstructor(nested) = &**value {
+                    for nested_field in nested.fields() {
+                        let full_moon::ast::Field::NameKey { key: nkey, .. } = nested_field else {
+                            continue;
+                        };
+                        let nkey_text = name_of(nkey);
+                        if nkey_text.is_empty() || projectile_key_exists(&nkey_text) {
+                            continue;
+                        }
+                        let (message, detail) = match suggest_projectile_key(&nkey_text) {
+                            Some(near) => (
+                                format!(
+                                    "Unrecognized projectile key \"{nkey_text}\" in wa.weapons.{}{{...}}. Did you mean \"{near}\"?",
+                                    segs[2]
+                                ),
+                                None,
+                            ),
+                            None => (
+                                format!(
+                                    "Unrecognized projectile key \"{nkey_text}\" in wa.weapons.{}{{...}}.",
+                                    segs[2]
+                                ),
+                                Some(
+                                    "The engine raises on an unsupported projectile field, so the install fails."
+                                        .to_string(),
+                                ),
+                            ),
+                        };
+                        self.add_with_detail(nkey, SEVERITY_WARNING, "spec-key-typo", message, detail);
+                    }
+                }
+            }
+            if spec_key_exists(&key_text) {
                 continue;
             }
             let (message, detail) = match suggest_spec_key(&key_text) {
@@ -2280,6 +2322,12 @@ fn spec_key_exists(key: &str) -> bool {
     SPEC_KEYS.iter().any(|k| k.eq_ignore_ascii_case(&want))
 }
 
+/// Whether `key` is a real key of a nested `projectile = { ... }` table.
+fn projectile_key_exists(key: &str) -> bool {
+    let want = key.to_lowercase();
+    PROJECTILE_KEYS.iter().any(|k| k.eq_ignore_ascii_case(&want))
+}
+
 /// Closest known spec key, if one is close enough to be worth suggesting.
 ///
 /// The thresholds are copied from `suggestSpecKey` in `specKeys.ts` rather than reusing
@@ -2290,9 +2338,18 @@ fn spec_key_exists(key: &str) -> bool {
 ///
 /// Case-insensitive, to match how the engine reads the key.
 fn suggest_spec_key(typo: &str) -> Option<&'static str> {
+    suggest_key_in(typo, SPEC_KEYS)
+}
+
+/// Closest known nested projectile key, if one is close enough.
+fn suggest_projectile_key(typo: &str) -> Option<&'static str> {
+    suggest_key_in(typo, PROJECTILE_KEYS)
+}
+
+fn suggest_key_in(typo: &str, keys: &'static [&'static str]) -> Option<&'static str> {
     let t = typo.to_lowercase();
     let mut best: Option<(usize, &'static str)> = None;
-    for key in SPEC_KEYS {
+    for key in keys {
         let d = levenshtein(&t, &key.to_lowercase(), 3);
         if best.map_or(true, |(bd, _)| d < bd) {
             best = Some((d, key));
@@ -4334,16 +4391,74 @@ end
     }
 
     #[test]
+    fn the_brace_call_form_is_checked_too() {
+        // `wa.weapons.replace{ ... }` is the idiomatic shape; it must not escape
+        // the spec-key check just because there is no `(`.
+        let m = messages("wa.weapons.replace{ copy_fromm = 'bazooka' }", "spec-key-typo");
+        assert!(m[0].contains("copy_from"), "got {}", m[0]);
+        assert!(rules("wa.weapons.replace{ copy_from = 'bazooka' }").is_empty());
+    }
+
+    #[test]
     fn spec_keys_are_matched_case_insensitively() {
         // Packs write COPY_FROM as readily as copy_from, and the engine reads either.
         assert!(rules("wa.weapons.replace({ COPY_FROM = 'bazooka' })").is_empty());
     }
 
     #[test]
+    fn the_0_9_9_spec_keys_are_silent() {
+        // Each was a false spec-key-typo before the list caught up with api.rs and
+        // record_table::GROUPS.
+        for key in [
+            "projectile",
+            "click",
+            "sheep_sprites",
+            "utility",
+            "parachute",
+            "sheep",
+            "fire_punch",
+            "drill",
+            "arrow",
+            "baseball_bat",
+            "flame_thrower",
+        ] {
+            let src = format!("wa.weapons.replace({{ {key} = {{}} }})");
+            assert!(rules(&src).is_empty(), "`{key}` must be accepted");
+        }
+    }
+
+    #[test]
+    fn projectile_subkeys_are_checked_one_level_deeper() {
+        for key in [
+            "copy_from",
+            "fires",
+            "missile",
+            "clusters",
+            "sprite",
+            "cluster",
+            "params",
+            "sprites",
+        ] {
+            let src = format!(
+                "wa.weapons.replace({{ weapon = 'stock.minigun', projectile = {{ {key} = {{}} }} }})"
+            );
+            assert!(rules(&src).is_empty(), "`projectile.{key}` must be accepted");
+        }
+        // An unsupported projectile field is a hard engine error, not an ignored key.
+        let m = messages(
+            "wa.weapons.replace({ weapon = 'stock.minigun', projectile = { copy_fromm = 'stock.grenade' } })",
+            "spec-key-typo",
+        );
+        assert_eq!(m.len(), 1, "{m:?}");
+        assert!(m[0].contains("projectile"), "got {}", m[0]);
+        assert!(m[0].contains("copy_from"), "got {}", m[0]);
+    }
+
+    #[test]
     fn spec_key_data_survived_the_move_into_the_generator() {
         assert_eq!(
             SPEC_KEYS.len(),
-            51,
+            62,
             "spec key count changed -- check src/data/specKeys.ts was not truncated"
         );
         for required in [
@@ -4354,6 +4469,19 @@ end
             "sprite",
             "ends_invisibility",
             "available_in_caves",
+            // 0.9.9 additions: the overlay projectile, the homing click, the two
+            // sheep sheets and the rest of record_table::GROUPS.
+            "projectile",
+            "click",
+            "sheep_sprites",
+            "utility",
+            "parachute",
+            "sheep",
+            "fire_punch",
+            "drill",
+            "arrow",
+            "baseball_bat",
+            "flame_thrower",
         ] {
             assert!(
                 SPEC_KEYS.contains(&required),

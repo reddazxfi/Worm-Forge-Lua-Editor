@@ -1307,7 +1307,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'local light = wa.fog.light({ x = 100, y = 200, kind = "projectile" })',
   },
 
-  // ---- 0.9.53 verbs.md (updated 2026-11-01) ---------------------------------
+  // ---- 0.9.9 verbs.md (updated 2026-11-01) ---------------------------------
   // These names are in the shipped verb list but were missing from the editor
   // tables, so valid calls were reported as `wa-namespace-typo` false positives.
   {

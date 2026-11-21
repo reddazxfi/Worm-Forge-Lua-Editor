@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planInsertion, planRequireInsertion } from '../completion';
+import { planInsertion, planRequireInsertion, matchesWaNamespacePath } from '../completion';
 
 /** Apply a plan to the line, as the editor would. */
 function applied(line: string, caret: number, insertText: string): string {
@@ -117,5 +117,23 @@ describe('planInsertion: plain identifiers', () => {
     expect(plan.start).toBe(2);
     expect(plan.text).toBe('missile = {  }');
     expect(plan.cursorBack).toBe(2);
+  });
+});
+
+describe('matchesWaNamespacePath: multi-segment wa.* receivers', () => {
+  it('matches every verb under wa.', () => {
+    expect(matchesWaNamespacePath('wa.world.size', 'wa.')).toBe(true);
+    expect(matchesWaNamespacePath('wa.hud.tray.add', 'wa.')).toBe(true);
+  });
+
+  it('matches only the named sub-namespace', () => {
+    expect(matchesWaNamespacePath('wa.world.size', 'wa.world.')).toBe(true);
+    expect(matchesWaNamespacePath('wa.hud.tray.add', 'wa.hud.')).toBe(true);
+    // `wa.worlds` is a different namespace, not a child of `wa.world`.
+    expect(matchesWaNamespacePath('wa.worlds.x', 'wa.world.')).toBe(false);
+  });
+
+  it('accepts a prefix without the trailing dot', () => {
+    expect(matchesWaNamespacePath('wa.world.size', 'wa.world')).toBe(true);
   });
 });

@@ -17,13 +17,40 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
+// The engine describes a field in more detail than Lua needs to see: a mask is
+// an int whose bits have names, a bit is one named constant, and a scale is a
+// number the engine divides. `normalizeKind` collapses those to the four shapes
+// the docs render (`values` keeps the names for enums and masks).
+type EngineKind =
+  | 'int'
+  | 'bool'
+  | 'sprite'
+  | { enum: Record<string, number> }
+  | { bit: number }
+  | { mask: number; flags: Record<string, number> }
+  | { scale: number; factor?: number; whole?: boolean };
+
 interface EngineRow {
   path: string;
   off: number;
-  kind: 'int' | 'bool' | 'sprite' | { enum: Record<string, number> };
+  kind: EngineKind;
   families: string[];
   action: number | null;
   body: boolean;
+}
+
+type RecordFieldKind = 'int' | 'bool' | 'sprite' | 'number' | 'enum';
+
+/** The Lua-facing kind and the names worth showing for it. */
+function normalizeKind(kind: EngineKind): {
+  kind: RecordFieldKind;
+  values?: [string, number][];
+} {
+  if (typeof kind === 'string') return { kind };
+  if ('enum' in kind) return { kind: 'enum', values: Object.entries(kind.enum) };
+  if ('mask' in kind) return { kind: 'int', values: Object.entries(kind.flags) };
+  if ('scale' in kind) return { kind: 'number' };
+  return { kind: 'int' }; // a single bit constant
 }
 
 const SRC = join('WormForge-main-source', 'web', 'weapon-editor', 'record_fields.json');
@@ -46,8 +73,8 @@ lines.push('//');
 lines.push('// Regenerate: npx tsx scripts/genRecordFields.ts');
 lines.push('// Verify:     npx tsx scripts/genRecordFields.ts --check');
 lines.push('');
-lines.push('/** How a record field reads in Lua. `enum` carries the accepted names. */');
-lines.push("export type RecordFieldKind = 'int' | 'bool' | 'sprite' | 'enum';");
+lines.push('/** How a record field reads in Lua. `enum` and mask fields carry names. */');
+lines.push("export type RecordFieldKind = 'int' | 'bool' | 'sprite' | 'number' | 'enum';");
 lines.push('');
 lines.push('export interface RecordFieldRow {');
 lines.push('  /** Its place in the table, e.g. `missile.explosion.power`. */');
@@ -70,14 +97,14 @@ lines.push('export const RECORD_ACTIONS: Record<number, string> = { 1: \'homing\
 lines.push('');
 lines.push('export const RECORD_FIELDS: RecordFieldRow[] = [');
 for (const r of rows) {
-  const kind = typeof r.kind === 'string' ? r.kind : 'enum';
-  const values = typeof r.kind === 'string'
-    ? ''
-    : `, values: [${Object.entries(r.kind.enum).map(([k, v]) => `['${k}', ${v}]`).join(', ')}]`;
+  const { kind, values } = normalizeKind(r.kind);
+  const valueText = values
+    ? `, values: [${values.map(([k, v]) => `['${k}', ${v}]`).join(', ')}]`
+    : '';
   lines.push('  {');
   lines.push(`    path: ${JSON.stringify(r.path)},`);
   lines.push(`    off: ${r.off},`);
-  lines.push(`    kind: '${kind}'${values},`);
+  lines.push(`    kind: '${kind}'${valueText},`);
   lines.push(`    families: [${r.families.map((f) => `'${f}'`).join(', ')}],`);
   lines.push(`    action: ${r.action === null ? 'null' : r.action},`);
   lines.push(`    body: ${r.body},`);

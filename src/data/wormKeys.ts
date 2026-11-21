@@ -136,6 +136,16 @@ export const WORM_KEYS: WormKeyBinding[] = [
     note: 'The dedicated Pause key. Distinct from Escape, which is NOT polled.',
   },
   {
+    field: 'tab',
+    action: 'Worm select',
+    bit: 131072,
+    keys: ['Tab'],
+    note:
+      'WA sends Tab as its AdvanceWorm only while it is picking worms: the scheme\'s ' +
+      'worm select, or all turn under "worm select always". wa.world.worm_selecting() ' +
+      'says which. Outside that, Tab is free for a pack.',
+  },
+  {
     field: 'digit',
     action: 'The number key being held',
     bit: null,
@@ -167,7 +177,6 @@ export const WORM_KEY_BINDINGS = WORM_KEYS.filter((k) => k.bit !== null && !k.al
 export const KEYS_NOT_AVAILABLE: { keys: string; actually: string }[] = [
   { keys: 'F1 - F10', actually: 'Weapon slots are not exposed through keys(). Use wa.msg or equip_weapon instead.' },
   { keys: 'Enter / Backspace', actually: 'Jump messaging is internal to WA. No key field reports these.' },
-  { keys: 'Tab', actually: 'Worm selection is handled by WA itself.' },
   { keys: 'Escape', actually: 'Not polled. Only the dedicated Pause key is, and it arrives as `pause_key`.' },
   { keys: 'Mouse buttons', actually: 'Not keys. See wa.world.pointer() for x, y and down.' },
 ];
@@ -204,6 +213,7 @@ const EVENT_KEY_TO_FIELD: Record<string, string> = {
   AltLeft: 'alt',
   AltRight: 'alt',
   Pause: 'pause_key',
+  Tab: 'tab',
   Digit0: 'digit',
   Digit1: 'digit',
   Digit2: 'digit',

@@ -27,6 +27,8 @@ import {
 } from '../data/handleRegistry';
 import { buildScopes, visibleAt } from './scope';
 import {
+  PROJECTILE_SPEC_KEYS,
+  PROJECTILE_SPEC_KEY_SET,
   WEAPON_SPEC_KEY_SET,
   suggestSpecKey,
   suggestWaFunction,
@@ -461,10 +463,18 @@ function scanSpecKeyTypos(meaningful: Token[]): SyntaxDiagnostic[] {
     const fn = meaningful[i + 4].value;
     if (fn !== 'replace' && fn !== 'register') continue;
 
-    // Find the `(` then its matching `)`. Keys are `name =` at DEPTH 1 inside.
+    // Find the argument list. Both `replace({ ... })` and the idiomatic
+    // `replace{ ... }` reach the same keys; the brace form has no `(` at all.
     let open = i + 5;
-    while (open < meaningful.length && meaningful[open].value !== '(') open++;
+    while (
+      open < meaningful.length &&
+      meaningful[open].value !== '(' &&
+      meaningful[open].value !== '{'
+    ) {
+      open++;
+    }
     if (open >= meaningful.length) continue;
+    const braceCall = meaningful[open].value === '{';
 
     // Walk the argument list looking for `key =` pairs that are DIRECTLY in the spec
     // table.
@@ -483,6 +493,10 @@ function scanSpecKeyTypos(meaningful: Token[]): SyntaxDiagnostic[] {
     // positives across the example packs.
     let depth = 0;
     let blockDepth = 0;
+    // The brace depth of a `projectile = { ... }` table, once seen. Its keys are
+    // validated against PROJECTILE_SPEC_KEYS because the engine RAISES on an
+    // unsupported one, where an unknown top-level key is silently ignored.
+    let projectileDepth: number | null = null;
     for (let j = open; j < meaningful.length; j++) {
       const tk = meaningful[j];
       const v = tk.value;
@@ -502,11 +516,23 @@ function scanSpecKeyTypos(meaningful: Token[]): SyntaxDiagnostic[] {
 
       if (v === '{') {
         depth++;
+        // `projectile = {` directly in the spec table opens the nested table
+        // whose keys the engine validates strictly.
+        if (
+          depth === 2 &&
+          meaningful[j - 1]?.value === '=' &&
+          meaningful[j - 2]?.value === 'projectile'
+        ) {
+          projectileDepth = 2;
+        }
         continue;
       }
       if (v === '}') {
+        if (projectileDepth !== null && depth === projectileDepth) projectileDepth = null;
         depth--;
         if (depth < 0) break; // malformed, do not run off the end
+        // The brace form has no `)` to end it: the spec table's own `}` does.
+        if (braceCall && depth === 0) break;
         continue;
       }
       // `)` back at brace-depth 0 ends the argument list.
@@ -514,7 +540,27 @@ function scanSpecKeyTypos(meaningful: Token[]): SyntaxDiagnostic[] {
 
       // Inside a callback body: everything here is ordinary Lua, not spec keys.
       if (blockDepth > 0) continue;
-      // Directly in the spec table. Anything deeper is inside `patch = { ... }`.
+      // Inside `projectile = { ... }`: only the eight keys api.rs accepts.
+      if (depth === 2 && projectileDepth === 2) {
+        if (tk.type !== 'identifier') continue;
+        if (meaningful[j + 1]?.value !== '=') continue;
+        const pkey = tk.value;
+        if (PROJECTILE_SPEC_KEY_SET.has(pkey.toLowerCase())) continue;
+        const suggestion = suggestSpecKey(pkey, PROJECTILE_SPEC_KEYS);
+        out.push({
+          line: tk.line,
+          column: tk.column,
+          message:
+            `Unrecognized projectile key "${pkey}" in wa.weapons.${fn}{...}. ` +
+            (suggestion ? `Did you mean "${suggestion}"?` : ''),
+          detail:
+            'The engine raises on an unsupported projectile field, so the install fails.',
+          severity: 'warning',
+          rule: 'spec-key-typo',
+        });
+        continue;
+      }
+      // Directly in the spec table. Anything deeper is inside a group table.
       if (depth !== 1) continue;
       if (tk.type !== 'identifier') continue;
       if (meaningful[j + 1]?.value !== '=') continue;

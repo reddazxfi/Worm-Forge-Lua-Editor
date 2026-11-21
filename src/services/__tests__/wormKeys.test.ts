@@ -79,6 +79,7 @@ describe('wormKeys matches the engine', () => {
       minus_key: [0xbd, 0x6d],
       alt: [0x12],
       pause_key: [0x13],
+      tab: [0x09],
     } as Record<string, number[]>;
 
     for (const k of WORM_KEYS) {
@@ -152,6 +153,7 @@ describe('wormKeys matches the engine', () => {
       minus_key: constant('MINUS_KEY'),
       alt: constant('ALT'),
       pause_key: constant('PAUSE_KEY'),
+      tab: constant('TAB'),
     };
     for (const [field, bit] of Object.entries(expected)) {
       const ours = WORM_KEYS.find((k) => k.field === field);
@@ -199,11 +201,11 @@ describe('wormKeys matches the engine', () => {
     const bits = WORM_KEY_BINDINGS.map((k) => k.bit);
     expect(new Set(bits).size).toBe(bits.length);
     expect(bits.every((b) => b !== null && b > 0)).toBe(true);
-    // 15 fields total, minus `digit` (a value in bits 8..11, not a flag) and minus
+    // 16 fields total, minus `digit` (a value in bits 8..11, not a flag) and minus
     // `sprint` (an alias). The count is asserted so a row cannot be added without
     // someone deciding whether it owns a bit.
-    expect(WORM_KEYS.length).toBe(15);
-    expect(WORM_KEY_BINDINGS.length).toBe(13);
+    expect(WORM_KEYS.length).toBe(16);
+    expect(WORM_KEY_BINDINGS.length).toBe(14);
   });
 });
 
@@ -213,7 +215,7 @@ describe('wormKeys never invents a binding', () => {
     const documented = new Set(WORM_KEYS.map((k) => k.field));
     for (const code of [
       'ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD', 'ArrowUp', 'ArrowDown', 'KeyS',
-      'KeyW', 'ShiftLeft', 'ShiftRight', 'KeyQ', 'Space',
+      'KeyW', 'ShiftLeft', 'ShiftRight', 'KeyQ', 'Space', 'Tab',
       ...Array.from({ length: 10 }, (_, i) => `Digit${i}`),
       ...Array.from({ length: 10 }, (_, i) => `Numpad${i}`),
     ]) {
@@ -224,10 +226,11 @@ describe('wormKeys never invents a binding', () => {
   });
 
   it('reports null for keys the old table wrongly claimed were readable', () => {
-    // F-keys, Enter, Backspace and Tab: all listed in the old reference, none of
-    // them polled by the engine. The tester must NOT claim they do something.
+    // F-keys, Enter and Backspace: listed in the old reference, none of them
+    // polled by the engine. The tester must NOT claim they do something. (Tab
+    // now IS a field -- `tab`, since 0.9.9 -- so it is not in this list.)
     for (const code of [
-      'F1', 'F2', 'F10', 'Enter', 'Backspace', 'Tab', 'Escape', 'KeyZ', 'KeyX',
+      'F1', 'F2', 'F10', 'Enter', 'Backspace', 'Escape', 'KeyZ', 'KeyX',
     ]) {
       expect(fieldForEventCode(code), code).toBeNull();
     }
@@ -237,7 +240,7 @@ describe('wormKeys never invents a binding', () => {
     const text = KEYS_NOT_AVAILABLE.map((k) => k.keys).join(' ');
     expect(text).toContain('F1 - F10');
     expect(text).toContain('Enter');
-    expect(text).toContain('Tab');
+    expect(text).not.toContain('Tab');
   });
 
   it('maps digits to their number, and only digits', () => {

@@ -28,7 +28,7 @@ import { BUILTIN_FUNCTIONS, BUILTIN_CLASSES } from '../src/data/wormforgeDefinit
 import { RECEIVER_REGISTRY, ALL_HANDLE_CLASSES, ITERATOR_ELEMENT } from '../src/data/handleRegistry';
 import { LUA_GLOBALS } from '../src/data/luaGlobals';
 import { WORM_STATES, SETTABLE_WORM_STATES } from '../src/data/wormStates';
-import { WEAPON_SPEC_KEYS } from '../src/data/specKeys';
+import { WEAPON_SPEC_KEYS, PROJECTILE_SPEC_KEYS } from '../src/data/specKeys';
 
 const rustStr = (s: string): string => JSON.stringify(s);
 
@@ -190,6 +190,15 @@ for (const k of WEAPON_SPEC_KEYS) lines.push(`    ${rustStr(k)},`);
 lines.push('];');
 lines.push('');
 
+lines.push('/// Keys accepted inside a nested `projectile = { ... }` spec table.');
+lines.push('///');
+lines.push('/// GENERATED from src/data/specKeys.ts. Unlike an unknown top-level key, an');
+lines.push('/// unknown key here makes the engine raise at install.');
+lines.push('pub static PROJECTILE_KEYS: &[&str] = &[');
+for (const k of PROJECTILE_SPEC_KEYS) lines.push(`    ${rustStr(k)},`);
+lines.push('];');
+lines.push('');
+
 const out = join('src-tauri', 'src', 'engine_data.rs');
 const text = lines.join('\n');
 
@@ -220,5 +229,6 @@ console.log(
     `  KNOWN_GLOBALS:   ${LUA_GLOBALS.length}\n` +
     `  WORM_STATES:     ${WORM_STATES.length}\n` +
     `  SETTABLE_STATES: ${SETTABLE_WORM_STATES.length}\n` +
-    `  SPEC_KEYS:       ${WEAPON_SPEC_KEYS.length}`
+    `  SPEC_KEYS:       ${WEAPON_SPEC_KEYS.length}\n` +
+    `  PROJECTILE_KEYS: ${PROJECTILE_SPEC_KEYS.length}`
 );

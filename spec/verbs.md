@@ -2,7 +2,7 @@
 
 Every `wa` function, handle method, event and data field a pack can use, by area. It replaces the capabilities page.
 
-WormForge 0.9.53 · `api_version = 4` · updated 2026-11-01.
+WormForge 0.9.9 · `api_version = 4` · updated 2026-11-01.
 
 Lua speaks pixels: positions and sizes in pixels, speeds in pixels per frame, with fractions. The engine converts to WA's 16.16 once.
 

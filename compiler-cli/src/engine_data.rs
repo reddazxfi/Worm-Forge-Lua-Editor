@@ -602,6 +602,9 @@ pub static SPEC_KEYS: &[&str] = &[
     "persist",
     "retreat_time",
     "hud",
+    "projectile",
+    "click",
+    "sheep_sprites",
     "id",
     "actor",
     "airborne",
@@ -620,5 +623,28 @@ pub static SPEC_KEYS: &[&str] = &[
     "gun",
     "strike",
     "jet_pack",
+    "utility",
+    "parachute",
+    "sheep",
+    "fire_punch",
+    "drill",
+    "arrow",
+    "baseball_bat",
+    "flame_thrower",
     "raw",
+];
+
+/// Keys accepted inside a nested `projectile = { ... }` spec table.
+///
+/// GENERATED from src/data/specKeys.ts. Unlike an unknown top-level key, an
+/// unknown key here makes the engine raise at install.
+pub static PROJECTILE_KEYS: &[&str] = &[
+    "copy_from",
+    "fires",
+    "missile",
+    "clusters",
+    "sprite",
+    "cluster",
+    "params",
+    "sprites",
 ];

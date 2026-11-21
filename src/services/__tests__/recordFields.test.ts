@@ -16,10 +16,29 @@ const haveEngine = existsSync(JSON_PATH);
 interface EngineRow {
   path: string;
   off: number;
-  kind: 'int' | 'bool' | 'sprite' | { enum: Record<string, number> };
+  kind:
+    | 'int'
+    | 'bool'
+    | 'sprite'
+    | { enum: Record<string, number> }
+    | { bit: number }
+    | { mask: number; flags: Record<string, number> }
+    | { scale: number; factor?: number; whole?: boolean };
   families: string[];
   action: number | null;
   body: boolean;
+}
+
+/** Mirrors normalizeKind in scripts/genRecordFields.ts. */
+function normalizeKind(kind: EngineRow['kind']): {
+  kind: 'int' | 'bool' | 'sprite' | 'number' | 'enum';
+  values?: [string, number][];
+} {
+  if (typeof kind === 'string') return { kind };
+  if ('enum' in kind) return { kind: 'enum', values: Object.entries(kind.enum) };
+  if ('mask' in kind) return { kind: 'int', values: Object.entries(kind.flags) };
+  if ('scale' in kind) return { kind: 'number' };
+  return { kind: 'int' };
 }
 
 function engineRows(): EngineRow[] {
@@ -32,18 +51,18 @@ describe('recordFields.ts mirrors the engine field table', () => {
       console.warn('[recordFields] engine source absent -- SKIPPED');
       return;
     }
-    const expected = engineRows().map((r) => ({
-      path: r.path,
-      off: r.off,
-      kind: typeof r.kind === 'string' ? r.kind : 'enum',
-      values:
-        typeof r.kind === 'string'
-          ? undefined
-          : Object.entries(r.kind.enum).map(([name, value]) => [name, value]),
-      families: r.families,
-      action: r.action,
-      body: r.body,
-    }));
+    const expected = engineRows().map((r) => {
+      const { kind, values } = normalizeKind(r.kind);
+      return {
+        path: r.path,
+        off: r.off,
+        kind,
+        values,
+        families: r.families,
+        action: r.action,
+        body: r.body,
+      };
+    });
     expect(RECORD_FIELDS).toEqual(expected);
   });
 
@@ -63,7 +82,24 @@ describe('recordFields.ts mirrors the engine field table', () => {
 
   it('covers the groups a weapon spec can write', () => {
     const groups = new Set(RECORD_FIELDS.map((r) => r.path.split('.')[0]));
-    for (const g of ['fires', 'handling', 'missile', 'clusters', 'mine', 'gun', 'strike', 'jet_pack']) {
+    for (const g of [
+      'fires',
+      'handling',
+      'missile',
+      'clusters',
+      'mine',
+      'gun',
+      'strike',
+      'jet_pack',
+      'utility',
+      'parachute',
+      'sheep',
+      'fire_punch',
+      'drill',
+      'arrow',
+      'baseball_bat',
+      'flame_thrower',
+    ]) {
       expect(groups.has(g), g).toBe(true);
     }
   });

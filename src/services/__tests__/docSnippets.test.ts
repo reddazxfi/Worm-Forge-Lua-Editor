@@ -27,16 +27,6 @@ const NO_SHIPPED_USAGE = new Set([
   'WindowHandle:set',
   'WindowHandle:close',
   'WindowHandle:is_open',
-  // Added from the 0.9.53 verbs list; no shipped mod calls them yet.
-  'LuaActor:hit',
-  'WormEntity:use',
-  'HudTrayEntry:set',
-  'HudTrayEntry:remove',
-  'HudTrayEntry:is_open',
-  'TrailHandle:push',
-  'TrailHandle:finish',
-  'TrailHandle:remove',
-  'RippleHandle:stop',
 ]);
 
 describe('full documentation snippets', () => {

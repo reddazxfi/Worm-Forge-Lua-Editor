@@ -160,9 +160,21 @@ const GROUP_NOTES: Record<string, string> = {
   gun: 'The hitscan gun record: bullets and damage.',
   strike: 'The strike record: plane, munitions and spacing.',
   jet_pack: 'The jet pack record: fuel.',
+  utility: 'A turn utility\'s native effect: low gravity, fast walk, laser sight, invisibility, damage x2, crate spy, double turn time or crate shower.',
+  parachute: 'The parachute record: wind response.',
+  sheep: 'The roaming sheep record: the two flying sprites and their sounds.',
+  fire_punch: 'The Fire Punch record: damage and knockback.',
+  drill: 'The Drill record: duration.',
+  arrow: 'The arrow record: damage.',
+  baseball_bat: 'The Baseball Bat record: damage and knockback scale.',
+  flame_thrower: 'The Flame Thrower record: flames, spread generations and burn.',
 };
 
-/** The group names `record_table::GROUPS` accepts (record_table.rs:11). */
+/**
+ * The group names `record_table::GROUPS` accepts (record_table.rs:11). All 16
+ * are writable through `wa.weapons.replace`; the older list stopped at
+ * `jet_pack`, which made every special group a false `spec-key-typo`.
+ */
 export const RECORD_GROUPS = [
   'fires',
   'handling',
@@ -172,6 +184,14 @@ export const RECORD_GROUPS = [
   'gun',
   'strike',
   'jet_pack',
+  'utility',
+  'parachute',
+  'sheep',
+  'fire_punch',
+  'drill',
+  'arrow',
+  'baseball_bat',
+  'flame_thrower',
 ] as const;
 
 function noteFor(group: string, relative: string): string | undefined {
@@ -297,6 +317,14 @@ const WEAPON_CLAIM_FIELDS: TableField[] = [
   { name: 'ends_invisibility', kind: 'bool', description: "Whether using it ends Invisibility: the team's, and the firing worm's own worm.invisibility. Left out, WA's answer: its record creates a projectile (attacking weapons end it; the rope, Girder, Teleport, Prod, Freeze, Jet Pack and the utilities don't)." },
   { name: 'eat_fire', kind: 'bool', description: 'Default false. The claim consumes the fire key itself.' },
   { name: 'click_finish', kind: 'bool', description: 'Default true. A click finishes the shot immediately.' },
+  {
+    name: 'click',
+    kind: 'enum',
+    type: '"homing"',
+    values: [['homing', 'homing']],
+    description:
+      '`"homing"`: the cursor is on selection, the click marks the target and Space fires, whatever the record. The `on_fire` event gets `target = { x, y }`. Mutually exclusive with `eat_fire`, `on_click` and `on_select.cursor`.',
+  },
   { name: 'fire_repeat', kind: 'int', description: '1 to 20 shots at once. Default 1.' },
   {
     name: 'stock_fire_choice',
@@ -349,6 +377,29 @@ const WEAPON_CLAIM_FIELDS: TableField[] = [
   },
   { name: 'on_click', kind: 'function', type: 'function | { spawn = ... }', description: 'Click handler. A table with `spawn` spawns an actor instead of running Lua.' },
   { name: 'params', kind: 'table', description: 'Legacy flat params. Most keys are gone in Lua API 4 (damage, bounce_pct, ...); name the record fields instead.' },
+  {
+    name: 'projectile',
+    kind: 'table',
+    description:
+      "An overlay weapon: replaces a stock slot's projectile with a record of its own, built by wa.weapons.launch. Only these eight keys are accepted; any other makes the install raise.",
+    children: [
+      { name: 'copy_from', kind: 'string', type: 'weapon id', description: 'The stock missile weapon to start from (required).' },
+      { name: 'fires', kind: 'table', description: 'The overlay fire type and method.', children: recordTree('fires') },
+      { name: 'missile', kind: 'table', description: 'The overlay missile body.', children: recordTree('missile') },
+      { name: 'clusters', kind: 'table', description: 'The overlay cluster fan.', children: recordTree('clusters') },
+      { name: 'sprite', kind: 'sprite', description: 'Pack-relative flight sprite sheet.' },
+      { name: 'cluster', kind: 'sprite', description: 'Pack-relative cluster sprite sheet.' },
+      { name: 'params', kind: 'table', description: 'Legacy flat drawing params (sprite_columns, truecolor, ...).' },
+      { name: 'sprites', kind: 'table', type: 'pack paths', description: 'Extra sheets the overlay installs.' },
+    ],
+  },
+  {
+    name: 'sheep_sprites',
+    kind: 'table',
+    type: 'two pack paths',
+    description:
+      'The two flying-sheep sheets, `{ first, second }`, as bundle-relative .png paths. Any other count raises. `sheep.flight_1` / `sheep.flight_2` name the stock sprites instead.',
+  },
   { name: 'raw', kind: 'table', type: '[offset] = int', description: 'Raw dword writes by entry offset, e.g. `[0x50] = 7`. Checked against the field table.' },
 ];
 
@@ -620,8 +671,20 @@ const ASSETS_LOAD: TableDoc = {
   source: 'crates/lua-host/src/api.rs:312 (wa.assets.load)',
   fields: [
     { name: 'sprites', kind: 'table', type: 'string[]', description: 'Pack-relative sprite paths.' },
-    { name: 'sounds', kind: 'table', type: 'string[]', description: 'Pack-relative sound paths.' },
+    { name: 'sounds', kind: 'table', type: 'string[]', description: 'Pack-relative WAV paths, or soundbank/<Bank>/<Line> for one line of a WA soundbank. Only the lines a component declares are loaded.' },
     { name: 'gpu_prefix', kind: 'string', description: 'Prefix stripped when the sheets are uploaded, e.g. "sprites/".' },
+    { name: 'wa_sprites', kind: 'table', type: 'string[]', description: "WA's own sprites to copy into the match's atlas, by Gfx.dir name (wbrth1) or group (worm), for drawing in full colour." },
+    {
+      name: 'worm_glow',
+      kind: 'any',
+      type: 'true | { radius, pad, gain }',
+      description: 'The shape of the match\'s worm glows, made with the match, for the placed weapons\' worm sheets too.',
+      children: [
+        { name: 'radius', kind: 'int', type: 'px', description: "Default's radius when left out." },
+        { name: 'pad', kind: 'int', type: 'px', description: "Holds the radius's whole blur; defaults from the radius." },
+        { name: 'gain', kind: 'number', description: "Glow strength; the default's when left out." },
+      ],
+    },
   ],
 };
 

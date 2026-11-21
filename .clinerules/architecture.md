@@ -67,7 +67,7 @@ Do not "clean up" one without asking.
   text `#cfdbe8`, accent amber-500.
 - Errors are swallowed with bare `catch {}` around localStorage. That is
   intentional, because a full disk must not crash the editor. Match it.
-- All engine/API data is pinned to WormForge 0.9.11 and may lag the real engine.
+- All engine/API data is pinned to WormForge 0.9.9 and may lag the real engine.
 
 ## Before claiming a change works
 Run the gates in `compacted-context.md` §0. Minimum: `npm run lint` (`tsc --noEmit`) and

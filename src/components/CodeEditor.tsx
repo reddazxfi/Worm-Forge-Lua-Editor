@@ -21,7 +21,7 @@ import {
   type TokenClasses,
 } from '../services/editorHighlight';
 import { LUA_GLOBALS_SET } from '../data/luaGlobals';
-import { planInsertion, planRequireInsertion } from '../services/completion';
+import { planInsertion, planRequireInsertion, matchesWaNamespacePath } from '../services/completion';
 import { lineStateBeforeCaret } from '../services/lineState';
 import { tableKeySuggestions, tableValueSuggestions, tableContextAt } from '../services/tableContext';
 import { startsNewUndoEntry, isWordBoundary } from '../services/undoPolicy';
@@ -817,14 +817,24 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       return;
     }
 
-    // 1. Unified Object Member Trigger for both '.' and ':' (e.g. worm:abc, worm.abc, a:abc, a.abc)
+    // 1. Unified Object Member Trigger for both '.' and ':' (e.g. worm:abc,
+    // worm.abc, a:abc, wa.world.). The receiver may be a dotted chain, so
+    // `wa.world.` completes `wa.world.*` instead of treating `world` as the
+    // receiver and offering nothing.
     const memberMatch = lineState.inString
       ? null
-      : lineText.match(/([a-zA-Z0-9_]+)([:.])([a-zA-Z0-9_]*)$/);
+      : lineText.match(/([a-zA-Z0-9_]+(?:\s*\.\s*[a-zA-Z0-9_]+)*)([:.])([a-zA-Z0-9_]*)$/);
     if (memberMatch) {
-      const obj = memberMatch[1];
+      const chainText = memberMatch[1].replace(/\s+/g, '');
+      const obj = chainText.slice(chainText.lastIndexOf('.') + 1);
       const sep = memberMatch[2]; // ':' or '.'
       const query = memberMatch[3].toLowerCase();
+      const waPrefix =
+        chainText === 'wa'
+          ? 'wa.'
+          : chainText.startsWith('wa.')
+            ? `${chainText}.`
+            : null;
       const items: AutocompleteItem[] = [];
 
       // A. Handles. Receiver names resolve through data/handleRegistry.ts --
@@ -906,14 +916,14 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
           }
         }
       }
-      // C. wa namespace (wa.)
-      else if (obj === 'wa') {
+      // C. wa namespace (wa. or any dotted prefix, e.g. wa.world.)
+      else if (waPrefix) {
         // Functions
         for (const fn of BUILTIN_FUNCTIONS) {
           // `require` is a global, not a member of `wa`. Without this guard the
           // bare entry would appear as `wa.require` in this branch.
-          if (!fn.name.startsWith('wa.')) continue;
-          const sub = fn.name.replace(/^wa\./, '');
+          if (!matchesWaNamespacePath(fn.name, waPrefix)) continue;
+          const sub = fn.name.slice(waPrefix.length);
           if (!query || sub.toLowerCase().includes(query) || fn.name.toLowerCase().includes(query)) {
             const params = fn.parameters.map((p) => p.name).join(', ');
             items.push({
@@ -927,7 +937,8 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
         }
         // Variables (wa.version, wa.cavern.ceiling_y, etc.)
         for (const vb of BUILTIN_VARIABLES) {
-          const sub = vb.name.replace(/^wa\./, '');
+          if (!matchesWaNamespacePath(vb.name, waPrefix)) continue;
+          const sub = vb.name.slice(waPrefix.length);
           if (!query || sub.toLowerCase().includes(query) || vb.name.toLowerCase().includes(query)) {
             items.push({
               label: vb.name,
@@ -940,30 +951,31 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
         }
         // Enums (wa.msg...)
         for (const en of BUILTIN_ENUMERATIONS) {
-          if (en.name.startsWith('wa.')) {
-            for (const val of en.values) {
-              const full = `${en.name}.${val.name}`;
-              if (!query || full.toLowerCase().includes(query)) {
-                items.push({
-                  label: full,
-                  kind: 'variable',
-                  detail: `Enum ${val.value}`,
-                  insertText: full,
-                  documentation: val.description,
-                });
-              }
+          for (const val of en.values) {
+            const full = `${en.name}.${val.name}`;
+            if (!matchesWaNamespacePath(full, waPrefix)) continue;
+            if (!query || full.toLowerCase().includes(query)) {
+              items.push({
+                label: full,
+                kind: 'variable',
+                detail: `Enum ${val.value}`,
+                insertText: full,
+                documentation: val.description,
+              });
             }
           }
         }
-        // Custom verbs registered ON the wa namespace (class: "wa"), so
-        // `wa.my_thing` autocompletes like any engine function.
+        // Custom verbs registered ON the wa namespace (class: "wa") or on a
+        // dotted sub-namespace (class: "wa.one.two"), so both autocomplete like
+        // any engine function.
         for (const v of customVerbs) {
-          if (v.class !== 'wa') continue;
+          const full = v.class === 'wa' ? `wa.${v.name}` : `${v.class}.${v.name}`;
+          if (!matchesWaNamespacePath(full, waPrefix)) continue;
           if (query && !v.name.toLowerCase().includes(query)) continue;
           items.push({
-            label: v.name,
+            label: full,
             kind: v.kind === 'method' ? 'method' : 'variable',
-            detail: `wa.${v.name} (${v.returnType || 'any'})`,
+            detail: `${full} (${v.returnType || 'any'})`,
             insertText: v.parameters.length > 0 ? `${v.name}(${v.parameters.map((p) => p.name).join(', ')})` : v.name,
             documentation: v.description,
           });
@@ -1032,11 +1044,25 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
           }
         } else if (obj === 'hit') {
           const hitProps = [
-            { name: 'phase', detail: 'string: "pre" | "post"', doc: 'Damage processing phase' },
-            { name: 'lost', detail: 'int: HP damage amount', doc: 'Amount of HP lost' },
-            { name: 'kind', detail: 'string: "blast" | "impact" | "fall" | "drown"', doc: 'Damage message type' },
-            { name: 'land', detail: 'bool: hit terrain land', doc: 'True if colliding with terrain' },
-            { name: 'worm', detail: 'WormHandle | nil', doc: 'Target worm damaged' },
+            { name: 'worm', detail: 'WormHandle | nil', doc: 'Target worm damaged.' },
+            { name: 'attacker', detail: 'WormHandle | nil', doc: 'Attacking worm, if a worm dealt it.' },
+            { name: 'attacker_team', detail: 'int | nil', doc: "The attacker's team." },
+            { name: 'by', detail: 'string | nil', doc: 'What dealt the damage.' },
+            { name: 'weapon', detail: 'string | nil', doc: 'The weapon id.' },
+            { name: 'source_weapon', detail: 'string | nil', doc: "For an arrow, the id of the weapon it carries." },
+            { name: 'slot', detail: 'int | nil', doc: 'The weapon slot.' },
+            { name: 'kind', detail: 'string', doc: '"blast", a Hit kind, "nonlethal" or "poison".' },
+            { name: 'amount', detail: 'int', doc: 'Damage asked for.' },
+            { name: 'lost', detail: 'int', doc: 'Health the worm actually lost (post phase).' },
+            { name: 'hp', detail: 'int', doc: "The worm's health." },
+            { name: 'phase', detail: 'string: "pre" | "post"', doc: "Before or after WA's own handler." },
+            { name: 'power', detail: 'int', doc: "A blast's power for this worm." },
+            { name: 'damage', detail: 'int', doc: "What this worm takes; setting it in pre overrides WA's." },
+            { name: 'expected', detail: 'int', doc: "What WA will take off the worm's health, by its own rules." },
+            { name: 'x', detail: 'int: px', doc: 'Hit X.' },
+            { name: 'y', detail: 'int: px', doc: 'Hit Y.' },
+            { name: 'vx', detail: 'number: px/frame', doc: 'Push X.' },
+            { name: 'vy', detail: 'number: px/frame', doc: 'Push Y.' },
           ];
           for (const p of hitProps) {
             if (!query || p.name.includes(query)) {
@@ -1051,11 +1077,15 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
           }
         } else if (obj === 'fire') {
           const fireProps = [
-            { name: 'x', detail: 'int: 16.16 Fixed Point', doc: 'Muzzle X position' },
-            { name: 'y', detail: 'int: 16.16 Fixed Point', doc: 'Muzzle Y position' },
-            { name: 'vx', detail: 'int: 16.16 Fixed Point', doc: 'Initial velocity X' },
-            { name: 'vy', detail: 'int: 16.16 Fixed Point', doc: 'Initial velocity Y' },
-            { name: 'worm', detail: 'WormHandle', doc: 'Firing worm handle' },
+            { name: 'x', detail: 'int: px', doc: 'Muzzle X.' },
+            { name: 'y', detail: 'int: px', doc: 'Muzzle Y.' },
+            { name: 'vx', detail: 'number: px/frame', doc: 'Initial velocity X.' },
+            { name: 'vy', detail: 'number: px/frame', doc: 'Initial velocity Y.' },
+            { name: 'weapon', detail: 'string', doc: 'The weapon id.' },
+            { name: 'worm', detail: 'WormHandle', doc: 'Firing worm handle.' },
+            { name: 'power', detail: 'int', doc: 'Charge power, in px.' },
+            { name: 'airborne', detail: 'bool', doc: 'True when fired from the air.' },
+            { name: 'target', detail: 'table | nil: { x, y }', doc: 'The point a click marked (click = "homing").' },
           ];
           for (const p of fireProps) {
             if (!query || p.name.includes(query)) {
@@ -1063,6 +1093,27 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
                 label: p.name,
                 kind: 'variable',
                 detail: `fire.${p.name} (${p.detail})`,
+                insertText: p.name,
+                documentation: p.doc,
+              });
+            }
+          }
+        } else if (obj === 'click') {
+          const clickProps = [
+            { name: 'x', detail: 'int: px', doc: 'Click X.' },
+            { name: 'y', detail: 'int: px', doc: 'Click Y.' },
+            { name: 'sky', detail: 'int: px', doc: 'The sky drop Y.' },
+            { name: 'vx', detail: 'number: px/frame', doc: 'Direction X.' },
+            { name: 'vy', detail: 'number: px/frame', doc: 'Direction Y.' },
+            { name: 'weapon', detail: 'string', doc: 'The weapon id.' },
+            { name: 'worm', detail: 'WormHandle', doc: 'The worm that clicked.' },
+          ];
+          for (const p of clickProps) {
+            if (!query || p.name.includes(query)) {
+              items.push({
+                label: p.name,
+                kind: 'variable',
+                detail: `click.${p.name} (${p.detail})`,
                 insertText: p.name,
                 documentation: p.doc,
               });

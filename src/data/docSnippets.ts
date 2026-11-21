@@ -1945,6 +1945,71 @@ end`,
   end
 end`,
   },
+  // The 0.9.9 handle methods have no shipped-mod caller yet; these are minimal
+  // complete blocks from the verb list, not excerpts.
+  "LuaActor:hit": {
+    source: "WormForge API example",
+    code: `local function on_explode(actor)
+  for _, other in ipairs(wa.actors.all()) do
+    if other.id ~= actor.id then
+      other:hit(25, 2, -1, "bullet")
+    end
+  end
+end`,
+  },
+  "WormEntity:use": {
+    source: "WormForge API example",
+    code: `local function give_jetpack(worm)
+  if worm.turn then
+    return worm:use("stock.jetpack")
+  end
+  return false
+end`,
+  },
+  "HudTrayEntry:set": {
+    source: "WormForge API example",
+    code: `local function show_progress(entry, progress)
+  entry:set({ lit = progress >= 1, progress = progress })
+end`,
+  },
+  "HudTrayEntry:remove": {
+    source: "WormForge API example",
+    code: `local function hide_entry(entry)
+  if entry:is_open() then
+    entry:remove()
+  end
+end`,
+  },
+  "HudTrayEntry:is_open": {
+    source: "WormForge API example",
+    code: `local function still_shown(entry)
+  return entry:is_open()
+end`,
+  },
+  "TrailHandle:push": {
+    source: "WormForge API example",
+    code: `local function leave_trail(trail, x, y)
+  trail:push(x, y)
+end`,
+  },
+  "TrailHandle:finish": {
+    source: "WormForge API example",
+    code: `local function stop_feeding(trail)
+  trail:finish()
+end`,
+  },
+  "TrailHandle:remove": {
+    source: "WormForge API example",
+    code: `local function drop_trail(trail)
+  trail:remove()
+end`,
+  },
+  "RippleHandle:stop": {
+    source: "WormForge API example",
+    code: `local function end_ripple(ripple)
+  ripple:stop()
+end`,
+  },
 };
 
 export function docSnippetFor(key: string): DocSnippet | undefined {

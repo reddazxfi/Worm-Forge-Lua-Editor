@@ -22,6 +22,19 @@ export interface InsertionPlan {
 }
 
 /**
+ * Whether `fullName` sits under a dotted namespace `prefix`, case-insensitively.
+ *
+ * `wa.world.` matches `wa.world.size` but not `wa.worlds.x`; `wa.` matches
+ * every engine verb. The trailing dot is optional so callers can pass either
+ * the typed chain or the namespace alone.
+ */
+export function matchesWaNamespacePath(fullName: string, prefix: string): boolean {
+  const f = fullName.toLowerCase();
+  const p = prefix.toLowerCase();
+  return f === p || f.startsWith(p.endsWith('.') ? p : `${p}.`);
+}
+
+/**
  * Plans accepting `insertText` at `caretInLine` of `currentLine`.
  *
  * `currentLine` is the line WITHOUT its newline, `caretInLine` is the caret

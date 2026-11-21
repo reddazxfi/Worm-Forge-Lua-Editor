@@ -6,6 +6,41 @@ import type { TableDoc } from '../data/tableDocs';
 import { docSnippetFor } from '../data/docSnippets';
 import type { AppSurfaces } from '../services/appTheme';
 
+/**
+ * The receiver a handle class is usually bound to. One place, because the doc
+ * card used to hardcode `worm` for everything except LuaActor, so `window:set`
+ * and `light:move` were documented as `worm:set` and `worm:move`.
+ */
+const RECEIVER_BY_CLASS: Record<string, string> = {
+  WormEntity: 'worm',
+  LuaActor: 'a',
+  WorldHandle: 'object',
+  MissileEntity: 'm',
+  InventoryStore: 'inv',
+  LightHandle: 'light',
+  MagneticField: 'field',
+  WindowHandle: 'window',
+  HudTrayEntry: 'tray',
+  TrailHandle: 'trail',
+  RippleHandle: 'ripple',
+};
+
+export function receiverForClass(className: string): string {
+  return RECEIVER_BY_CLASS[className] ?? className;
+}
+
+/** `worm:hurt(amount)` for a method, `worm.hp` for a property or variable. */
+export function formatMemberSignature(receiver: string, member: MemberDef): string {
+  const params = member.parameters?.map((p) => p.name).join(', ') ?? '';
+  return member.kind === 'method'
+    ? `${receiver}:${member.name}(${params})`
+    : `${receiver}.${member.name}`;
+}
+
+export function formatMemberTitle(className: string, member: MemberDef): string {
+  return formatMemberSignature(receiverForClass(className), member);
+}
+
 interface DocPaneProps {
   selectedItem: any;
   onInsertCode: (snippet: string) => void;
@@ -68,10 +103,12 @@ export const DocPane: React.FC<DocPaneProps> = ({
       if (activeMember.isCustom) {
         const sep = activeMember.kind === 'method' ? ':' : '.';
         const params = activeMember.parameters?.map((p) => p.name).join(', ') || '';
-        return `${selectedItem.name}${sep}${activeMember.name}(${params})`;
+        const receiver = receiverForClass(selectedItem.name);
+        return activeMember.kind === 'method'
+          ? `${receiver}${sep}${activeMember.name}(${params})`
+          : `${receiver}${sep}${activeMember.name}`;
       }
-      const params = activeMember.parameters?.map((p) => p.name).join(', ') || '';
-      return `${selectedItem.name === 'LuaActor' ? 'a' : 'worm'}:${activeMember.name}(${params})`;
+      return formatMemberSignature(receiverForClass(selectedItem.name), activeMember);
     }
     if (isClass) {
       return (selectedItem as ClassDef).syntaxExample || `class ${selectedItem.name}`;
@@ -152,7 +189,7 @@ export const DocPane: React.FC<DocPaneProps> = ({
         <div className="flex items-center gap-1.5 truncate">
           <Code2 className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
           <span className={`font-semibold text-[13px] truncate ${isLight ? 'text-slate-900' : 'text-[#e3edf7]'}`}>
-            {activeMember ? `${selectedItem.name}:${activeMember.name}` : selectedItem.name}
+            {activeMember ? formatMemberTitle(selectedItem.name, activeMember) : selectedItem.name}
           </span>
           {activeMember?.isCustom && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 border border-amber-500/30">
