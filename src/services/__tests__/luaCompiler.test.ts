@@ -173,7 +173,7 @@ describe('the example corpus', () => {
     expect(byId.get('px.sentry')?.primaryFile).toBe('weapons/sentry_gun.lua');
     expect(byId.get('px.swim')?.primaryFile).toBe('weapons/swim_suit.lua');
     expect(byId.get('utilities.agility')?.primaryFile).toBe('features/agility.lua');
-    expect(byId.get('spawn.bees')?.primaryFile).toBe('weapons/keeper_bee.lua');
+    expect(byId.get('spawn.bees')?.primaryFile).toBe('lib/bee.lua');
     expect(byId.get('example.pooz')?.primaryFile).toBe('weapons.lua');
     expect(byId.get('example.ripper_star')?.primaryFile).toBe('weapons/ripper_star.lua');
     // The px entries share one source array, not four copies of it.

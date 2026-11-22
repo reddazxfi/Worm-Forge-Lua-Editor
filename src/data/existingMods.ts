@@ -20680,7 +20680,7 @@ export const EXISTING_MODS: ModFolderInfo[] = [
     version: '1.2.1',
     author: 'reddaz',
     category: 'weapons',
-    primaryFile: 'weapons/keeper_bee.lua',
+    primaryFile: 'lib/bee.lua',
     workspacePrefix: 'roaming_bees',
     description: 'Modern component bundle: the Keeper Bee launcher and the map swarm share lib/bee.lua through require. Replaces the old Spawn Bees script.',
     tags: ['example', 'weapon', 'actor', 'modern'],

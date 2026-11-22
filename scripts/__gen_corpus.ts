@@ -246,7 +246,7 @@ const PACKS: PackSpec[] = [
     name: 'Keeper Bee',
     description: 'Modern component bundle: the Keeper Bee launcher and the map swarm share lib/bee.lua through require. Replaces the old Spawn Bees script.',
     tags: ['example', 'weapon', 'actor', 'modern'],
-    primaryFile: 'weapons/keeper_bee.lua',
+    primaryFile: 'lib/bee.lua',
     workspacePrefix: 'roaming_bees',
   },
   {
