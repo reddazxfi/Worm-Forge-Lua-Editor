@@ -29,7 +29,7 @@ use full_moon::tokenizer::{TokenReference, TokenType};
 use full_moon::visitors::Visitor;
 use serde::{Deserialize, Serialize};
 
-const API_VERSION: u32 = 4;
+const API_VERSION: u32 = 5;
 const COMPONENTS_FORMAT: u32 = 2;
 const MANAGED: &str = "wf-lib";
 const STOCK_BUNDLE: &str = "stock";
@@ -1832,7 +1832,7 @@ mod tests {
     fn v2(id: &str, deps: &[&str], exports: &[(&str, &str)], entry: &str) -> String {
         let deps = deps.iter().map(|d| format!("{d:?}")).collect::<Vec<_>>().join(", ");
         let mut out = format!(
-            "id = {id:?}\napi_version = 4\nformat_version = 2\ndependencies = [{deps}]\n"
+            "id = {id:?}\napi_version = 5\nformat_version = 2\ndependencies = [{deps}]\n"
         );
         if !exports.is_empty() {
             out.push_str("[exports]\n");
@@ -1934,7 +1934,7 @@ mod tests {
         write(
             &root,
             "mod.toml",
-            "id = \"old.pack\"\napi_version = 4\nentry = \"rules.lua\"\n",
+            "id = \"old.pack\"\napi_version = 5\nentry = \"rules.lua\"\n",
         );
         write(&root, "rules.lua", "return require(\"rules\")\n");
         let report = run(&root);
@@ -2185,7 +2185,7 @@ mod tests {
                 root,
                 "mod.toml",
                 &format!(
-                    "id = {id:?}\napi_version = 4\nformat_version = 2\nasset_namespace = \"wf-lib/shared\"\n[[components]]\nid = \"{id}.feature\"\ntype = \"feature\"\nentry = \"main.lua\"\n"
+                    "id = {id:?}\napi_version = 5\nformat_version = 2\nasset_namespace = \"wf-lib/shared\"\n[[components]]\nid = \"{id}.feature\"\ntype = \"feature\"\nentry = \"main.lua\"\n"
                 ),
             );
             write(root, "main.lua", "return {}\n");

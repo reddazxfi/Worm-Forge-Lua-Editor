@@ -12,25 +12,25 @@ describe('builtin enumerations', () => {
     expect(names).toEqual(['wa.msg', 'wa.depth', 'WorldHandle.kind', 'WormEntity.state_label']);
   });
 
-  it('lists all 9 kind_name() values including the null handle', () => {
+  it('lists all 10 kind_name() values including the null handle', () => {
     const kind = BUILTIN_ENUMERATIONS.find((e) => e.name === 'WorldHandle.kind');
     expect(kind?.values.map((v) => v.name)).toEqual([
-      'none', 'mine', 'missile', 'crate', 'worm', 'oil', 'grave', 'land', 'object',
+      'none', 'mine', 'missile', 'crate', 'worm', 'oil', 'grave', 'arrow', 'land', 'object',
     ]);
   });
 
   it('derives state_label from WORM_STATES so it cannot drift', () => {
     const label = BUILTIN_ENUMERATIONS.find((e) => e.name === 'WormEntity.state_label');
     expect(label?.values.map((v) => v.name)).toEqual(WORM_STATES.map((s) => s.name));
-    expect(label?.values.length).toBe(28);
+    expect(label?.values.length).toBe(32);
   });
 
   it('does not confuse state_label with readable/settable states', () => {
-    // worm.state reads back 26 names; set_state accepts 6. state_label is the
-    // 28-entry debug table — a superset of neither.
-    expect(READABLE_WORM_STATES.length).toBe(26);
-    expect(SETTABLE_WORM_STATES.length).toBe(6);
-    expect(WORM_STATES.length).toBe(28);
+    // worm.state reads back 31 names; set_state accepts 5. state_label is the
+    // 32-entry debug table — a superset of neither.
+    expect(READABLE_WORM_STATES.length).toBe(31);
+    expect(SETTABLE_WORM_STATES.length).toBe(5);
+    expect(WORM_STATES.length).toBe(32);
   });
 
   it('exposes the enums through the parsed symbol tree', () => {

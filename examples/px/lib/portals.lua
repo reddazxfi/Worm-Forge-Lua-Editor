@@ -1,12 +1,11 @@
--- Reusable portal pairs. The gun supplies placement/controls/art; a pair
--- owns traversal, return suppression, clearance and its velocity strategy.
+-- Reusable portal pairs.
+
 local default_velocity = require("lib/portal_velocity")
 local Network = {}
 Network.__index = Network
 local OFFSET = { {0,1}, {-1,1}, {-1,0}, {-1,-1}, {0,-1}, {1,-1}, {1,0}, {1,1} }
 local function trunc(x) return x >= 0 and math.floor(x) or -math.floor(-x) end
 
--- PX's GetHitAngle: eight surface directions, using the outward normal.
 local function direction(nx, ny)
   if ny >= 0.95 then return 1 end
   if nx < 0 and ny > 0.25 and ny < 0.97 then return 2 end
@@ -21,8 +20,6 @@ local function inside(p, x, y)
   return x > p.x - p.w / 2 and x < p.x + p.w / 2
      and y > p.y - p.h / 2 and y < p.y + p.h / 2
 end
--- Centre crossing, extended to a swept segment for shots faster than the
--- opening. Called before WA collides, so a missile survives the entry wall.
 local function crossing(p, x, y, vx, vy)
   if inside(p, x, y) then return 0 end
   local lo, hi = 0, 1
@@ -42,7 +39,7 @@ local function crossing(p, x, y, vx, vy)
 end
 local function identity(body)
   local kind = body.kind or "worm"
-  return kind .. ":" .. tostring((kind == "worm" or kind == "actor") and body.id or body.uid)
+  return kind .. ":" .. tostring(body.id)
 end
 
 function Network.new(options)
@@ -63,7 +60,6 @@ function Network:place(group, colour, x, y, nx, ny, team_colour)
   assert(colour == 1 or colour == 2)
   local pair = self.pairs[group] or { active = true }
   local other = pair[3 - colour]
-  -- PX's exclusion uses the impact point and the other rect plus 10px.
   if other and math.abs(x - other.x) < other.w / 2 + 10
     and math.abs(y - other.y) < other.h / 2 + 10 then return nil end
   local fresh = pair[colour] == nil
@@ -72,8 +68,6 @@ function Network:place(group, colour, x, y, nx, ny, team_colour)
   p.x, p.y = x + OFFSET[dir][1] * self.offset, y + OFFSET[dir][2] * self.offset
   p.draw_x, p.draw_y, p.dir, p.nx, p.ny = x, y, dir, nx, ny
   p.w, p.h = self.width, self.height
-  -- PX's final constructor else puts straight exits at the centre. Its
-  -- diagonals use the inner x edge and one/ two thirds down the rectangle.
   p.exit_x, p.exit_y = p.x, p.y
   if dir == 2 or dir == 4 or dir == 6 or dir == 8 then
     p.exit_x = p.x + OFFSET[dir][1] * (p.w / 2 - 5)
@@ -139,7 +133,6 @@ function Network:move(body)
     tx, ty = self.clearance(body, exit)
     if not tx then return false end
   elseif not body:fits(tx, ty, "terrain") then
-    -- PX's emergency clearance. Do not transport into a still blocked exit.
     wa.land.cut({x = tx, y = ty, shape = "circle", radius = 15})
     if not body:fits(tx, ty, "terrain") then return false end
   end

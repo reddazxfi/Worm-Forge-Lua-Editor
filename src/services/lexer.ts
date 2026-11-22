@@ -61,7 +61,6 @@ const LUA_KEYWORDS = new Set([
   'true',
   'until',
   'while',
-  'require',
 ]);
 
 const TYPE_KEYWORDS = new Set([
@@ -438,9 +437,9 @@ export function tokenize(code: string): { tokens: Token[]; diagnostics: SyntaxDi
       let type: Token['type'] = 'identifier';
       if (LUA_KEYWORDS.has(id)) {
         type = 'keyword';
-      } else if (TYPE_KEYWORDS.has(id.toLowerCase())) {
-        type = 'type';
       }
+      // string/table/number/... are ordinary identifiers in Lua, not reserved.
+      void TYPE_KEYWORDS;
 
       tokens.push({
         type,

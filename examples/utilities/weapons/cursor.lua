@@ -1,4 +1,7 @@
+-- Cursor: Press + to cycle through Light, Magnet attract, Magnet repel, Revive, Freeze, Fire and Hurt.
+
 local cursor = require("lib/cursor")
+local tooltip = require("wf-lib/tooltip")
 local MODES = {
   { name = "Light", hint = "terrain-blocked light" },
   { name = "Magnet attract", hint = "300 px range" },
@@ -16,7 +19,6 @@ return {
     local field
     local remembered = {} -- Stable worm IDs; each worm keeps its own mode.
     local mode, plus_held = 1, false
-    local hint_dirty = false
     local next_fire, colour, ready_at, waiting_release = 0, 0, 0, true
 
     local function clear(a)
@@ -37,11 +39,8 @@ return {
           softening = mode == 2 and 10 or 5,
         }
       elseif mode == 6 then
-        -- Round 50 ms up to 3 simulation frames. Also require releasing
-        -- any click held while selecting the weapon or entering Fire mode.
         next_fire, ready_at, waiting_release = 0, wa.world.frame() + 3, true
       end
-      hint_dirty = true
     end
 
     cursor.install(ctx, {
@@ -54,7 +53,6 @@ return {
       end,
       stop = function(a)
         clear(a)
-        hint_dirty = false
       end,
       frame = function(a, worm)
         local plus = wa.world.keys().plus_key or false
@@ -64,11 +62,6 @@ return {
           apply(a)
         end
         plus_held = plus
-        if hint_dirty then
-          wa.hud.message_top(("Cursor: %s | %s | + next mode"):format(MODES[mode].name, MODES[mode].hint),
-            {to = "coalition", alliance = worm.alliance})
-          hint_dirty = false
-        end
         if mode ~= 6 then return end
         if not wa.world.pointer().down then
           next_fire, waiting_release = 0, false
@@ -100,13 +93,13 @@ return {
           local worm = cursor.nearest(wa.worms.all(), ev.x, ev.y, function(w)
             return w.hp > 0
           end)
-          if worm then worm:hurt(10) end
+          if worm then worm:hit(10) end
         end
       end,
     })
-    -- WA's SelectWeapon message also fires when reselecting the same mode.
-    wa.on.worm_message(function(worm)
-      if worm.turn and worm.weapon == ctx.id then hint_dirty = true end
-    end, {msgs = {51}})
+    tooltip.hint(ctx.id, function(worm)
+      local m = MODES[remembered[worm.id] or 1]
+      return "Cursor: " .. m.name .. "\n" .. m.hint .. "\n+ next mode"
+    end)
   end,
 }

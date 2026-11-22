@@ -1,5 +1,5 @@
--- Small 5x7 digits on a transparent sheet. Rendering only: no actors, health
--- writes or shared RNG. Both sentry types share one GPU sheet for the match.
+-- Small 5x7 digits on a transparent sheet.
+
 local M = { SHEET = "sprites/sentry_ui/digits.png" }
 local installed = false
 local WIDTH, HEIGHT, ADVANCE = 5, 7, 6
@@ -29,9 +29,6 @@ local function digit(frame, x, y, tint, depth)
     points = { {x, y}, {x + WIDTH, y}, {x + WIDTH, y + HEIGHT}, {x, y + HEIGHT} } })
 end
 
--- `bottom` includes the one-pixel soft shadow; the caller chooses a fixed
--- height relative to the body. Snap the tiny glyphs to whole world pixels
--- so subpixel placement does not soften their strokes.
 function M.draw(health, maximum, x, bottom, depth)
   local text = tostring(math.max(0, math.ceil(health)))
   local left = math.floor(x - (#text * ADVANCE - 1) / 2 + 0.5)

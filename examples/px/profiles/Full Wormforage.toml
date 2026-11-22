@@ -1,6 +1,23 @@
 # WormForge profile "Full Wormforage": made in the mod loader; safe to edit by hand.
 description = "The Full Fromage"
-features = ["px.oil_drums"]
+features = ["core.utilities", "px.oil_drums", "px.saw_random", "spawn.bees.swarm"]
+
+[options."core.utilities"]
+agility = true
+collect_viewer = true
+damage_numbers = true
+ex_turn_side = true
+fast_aim = true
+fps_counter = true
+instant_death = "in_flight"
+live_hp = true
+parkour = true
+
+[options."px.saw_random"]
+quantity = 2
+
+[options."spawn.bees.swarm"]
+bee_amount = 2
 
 [scheme]
 hazards = 143
@@ -21,10 +38,6 @@ ammo = -1
 after_use = "continue"
 ammo = -1
 
-[weapon_settings."px.blowtorch"]
-after_use = "continue"
-ammo = -1
-
 [weapon_settings."px.bowling_ball_strike"]
 after_use = "continue"
 ammo = -1
@@ -38,10 +51,6 @@ after_use = "continue"
 ammo = -1
 
 [weapon_settings."px.chilli_bomb"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."px.cluster_bomb"]
 after_use = "continue"
 ammo = -1
 
@@ -125,10 +134,6 @@ ammo = -1
 after_use = "continue"
 ammo = -1
 
-[weapon_settings."px.mole_bomb"]
-after_use = "continue"
-ammo = -1
-
 [weapon_settings."px.mortar_strike"]
 after_use = "continue"
 ammo = -1
@@ -150,10 +155,6 @@ after_use = "continue"
 ammo = -1
 
 [weapon_settings."px.portal_gun"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."px.priceless_ming_vase"]
 after_use = "continue"
 ammo = -1
 
@@ -189,10 +190,6 @@ ammo = -1
 after_use = "continue"
 ammo = -1
 
-[weapon_settings."px.skunk"]
-after_use = "continue"
-ammo = -1
-
 [weapon_settings."px.sniper_rifle"]
 after_use = "continue"
 ammo = -1
@@ -216,6 +213,7 @@ ammo = -1
 [weapon_settings."px.swim_suit"]
 after_use = "continue"
 ammo = -1
+auto_use = true
 
 [weapon_settings."px.thumper_nade"]
 after_use = "continue"
@@ -241,86 +239,19 @@ ammo = -1
 after_use = "continue"
 ammo = -1
 
-[weapon_settings."stock.aqua_sheep"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.banana_bomb"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.baseball_bat"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.battle_axe"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.bazooka"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.blow_torch"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.bungee"]
-after_use = "continue"
-ammo = -1
-
 [weapon_settings."stock.carpet_bomb"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.cluster_bomb"]
 after_use = "continue"
 ammo = -1
 
 [weapon_settings."stock.donkey"]
 ammo = -1
 
-[weapon_settings."stock.dragon_ball"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.dynamite"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.earthquake"]
-after_use = "continue"
-ammo = -1
-
 [weapon_settings."stock.fast_walk"]
 after_use = "continue"
 ammo = -1
-
-[weapon_settings."stock.fire_punch"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.flame_thrower"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.freeze"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.girder_pack"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.grenade"]
-after_use = "continue"
-ammo = -1
+auto_use = true
 
 [weapon_settings."stock.holy_grenade"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.homing_missile"]
 after_use = "continue"
 ammo = -1
 
@@ -328,19 +259,7 @@ ammo = -1
 after_use = "continue"
 ammo = -1
 
-[weapon_settings."stock.invisibility"]
-after_use = "continue"
-ammo = -1
-
 [weapon_settings."stock.jet_pack"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.laser_sight"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.longbow"]
 after_use = "continue"
 ammo = -1
 
@@ -352,14 +271,6 @@ ammo = -1
 after_use = "continue"
 ammo = -1
 
-[weapon_settings."stock.magic_bullet"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.mb_bomb"]
-after_use = "continue"
-ammo = -1
-
 [weapon_settings."stock.mine"]
 after_use = "continue"
 ammo = -1
@@ -368,85 +279,15 @@ ammo = -1
 after_use = "continue"
 ammo = -1
 
-[weapon_settings."stock.minigun"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.mole_bomb"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.mortar"]
-after_use = "continue"
-ammo = -1
-
 [weapon_settings."stock.ninja_rope"]
 after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.nuclear_test"]
 ammo = -1
 
 [weapon_settings."stock.petrol_bomb"]
 after_use = "continue"
 ammo = -1
 
-[weapon_settings."stock.pneumatic_drill"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.prod"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.salvation_army"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.scales_of_justice"]
-after_use = "continue"
-ammo = -1
-
 [weapon_settings."stock.select_worm"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.sheep"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.sheep_launcher"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.sheep_strike"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.shotgun"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.skunk"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.suicide_bomber"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.super_banana"]
-ammo = -1
-
-[weapon_settings."stock.super_sheep"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.teleport"]
-after_use = "continue"
-ammo = -1
-
-[weapon_settings."stock.uzi"]
 after_use = "continue"
 ammo = -1
 
@@ -457,6 +298,10 @@ row = "F8"
 [weapons."px.3_girder_pack"]
 column = 5
 row = "F7"
+
+[weapons."px.antifire_suit"]
+column = 1
+row = "F5"
 
 [weapons."px.attack_helicopter"]
 column = 9
@@ -470,6 +315,10 @@ row = "F11"
 column = 5
 row = "F9"
 
+[weapons."px.barrel_launcher"]
+column = 8
+row = "F1"
+
 [weapons."px.blast_zone"]
 column = 8
 row = "F4"
@@ -478,13 +327,17 @@ row = "F4"
 column = 4
 row = "F1"
 
-[weapons."px.blowtorch"]
+[weapons."px.bowling_ball"]
 column = 1
 row = "F7"
 
 [weapons."px.bowling_ball_strike"]
 column = 4
 row = "F10"
+
+[weapons."px.bulldozer"]
+column = 8
+row = "F5"
 
 [weapons."px.bunker_buster"]
 column = 8
@@ -502,10 +355,6 @@ row = "F3"
 column = 1
 row = "F9"
 
-[weapons."px.cluster_bomb"]
-column = 5
-row = "F12"
-
 [weapons."px.cow_launcher"]
 column = 1
 row = "F11"
@@ -513,6 +362,14 @@ row = "F11"
 [weapons."px.crate_strike"]
 column = 3
 row = "F11"
+
+[weapons."px.death_mark"]
+column = 6
+row = "F4"
+
+[weapons."px.digging_cluster_bomb"]
+column = 9
+row = "F3"
 
 [weapons."px.double_bazooka"]
 column = 1
@@ -522,16 +379,36 @@ row = "F1"
 column = 2
 row = "F8"
 
+[weapons."px.drilling_crew"]
+column = 10
+row = "F3"
+
 [weapons."px.electric_grenade"]
 column = 5
 row = "F2"
+
+[weapons."px.electric_mine"]
+column = 7
+row = "F4"
 
 [weapons."px.electromagnet"]
 column = 4
 row = "F7"
 
+[weapons."px.famas"]
+column = 9
+row = "F10"
+
+[weapons."px.far_sight"]
+column = 9
+row = "F4"
+
 [weapons."px.ferret"]
 column = 4
+row = "F9"
+
+[weapons."px.fire_cluster_bomb"]
+column = 9
 row = "F9"
 
 [weapons."px.fire_jump"]
@@ -542,13 +419,25 @@ row = "F4"
 column = 10
 row = "F11"
 
+[weapons."px.gatling_gun"]
+column = 10
+row = "F9"
+
 [weapons."px.ghost_sheep"]
 column = 5
 row = "F5"
 
+[weapons."px.golden_grenade"]
+column = 10
+row = "F4"
+
 [weapons."px.gravity_control"]
 column = 2
 row = "utility"
+
+[weapons."px.gravity_gun"]
+column = 9
+row = "F5"
 
 [weapons."px.gravler"]
 column = 6
@@ -578,9 +467,29 @@ row = "F9"
 column = 6
 row = "F6"
 
+[weapons."px.homing_cluster_bomb"]
+column = 7
+row = "F5"
+
+[weapons."px.homing_curse"]
+column = 6
+row = "F2"
+
+[weapons."px.homing_digger"]
+column = 7
+row = "F10"
+
+[weapons."px.homing_fire_cluster"]
+column = 8
+row = "F9"
+
 [weapons."px.hot_air_balloon"]
 column = 8
 row = "F8"
+
+[weapons."px.i_bomb"]
+column = 7
+row = "F2"
 
 [weapons."px.ice_arrow"]
 column = 5
@@ -589,6 +498,10 @@ row = "F11"
 [weapons."px.igniter"]
 column = 2
 row = "F1"
+
+[weapons."px.j_bomb"]
+column = 9
+row = "F2"
 
 [weapons."px.javelin"]
 column = 5
@@ -602,25 +515,49 @@ row = "F7"
 column = 4
 row = "F4"
 
+[weapons."px.lantern"]
+column = 6
+row = "F7"
+
 [weapons."px.laser_gun"]
 column = 3
 row = "F3"
+
+[weapons."px.laser_reflect"]
+column = 10
+row = "F7"
 
 [weapons."px.lightning_strike"]
 column = 2
 row = "F6"
 
+[weapons."px.marked_for_death"]
+column = 10
+row = "F5"
+
+[weapons."px.megashark"]
+column = 10
+row = "F2"
+
+[weapons."px.mine_launcher"]
+column = 8
+row = "F12"
+
 [weapons."px.mine_turret"]
 column = 8
 row = "F11"
 
-[weapons."px.mole_bomb"]
-column = 8
-row = "utility"
+[weapons."px.mines_gun"]
+column = 9
+row = "F12"
 
 [weapons."px.mortar_strike"]
 column = 1
 row = "F6"
+
+[weapons."px.ninja_bomb"]
+column = 8
+row = "F7"
 
 [weapons."px.ninja_star"]
 column = 8
@@ -642,6 +579,10 @@ row = "F11"
 column = 3
 row = "F6"
 
+[weapons."px.platform"]
+column = 9
+row = "F7"
+
 [weapons."px.pogo_sheep"]
 column = 3
 row = "F5"
@@ -650,9 +591,13 @@ row = "F5"
 column = 5
 row = "F8"
 
-[weapons."px.priceless_ming_vase"]
-column = 3
-row = "F10"
+[weapons."px.power_shotgun"]
+column = 7
+row = "F12"
+
+[weapons."px.precipitator"]
+column = 7
+row = "F3"
 
 [weapons."px.real_shotgun"]
 column = 1
@@ -666,9 +611,17 @@ row = "F10"
 column = 2
 row = "F10"
 
+[weapons."px.ripper_star"]
+column = 3
+row = "F10"
+
 [weapons."px.s_m_a_r_t_bomb"]
 column = 3
 row = "F1"
+
+[weapons."px.saw_grenade"]
+column = 5
+row = "F12"
 
 [weapons."px.security_grenade"]
 column = 6
@@ -690,13 +643,17 @@ row = "F3"
 column = 1
 row = "F12"
 
-[weapons."px.skunk"]
-column = 6
+[weapons."px.small_worm"]
+column = 10
 row = "utility"
 
 [weapons."px.sniper_rifle"]
 column = 2
 row = "F3"
+
+[weapons."px.spot_hider"]
+column = 7
+row = "F9"
 
 [weapons."px.sticky_bomb"]
 column = 1
@@ -726,6 +683,26 @@ row = "F8"
 column = 4
 row = "utility"
 
+[weapons."px.tazer"]
+column = 10
+row = "F8"
+
+[weapons."px.tele_arrow"]
+column = 6
+row = "utility"
+
+[weapons."px.telenade"]
+column = 7
+row = "F8"
+
+[weapons."px.thrown_dynamite"]
+column = 8
+row = "F2"
+
+[weapons."px.thrown_ming_vase"]
+column = 8
+row = "utility"
+
 [weapons."px.thumper_nade"]
 column = 4
 row = "F2"
@@ -733,6 +710,18 @@ row = "F2"
 [weapons."px.thumper_nade_strike"]
 column = 5
 row = "F10"
+
+[weapons."px.tnt"]
+column = 9
+row = "utility"
+
+[weapons."px.toxic_grenade"]
+column = 7
+row = "F1"
+
+[weapons."px.trampoline"]
+column = 9
+row = "F1"
 
 [weapons."px.valyrian_fire"]
 column = 1
@@ -750,113 +739,41 @@ row = "F12"
 column = 2
 row = "F2"
 
-[weapons."stock.aqua_sheep"]
+[weapons."px.wings"]
 column = 9
-row = "F5"
+row = "F8"
 
-[weapons."stock.banana_bomb"]
+[weapons."px.wish_of_death"]
 column = 10
-row = "F9"
-
-[weapons."stock.baseball_bat"]
-column = 8
-row = "F7"
-
-[weapons."stock.battle_axe"]
-column = 8
-row = "F12"
-
-[weapons."stock.bazooka"]
-column = 8
 row = "F1"
 
-[weapons."stock.blow_torch"]
-column = 3
-row = "F7"
-
-[weapons."stock.bungee"]
-column = 7
-row = "F8"
+[weapons."spawn.bees.keeper"]
+column = 6
+row = "F12"
 
 [weapons."stock.carpet_bomb"]
 column = 10
 row = "F10"
 
-[weapons."stock.cluster_bomb"]
-column = 10
-row = "F2"
-
 [weapons."stock.donkey"]
 column = 6
 row = "F3"
-
-[weapons."stock.dragon_ball"]
-column = 7
-row = "F4"
-
-[weapons."stock.dynamite"]
-column = 1
-row = "F5"
-
-[weapons."stock.earthquake"]
-column = 9
-row = "F12"
 
 [weapons."stock.fast_walk"]
 column = 7
 row = "utility"
 
-[weapons."stock.fire_punch"]
-column = 6
-row = "F4"
-
-[weapons."stock.flame_thrower"]
-column = 7
-row = "F9"
-
-[weapons."stock.freeze"]
-column = 6
-row = "F12"
-
-[weapons."stock.girder_pack"]
-column = 9
-row = "F7"
-
-[weapons."stock.grenade"]
-column = 9
-row = "F2"
-
-[weapons."stock.handgun"]
-column = 6
-row = "F2"
-
 [weapons."stock.holy_grenade"]
 column = 6
 row = "F9"
-
-[weapons."stock.homing_missile"]
-column = 9
-row = "F1"
 
 [weapons."stock.homing_pigeon"]
 column = 10
 row = "F6"
 
-[weapons."stock.invisibility"]
-column = 10
-row = "utility"
-
 [weapons."stock.jet_pack"]
 column = 3
 row = "utility"
-
-[weapons."stock.laser_sight"]
-column = 9
-row = "utility"
-
-[weapons."stock.longbow"]
-column = 10
-row = "F12"
 
 [weapons."stock.low_gravity"]
 column = 5
@@ -866,14 +783,6 @@ row = "utility"
 column = 6
 row = "F11"
 
-[weapons."stock.magic_bullet"]
-column = 7
-row = "F12"
-
-[weapons."stock.mb_bomb"]
-column = 9
-row = "F9"
-
 [weapons."stock.mine"]
 column = 4
 row = "F5"
@@ -882,86 +791,18 @@ row = "F5"
 column = 4
 row = "F11"
 
-[weapons."stock.minigun"]
-column = 10
-row = "F3"
-
-[weapons."stock.mole_bomb"]
-column = 10
-row = "F5"
-
-[weapons."stock.mortar"]
-column = 10
-row = "F1"
-
 [weapons."stock.ninja_rope"]
 column = 6
 row = "F8"
-
-[weapons."stock.nuclear_test"]
-column = 8
-row = "F2"
 
 [weapons."stock.petrol_bomb"]
 column = 6
 row = "F10"
 
-[weapons."stock.pneumatic_drill"]
-column = 6
-row = "F7"
-
-[weapons."stock.prod"]
-column = 10
-row = "F4"
-
-[weapons."stock.salvation_army"]
-column = 8
-row = "F9"
-
-[weapons."stock.scales_of_justice"]
-column = 10
-row = "F8"
-
 [weapons."stock.select_worm"]
 column = 3
 row = "F12"
 
-[weapons."stock.sheep"]
-column = 7
-row = "F5"
-
-[weapons."stock.sheep_launcher"]
-column = 10
+[weapons."utilities.bullet_time"]
+column = 3
 row = "F7"
-
-[weapons."stock.sheep_strike"]
-column = 9
-row = "F10"
-
-[weapons."stock.shotgun"]
-column = 7
-row = "F3"
-
-[weapons."stock.skunk"]
-column = 7
-row = "F10"
-
-[weapons."stock.suicide_bomber"]
-column = 9
-row = "F4"
-
-[weapons."stock.super_banana"]
-column = 7
-row = "F2"
-
-[weapons."stock.super_sheep"]
-column = 8
-row = "F5"
-
-[weapons."stock.teleport"]
-column = 9
-row = "F8"
-
-[weapons."stock.uzi"]
-column = 9
-row = "F3"

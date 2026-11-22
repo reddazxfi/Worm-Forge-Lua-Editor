@@ -1,7 +1,7 @@
--- Pogo Sheep: record, art and behaviour.
+-- Pogo Sheep: a sheep that bounces around the map like a pogo stick, then bursts into bouncing bits.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   fires = {
     launch_power_pct = 6,
@@ -70,7 +70,7 @@ function weapon.definition()
     name = "Pogo Sheep",
     panel_icon = "sprites/pogo_sheep/psheep_ico.png",
     sprite = "sprites/pogo_sheep/flight.png",
-    cluster = { sprite = "sprites/pogo_sheep/cluster.png" },
+    cluster_sprite = "sprites/pogo_sheep/cluster.png",
   })
 end
 

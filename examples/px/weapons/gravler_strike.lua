@@ -1,7 +1,7 @@
--- Gravler Strike: record, art and behaviour.
+-- Gravler Strike: a strike of Gravlers.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   missile = {
     animation = 2,
@@ -43,10 +43,10 @@ function weapon.definition()
     name = "Gravler Strike",
     panel_icon = "sprites/gravler/gravlerst_ico.png",
     sprite_overrides = {
-          wsvr = "sprites/gravler/gravlerdive.png",                                -- 245
-          wsvru = "sprites/gravler/gravlerdiga.png",                               -- 246
-          wsvrd = "sprites/gravler/gravlerdigb.png",                               -- 247
-          wsvb = "sprites/gravler/gravlerdigc.png",                                -- 248
+          wsvr = "sprites/gravler/gravlerdive.png", -- 245
+          wsvru = "sprites/gravler/gravlerdiga.png", -- 246
+          wsvrd = "sprites/gravler/gravlerdigb.png", -- 247
+          wsvb = "sprites/gravler/gravlerdigc.png", -- 248
         },
   })
 end

@@ -8,7 +8,7 @@
 #
 # A component in no panel slot registers nothing (REPORT.md 11.13), so removing
 # the weapon from a profile leaves the match working.
-description = "PX's Ripper Star: fifteen shurikens in one burst, 4 damage and a shove on anything within 20 pixels of where one lands, or a star left in the land."
+description = "The Ripper Star alone."
 features = []
 
 [weapons]

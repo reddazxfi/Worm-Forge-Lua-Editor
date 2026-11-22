@@ -1,8 +1,5 @@
--- Highlander: what Project X's two lasers share (weapon_gun_lasergun's
--- CLaserRay, which weapon_sentry_laser's CLaserRayS copies): their art, PX's
--- glow particles (PxParticle) and how both are drawn. A ray `r` carries its
--- own particles in `r.fx` and its own random sequence in `r.seed`, so the
--- effects come out the same on every machine.
+-- What PX's two lasers share: their art, glow particles and drawing.
+
 local laser = {}
 
 laser.GLOW = "sprites/laser_gun/laser_glow.png"
@@ -18,15 +15,11 @@ function laser.between(r, lo, hi)
   return lo + (hi - lo) * laser.rand(r)
 end
 
--- A PX particle: moved, pulled and slowed each game frame, drawn additive.
--- { x, y (pixels), vx, vy (pixels/frame), life, drag, grav, jitter, s0, s1 (sizes, 1 = 32
--- px), c0, c1 ({ r, g, b } at birth and death), alpha (255) }.
 function laser.particle(r, p)
   p.age, p.vx, p.vy = 0, p.vx or 0, p.vy or 0
   r.fx[#r.fx + 1] = p
 end
 
--- One game frame of the ray's particles.
 function laser.step(r)
   for i = #r.fx, 1, -1 do
     local p = r.fx[i]
@@ -44,21 +37,17 @@ function laser.step(r)
   end
 end
 
--- An ARGB word from an alpha and { r, g, b }.
 function laser.argb(a, rgb)
   return (math.floor(math.max(0, math.min(255, a))) << 24)
     | (math.floor(rgb[1]) << 16) | (math.floor(rgb[2]) << 8) | math.floor(rgb[3])
 end
 
--- The glow sprite, `px` across, centred on (x, y).
 function laser.glow(x, y, px, color)
   local h = px / 2
   wa.draw.quad({ sprite = laser.GLOW, blend = "add", color = color, depth = laser.DEPTH,
     points = { { x - h, y - h }, { x + h, y - h }, { x + h, y + h }, { x - h, y + h } } })
 end
 
--- The ray's particles, each fading from its birth size and colour to its
--- death ones.
 function laser.draw_particles(r)
   for _, p in ipairs(r.fx) do
     local t = p.age / p.life
@@ -68,8 +57,6 @@ function laser.draw_particles(r)
   end
 end
 
--- The beam: a strip of the beam texture `width` px wide from (x0, y0) to
--- (x1, y1).
 function laser.beam(x0, y0, x1, y1, width, color)
   wa.draw.ribbon({ sprite = laser.BEAM, blend = "add", depth = laser.DEPTH, points = {
     { x = x0, y = y0, width = width, u = 0, color = color },

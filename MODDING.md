@@ -12,6 +12,10 @@ If you have used Project X, the difference is one extra layer:
 
 That is the whole extra concept. Everything else is ordinary Lua.
 
+> **Coming from API 4?** WormForge 1.0 uses `api_version = 5`. The verb
+> renames, removals and new fields are collected in
+> [API-5-CHANGES.md](API-5-CHANGES.md).
+
 ---
 
 ## The 30-second version
@@ -94,7 +98,7 @@ id = "holdable_uzi"
 name = "Holdable Uzi"
 version = "0.1.0"
 author = "reddaz"
-api_version = 4
+api_version = 5
 format_version = 2
 
 [[components]]
@@ -119,7 +123,7 @@ What each part means:
 
 - `id` is the **bundle id**. It identifies the pack.
 - `format_version = 2` means "component bundle". Use it.
-- `api_version = 4` is the Lua API version this pack targets.
+- `api_version = 5` is the Lua API version this pack targets.
 - `[[components]]` starts one component.
 - `id` inside `[[components]]` is the **component id**. It must be globally
   unique; prefix it with the bundle id.
@@ -323,7 +327,7 @@ id = "hello"
 name = "Hello"
 version = "0.1.0"
 author = "you"
-api_version = 4
+api_version = 5
 format_version = 2
 
 [[components]]
@@ -700,9 +704,9 @@ In this repository:
 - `examples/` contains the focused entry points (Agility, Sentry, Keeper Bee,
   Highlander, Swimsuit, POOZ, Kill the King, Ripper Star).
 - `examples/px/` — the modern `px.ports` component bundle: Swim Suit, Sentry
-  Gun, Highlander, Kill the King, and the shared weapon index/loader. The
-  menu's `px.swim`, `px.sentry`, `px.highlander`, and `px.ktk` entries all load
-  this source and open the relevant file.
+  Gun, Highlander, Kill the King, Random Race, Specialists, and the shared
+  weapon index/loader. The menu's `px.swim`, `px.sentry`, `px.highlander`, and
+  `px.ktk` entries all load this source and open the relevant file.
 - `examples/utilities/` — the modern `core.utilities` bundle. Agility is
   `features/agility.lua`, loaded by `features/utilities.lua` when the profile
   turns that option on.

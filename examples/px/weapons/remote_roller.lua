@@ -1,7 +1,7 @@
--- Remote Roller: record, art and behaviour.
+-- Remote Roller: a roller dropped at the worm's feet with a push of its own.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   fires = {
     launch_power_pct = 15,
@@ -96,6 +96,10 @@ function weapon.definition()
           wthrowd = "sprites/remote_roller/drawd.png",
         },
   })
+end
+
+function weapon.configure(ctx, spec)
+  spec.fires.launch_power_pct = ctx.option("launch_power")
 end
 
 return weapon

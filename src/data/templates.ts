@@ -1,5 +1,5 @@
 export const INITIAL_TEMPLATE = `-- WormForge component template
--- API 4 units are pixels: positions and speeds are plain pixels, with fractions.
+-- API 5 units are pixels: positions and speeds are plain pixels, with fractions.
 -- Use pixel values directly; no manual coordinate conversion.
 --
 -- This file is a module. The engine reads what it returns and calls install(ctx)

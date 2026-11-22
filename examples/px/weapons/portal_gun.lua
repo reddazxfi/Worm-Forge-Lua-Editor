@@ -1,7 +1,7 @@
--- Portal Gun: record, art and behaviour.
+-- Portal Gun: fires two portals; worms and objects pass from one to the other.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   fires = {
     subtype = 3,
@@ -11,14 +11,16 @@ weapon.record = {
   },
 }
 
+weapon.defaults = {
+  airborne = true,
+}
+
 function weapon.definition()
   local shared = require("lib/shared")
   local fires = shared.fires
   return require("lib/weapon").merge(weapon.record, {
     wep = "weps/scales_of_justice.wep",
     panel_icon = "sprites/portal_gun/icon.png",
-    -- the bazooka's hold
-        airborne = true,
     worm_sprites = {
           weaponlnk = "sprites/portal_gun/portal_gun_normal.png",
           weaponlnku = "sprites/portal_gun/portal_gun_up.png",
@@ -41,13 +43,9 @@ function weapon.definition()
 end
 
 function weapon.setup()
-  -- PX p_portalgun2: a pair per team, orange (-) and blue (+). Ctrl/Alt
-  -- chooses the other colour for one shot. Pause toggles the team's pair.
-  -- The transport rules are reusable Lua; WA keeps the transported bodies.
   local shared = require("lib/shared")
   local Portals = require("lib/portals")
   local Effects = require("lib/portal_effects")
-  -- The Portal Gun, by its id.
   local ID, ART = "px.portal_gun", "sprites/portal_gun/"
   local SPEED = 35
   local chosen, held, half_used = {}, {}, {}
@@ -71,12 +69,11 @@ function weapon.setup()
         for colour = 1,2 do effects:ambient(pair[colour]) end
       end
     end
-    -- Bounded return cache, without userdata or freed native pointers.
     if network.age % 150 == 0 then
       local alive = {}
       for _, worm in ipairs(wa.worms.all()) do alive["worm:" .. worm.id] = true end
       for _, list in ipairs({wa.missiles, wa.mines, wa.crates, wa.oil, wa.graves, wa.arrows}) do
-        for _, body in ipairs(list.all()) do alive[body.kind .. ":" .. body.uid] = true end
+        for _, body in ipairs(list.all()) do alive[body.id] = true end
       end
       if shared.portal_bowling_balls then
         for _, body in ipairs(shared.portal_bowling_balls()) do alive["actor:" .. body.id] = true end
@@ -89,11 +86,10 @@ function weapon.setup()
   local function ensure_ticker(worm)
     if ticker then return end
     ticker = wa.actors.spawn({ sprite = ART .. "portal_glow.png", x = 0, y = -1000,
-      owner = worm, gravity = false, collide = false, on = { frame = tick } })
-    ticker:scale(0)
+      owner = worm, on = { frame = tick } })
+    ticker:gfx{ scale = 0 }
   end
 
-  -- PX's CheckWall: at least one of its four diagonal traces touches land.
   local function supported(x, y)
     for _, d in ipairs({ {-15,-15}, {15,15}, {-15,15}, {15,-15} }) do
       local hit = wa.land.trace(x, y, x + d[1], y + d[2])
@@ -115,8 +111,6 @@ function weapon.setup()
     if fresh then chosen[b.team] = 3 - b.colour end
     sound("portal_gun_hit", shooter(b))
     effects:impact(hit.x, hit.y, false)
-    -- Each two successful placements use one ammo. Misses are refunded, as
-    -- PX's FireFinal/TakeOffPortalWeap; attribute delayed hits to their shooter.
     if half_used[b.worm_id] then
       half_used[b.worm_id] = nil
       local worm = shooter(b)
@@ -126,7 +120,7 @@ function weapon.setup()
   end
   local function remove(b)
     bolts[b.id] = nil
-    b.a:despawn()
+    b.a:remove()
   end
   local function bolt_frame(b)
     b.age = b.age + 1
@@ -169,11 +163,9 @@ function weapon.setup()
       vx = (dx * SPEED * power), vy = (dy * SPEED * power),
       worm_id = worm.id, team = worm.team, team_colour = team_colours[worm.alliance + 1],
       colour = colour, age = 0 }
-    -- Native ground fire consumes ammo after this callback; airborne fire
-    -- dispatches Lua alone and therefore needs no refund.
     if not fire.airborne then worm:ammo(ID, 1) end
     local a = wa.actors.spawn({ sprite = ART .. "portal_ball.png", x = b.x, y = b.y,
-      owner = worm, gravity = false, collide = false, on = { frame = function() bolt_frame(b) end } })
+      owner = worm, on = { frame = function() bolt_frame(b) end } })
     b.a, b.id = a, a.id
     a:gfx({ scale = 0.12, tint = colours[colour] & 0xFFFFFF, depth = wa.depth.OBJECTS })
     bolts[b.id] = b
@@ -193,8 +185,6 @@ function weapon.setup()
         sound(pair.active and "portal_active" or "portal_inactive", worm)
       end
     end
-    -- Jumping and falling it fires through on_fire (the claim's airborne =
-    -- true, the profile's "Fires jumping, falling" setting).
     if worm.weapon == ID then
       if keys.minus_key and not old.minus_key then chosen[team] = 1 end
       if keys.plus_key and not old.plus_key then chosen[team] = 2 end
@@ -206,10 +196,11 @@ function weapon.setup()
 
   require("lib/weapon_hint").register(ID, function(worm)
     return "Portal Gun: " .. ((chosen[worm.team] or 1) == 1 and "ORANGE" or "BLUE")
-      .. " (- orange, + blue; Ctrl/Alt other colour; Pause toggle)"
+      .. "\n- orange, + blue\nCtrl/Alt: the other colour\nPause: toggle"
   end)
 
   if wa.on.draw then
+    local tip, tip_frame = Effects.new(), nil
     local function quad(sprite, x, y, w, h, angle, colour, blend, depth, frame)
       local c, s = wa.math.cos(angle or 0), wa.math.sin(angle or 0)
       local points = {}
@@ -225,9 +216,6 @@ function weapon.setup()
         for colour = 1, 2 do
           local p = pair[colour]
           if p then
-            -- PX's CAnimation draws the endpoint independently of CPortal's
-            -- linked/active state. Its alpha=50 is a percentage and draws the
-            -- image repeatedly, not a byte alpha that makes singles disappear.
             local angle = math.pi / 2 - wa.math.atan(p.nx, p.ny)
             quad(colour == 1 and "portal_orange.png" or "portal_blue.png", p.draw_x, p.draw_y,
               40, 100, angle, 0xFFFFFFFF, "add")
@@ -239,13 +227,21 @@ function weapon.setup()
       end
       effects:draw(quad)
       local worm = shared.current_worm()
+      local now = wa.world.frame()
+      local step = now ~= tip_frame
+      tip_frame = now
+      if step then tip:tick(wa.world.gravity()) end
       if worm and worm.weapon == ID and worm.aiming then
         local keys = wa.world.keys()
         local colour = chosen[worm.team] or 1
         if keys.ctrl or keys.alt then colour = 3 - colour end
-        quad("portal_gun_glow.png", worm.x, worm.y, 80, 80,
-          worm.facing * (0.5 - worm.aim) * math.pi, (100 << 24) | (colours[colour] & 0xFFFFFF), "add", 0x000CFFFF)
+        local angle = (1 - worm.aim) * math.pi
+        local dx, dy = math.sin(angle) * worm.facing, -math.cos(angle)
+        quad("portal_gun_glow.png", worm.x + dx * 18, worm.y + dy * 18, 80, 80,
+          math.atan(dy, dx), (100 << 24) | (colours[colour] & 0xFFFFFF), "add", 0x000CFFFF)
+        if step then tip:muzzle(worm.x + dx * 20, worm.y + dy * 20, colour, dx, dy) end
       end
+      tip:draw(quad)
     end)
   end
   shared.portal_air_aim = air_aim

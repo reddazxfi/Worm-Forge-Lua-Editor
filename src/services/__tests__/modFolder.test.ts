@@ -381,13 +381,13 @@ describe('isLuaFile', () => {
 });
 
 describe('a new mod is a bundle plus a profile', () => {
-  it('writes api_version 4, because the engine rejects anything else', () => {
+  it('writes api_version 5, because the engine rejects anything else', () => {
     // crates/weapons/src/components.rs:340:
-    //   "api_version {n} is not supported (need 4)"
+    //   "api_version {n} is not supported (need 5)"
     // The skeleton used to say 1, so every mod created here looked complete in
     // the editor and could not be loaded by the game at all.
     const toml = buildModManifest('bee', 'Bee', 'me', 'mod.lua');
-    expect(toml).toContain('api_version = 4');
+    expect(toml).toContain('api_version = 5');
   });
 
   it('is a format_version 2 bundle with exactly one feature component', () => {

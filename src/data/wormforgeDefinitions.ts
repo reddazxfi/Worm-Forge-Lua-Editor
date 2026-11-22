@@ -66,21 +66,21 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.sound',
     type: 'table',
-    description: 'Sound playback subsystem for spatial WAV effects and stock voices.',
+    description: 'Sound playback: spatial WAV effects, stock voices, and ambient sounds that belong to no object.',
     scope: 'global',
     example: 'wa.sound.play(worm, "sounds/boom.wav")',
   },
   {
     name: 'wa.draw',
     type: 'table',
-    description: 'Direct3D 9 GPU world-space quad, batched quad, ribbon and trail drawing inside wa.on.draw.',
+    description: 'Direct3D 9 GPU world-space quad, batched quad, ribbon, trail and weather-layer drawing inside wa.on.draw.',
     scope: 'global',
     example: 'wa.draw.quad({ points = { ... }, blend = "add" })',
   },
   {
     name: 'wa.hud',
     type: 'table',
-    description: 'HUD text lines, top-centre banners, FPS counter, weapon tray, and WA-styled text windows for presentation overlays.',
+    description: 'HUD text lines, top-centre banners, FPS counter, weapon tray, screen-space sprite/rect/text drawing, and WA-styled text windows for presentation overlays.',
     scope: 'global',
     example: 'wa.hud.message_top("WormForge Active", { to = "all" })',
   },
@@ -108,9 +108,16 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.crates',
     type: 'table',
-    description: 'Crate entity management subsystem for queries and iteration.',
+    description: 'Crate entity management subsystem: spawning, queries, iteration, and the round\'s crate odds and shares.',
     scope: 'global',
     example: 'local crates = wa.crates.all()',
+  },
+  {
+    name: 'wa.teams',
+    type: 'table',
+    description: 'Team actions and state: WA\'s own Surrender and whether a team has surrendered.',
+    scope: 'global',
+    example: 'if not wa.teams.surrendered(2) then wa.teams.surrender(2) end',
   },
   {
     name: 'wa.mines',
@@ -164,7 +171,7 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.panel',
     type: 'table',
-    description: "Weapon panel layout: read each placed weapon's position and move them mid-round (simulation only).",
+    description: "Weapon panel layout and a pack's own replacement panel: read or move placed weapons mid-round, replace WA's panel, read the mouse and pick weapons, or read WA's panel where it is on screen.",
     scope: 'global',
     example: 'local layout = wa.panel.layout()',
   },
@@ -192,7 +199,7 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.view',
     type: 'table',
-    description: 'Per-machine screen effects, such as world-space ripples. Presentation only.',
+    description: 'Per-machine screen effects: world-space ripples and disabling zoom. Presentation only.',
     scope: 'global',
     example: 'local r = wa.view.ripple({ x = 100, y = 200 })',
   },
@@ -216,13 +223,6 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
     description: 'Named draw depths; lower is nearer. Plain numbers, so wa.depth.OBJECTS - 1 sits just in front.',
     scope: 'global',
     example: 'wa.draw.quad({ points = pts, depth = wa.depth.OBJECTS })',
-  },
-  {
-    name: 'wa.world.sky',
-    type: 'number (-208)',
-    description: "The height WA drops things from, in px: the engine converts its native -0x00D00000 through units.rs once, so Lua reads -208, not -13631488.",
-    scope: 'global',
-    example: 'a.y = wa.world.sky',
   },
   {
     name: 'wa.msg',
@@ -369,6 +369,7 @@ export const BUILTIN_ENUMERATIONS: EnumDef[] = [
       { name: 'worm', value: 'worm', description: 'CLASS_WORM -- a live worm.' },
       { name: 'oil', value: 'oil', description: 'CLASS_OIL -- an oil drum.' },
       { name: 'grave', value: 'grave', description: 'CLASS_GRAVE -- a grave.' },
+      { name: 'arrow', value: 'arrow', description: 'CLASS_ARROW -- an arrow in flight.' },
       { name: 'land', value: 'land', description: 'CLASS_LAND -- terrain, not a destructible object.' },
       { name: 'object', value: 'object', description: 'The engine\'s catch-all: any class the match above does not name.' },
     ],
@@ -376,7 +377,7 @@ export const BUILTIN_ENUMERATIONS: EnumDef[] = [
   {
     name: 'WormEntity.state_label',
     description:
-      'What `worm.state_label` returns: the engine\'s 28-name DEBUG label table, generated from `label()` in crates/game/src/worm_state.rs. It is a SUPERSET of neither `worm.state` (READABLE_WORM_STATES, 26 names) nor `worm:set_state(...)` (SETTABLE_WORM_STATES, 6 names). Do not use it to validate a set_state argument -- only the settable list may be enforced. Derived from WORM_STATES so it cannot drift from the engine table.',
+      'What `worm.state_label` returns: the engine\'s 32-name DEBUG label table, generated from `label()` in crates/game/src/worm_state.rs. It is a SUPERSET of neither `worm.state` (READABLE_WORM_STATES, 31 names) nor `worm:set_state(...)` (SETTABLE_WORM_STATES, 5 names). Do not use it to validate a set_state argument -- only the settable list may be enforced. Derived from WORM_STATES so it cannot drift from the engine table.',
     values: WORM_STATES.map((s) => ({
       name: s.name,
       value: s.name,
@@ -439,8 +440,15 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     name: 'wa.world.view',
     parameters: [],
     returnType: 'table',
-    description: "Returns the camera's centre in the world, the screen's size, and this machine's zoom: `{ cx, cy, w, h, zoom }` (1 = none; the screen then shows w / zoom by h / zoom of the world, about the centre). The zoom is the player's own and differs between peers: use it for drawing, never for anything the simulation reads.",
+    description: "Returns the camera's centre in the world, the screen's size, and this machine's zoom: `{ cx, cy, w, h, zoom }` (1 = none; the screen then shows w / zoom by h / zoom of the world, about the centre). The zoom is the player's own and differs between peers: use it for drawing, never for anything the simulation reads. Inside `wa.on.draw` or `wa.on.hud` only.",
     example: 'local v = wa.world.view()',
+  },
+  {
+    name: 'wa.world.sky',
+    parameters: [],
+    returnType: 'number',
+    description: "The height WA drops things from, in px: the engine converts its native -0x00D00000 through units.rs once, so Lua reads -208, not -13631488. A function like the rest of wa.world; any callback.",
+    example: 'a.y = wa.world.sky()',
   },
   {
     name: 'wa.world.pointer',
@@ -453,7 +461,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     name: 'wa.world.keys',
     parameters: [],
     returnType: 'table',
-    description: "The synced keys: `{ left, right, up, down, jump, shift, q, space, ctrl, plus_key, minus_key, alt, pause_key, tab, digit }` (sprint is shift's old name). None is held while the chat box or the Esc menu is open, or WA isn't the window in front.",
+    description: "The synced keys: `{ left, right, up, down, jump, shift, q, space, ctrl, plus_key, minus_key, alt, pause_key, tab, digit }`. None is held while the chat box or the Esc menu is open, or WA isn't the window in front.",
     example: 'local k = wa.world.keys()\nif k.q then ... end',
   },
   {
@@ -604,7 +612,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.land.cut',
     parameters: [
-      { name: 'spec', type: 'table', description: '{ x = int, y = int, shape = "circle" | "drill" | "torch", radius = int (1..200), facing = -1 | 1, angle = number (-1..1) } -- x/y in px' },
+      { name: 'spec', type: 'table', description: '{ x = int, y = int, shape = "circle" | "drill" | "torch" | "sprite", radius = int (1..200), facing = -1 | 1, angle = number (-1..1), sprite = string, frame = int } -- x/y in px; the sprite shape cuts its opaque pixels' },
     ],
     returnType: 'void',
     description: "Cuts the land: a round hole (radius 1..200), WA's drill shape, or its blowtorch tunnel (facing ±1, angle −1..1) (simulation callback only). This replaced the removed wa.land.dig.",
@@ -613,7 +621,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.land.stamp',
     parameters: [
-      { name: 'spec', type: 'table', description: '{ sprite = string, frame = int, x = int, y = int }' },
+      { name: 'spec', type: 'table', description: '{ sprite = string, frame = int, x = int, y = int, buried = { soften = 1..32, blend = "dither" | "mix" }, true_colour = bool | { blend = 0..1 } }' },
     ],
     returnType: 'void',
     description: 'Stamps a pack sprite sheet frame into landscape terrain collision and picture (simulation callback only).',
@@ -621,7 +629,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   },
   {
     name: 'wa.worms.all',
-    parameters: [{ name: 'near', type: 'table', optional: true, description: '{ x, y, r } -- only worms within r px of (x, y), in the same order' }],
+    parameters: [{ name: 'args', type: 'table | entity', optional: true, description: '{ near = { x, y, r }, from = entity } -- near filters by distance; from walks from that entity instead of the match root. A bare entity is from.' }],
     returnType: 'table',
     description: 'Every worm in the match; with near, only those within r pixels of (x, y), in the same order. near comes after 0.9.61.',
     example: 'for _, w in ipairs(wa.worms.all()) do ... end',
@@ -635,14 +643,14 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   },
   {
     name: 'wa.crates.all',
-    parameters: [{ name: 'near', type: 'table', optional: true, description: '{ x, y, r } -- only those within r px of (x, y), in the same order' }],
+    parameters: [{ name: 'args', type: 'table | entity', optional: true, description: '{ near = { x, y, r }, from = entity } -- near filters by distance; from walks from that entity instead of the match root. A bare entity is from.' }],
     returnType: 'table',
     description: 'Returns array of all active crate objects (WorldHandle) in the world.',
     example: 'for _, crate in ipairs(wa.crates.all()) do ... end',
   },
   {
     name: 'wa.mines.all',
-    parameters: [{ name: 'near', type: 'table', optional: true, description: '{ x, y, r } -- only those within r px of (x, y), in the same order' }],
+    parameters: [{ name: 'args', type: 'table | entity', optional: true, description: '{ near = { x, y, r }, from = entity } -- near filters by distance; from walks from that entity instead of the match root. A bare entity is from.' }],
     returnType: 'table',
     description: 'Returns array of all active landmine objects (WorldHandle) in the world.',
     example: 'for _, mine in ipairs(wa.mines.all()) do\n  mine:arm(1000)\nend',
@@ -650,7 +658,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.mines.spawn',
     parameters: [
-      { name: 'spec', type: 'table', description: '{ owner = <worm|actor>, x, y, vx, vy, fuse, arm, damage, radius, dud_proof, triggered, terrain_keep_speed_pct, on_bump } -- x/y in px; speeds in px/frame; fuse/arm in ms; radius in px; terrain_keep_speed_pct 0..1000' },
+      { name: 'spec', type: 'table', description: '{ owner = <worm|actor>, x, y, vx, vy, fuse, arm, damage, radius, dud_proof, triggered, terrain_keep_speed_pct, on_contact } -- x/y in px; speeds in px/frame; fuse/arm in ms; radius in px; terrain_keep_speed_pct 0..1000' },
     ],
     returnType: 'WorldHandle',
     description: "Builds one of WA's mines, as Project X's new CMine: WA flies, arms, triggers and explodes it as its own. A worm owner's team lays it; an actor's mine is the map's. Simulation callbacks only.",
@@ -658,14 +666,14 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   },
   {
     name: 'wa.missiles.all',
-    parameters: [{ name: 'near', type: 'table', optional: true, description: '{ x, y, r } -- only those within r px of (x, y), in the same order' }],
+    parameters: [{ name: 'args', type: 'table | entity', optional: true, description: '{ near = { x, y, r }, from = entity } -- near filters by distance; from walks from that entity instead of the match root. A bare entity is from.' }],
     returnType: 'table',
     description: 'Returns array of all active in-flight missile objects (WorldHandle) in the world.',
     example: 'for _, m in ipairs(wa.missiles.all()) do ... end',
   },
   {
     name: 'wa.oil.all',
-    parameters: [{ name: 'near', type: 'table', optional: true, description: '{ x, y, r } -- only those within r px of (x, y), in the same order' }],
+    parameters: [{ name: 'args', type: 'table | entity', optional: true, description: '{ near = { x, y, r }, from = entity } -- near filters by distance; from walks from that entity instead of the match root. A bare entity is from.' }],
     returnType: 'table',
     description: 'Returns array of all active oil drum / barrel objects (WorldHandle) in the world.',
     example: 'for _, drum in ipairs(wa.oil.all()) do\n  drum:hit(50, 0, 0)\nend',
@@ -681,7 +689,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   },
   {
     name: 'wa.graves.all',
-    parameters: [{ name: 'near', type: 'table', optional: true, description: '{ x, y, r } -- only those within r px of (x, y), in the same order' }],
+    parameters: [{ name: 'args', type: 'table | entity', optional: true, description: '{ near = { x, y, r }, from = entity } -- near filters by distance; from walks from that entity instead of the match root. A bare entity is from.' }],
     returnType: 'table',
     description: 'Returns array of all active gravestone objects (WorldHandle) in the world.',
     example: 'for _, grave in ipairs(wa.graves.all()) do ... end',
@@ -689,15 +697,16 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.actors.spawn',
     parameters: [
-      { name: 'spec', type: 'table', description: 'Spawn configuration: body = { shape, hits, hit_by, pushed_by }, sprite, x, y, vx, vy, from, origin, owner, gravity, damage_terrain, damage_worms, drown, persist, visible, loop, on_explode, on = { frame, land, hit, contact, bump }' }
+      { name: 'spec', type: 'table', description: 'Spawn configuration: body = { physics, shape, hits, hit_by, pushed_by, layer, mask }, sprite, x, y, vx, vy, origin, owner, gravity, damage_terrain, damage_worms, drown, persist, visible, loop, magnetic, cursor, explode, on = { frame, land, hit, touched, contact }' }
     ],
     returnType: 'ActorHandle',
-    description: "Creates a native WA actor. body chooses its outline, outgoing movement, incoming attackers and how hard what runs into it pushes it, independently. owner is a worm or actor; left out, a simulation callback's own worm or actor. owner = \"none\" spawns an actor of no team. Simulation callbacks only. Returns the spawned ActorHandle.",
+    description: "Creates a native WA actor. An actor has only what its spawn names: no gravity, collision, looping, drowning or persisting otherwise, with a brain or without. body chooses its outline, outgoing movement, incoming attackers, how hard what runs into it pushes it, its collision layer and the mask it stamps. owner is a worm or actor; left out, a simulation callback's own worm or actor. owner = \"none\" spawns an actor of no team. A spawn's kind, from, on_explode and the old collide*/mask*/shape/as_object keys are errors. Simulation callbacks only. Returns the spawned ActorHandle.",
     example: `local a = wa.actors.spawn({
   sprite = "sprites/blade.png",
   origin = "center",
-  gravity = false,
+  gravity = 1,
   owner = worm,
+  body = { shape = "worm", hits = { land = true }, hit_by = "all" },
   on = function(a, ev)
     a:move({ terrain = true })
   end,
@@ -705,17 +714,10 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   },
   {
     name: 'wa.actors.all',
-    parameters: [{ name: 'near', type: 'table', optional: true, description: '{ x, y, r } -- only actors within r px of (x, y), in the same order' }],
+    parameters: [{ name: 'args', type: 'table', optional: true, description: '{ near = { x, y, r } } -- only actors within r px of (x, y). wa.actors.all takes no from.' }],
     returnType: 'table',
     description: 'Every live actor; with near, only those within r pixels of (x, y), in the same order. near comes after 0.9.61.',
     example: 'for _, a in ipairs(wa.actors.all()) do ... end',
-  },
-  {
-    name: 'wa.actors.kind',
-    parameters: [{ name: 'name', type: 'string', description: 'Actor type name' }],
-    returnType: 'int',
-    description: "The numeric kind for a pack's actor type name.",
-    example: 'local kind = wa.actors.kind("sentry")',
   },
   {
     name: 'wa.cursor.spawn',
@@ -729,7 +731,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.weapons.replace',
     parameters: [
-      { name: 'spec', type: 'table', description: 'The claim (id, name, copy_from, panel_icon, icon, actor, is_weapon, eat_fire, click_finish, fire_repeat, …), plus the record groups fires, handling, missile, clusters, mine, gun, strike, jet_pack and raw. Every key is listed under Tables → wa.weapons.replace.' }
+      { name: 'spec', type: 'table', description: 'The claim (id, name, copy_from, panel_icon, icon, hold_as, is_weapon, eat_fire, click_finish, fire_repeat, …), plus the record groups fires, handling, missile, clusters, mine, gun, strike, jet_pack and raw. Every key is listed under Tables → wa.weapons.replace.' }
     ],
     returnType: 'void',
     description: "In a weapon component's install: claims the weapon's own slot and gives it this record, art and behaviour. It names no slot. `patch` and the old flat damage/blast keys are hard errors in Lua API 4 -- name the record fields instead.",
@@ -743,19 +745,8 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
 })`,
   },
   {
-    name: 'wa.weapons.register',
-    parameters: [{ name: 'spec', type: 'table', description: '{ id, based_on, name, [panel_icon], ... }' }],
-    returnType: 'void',
-    description: "The older form: registers a named weapon that maps onto a stock based_on slot. A bundle's weapon uses wa.weapons.replace.",
-    example: `wa.weapons.register({
-  id = "my_pack.super_missile",
-  based_on = "bazooka",
-  name = "Super Missile",
-})`,
-  },
-  {
     name: 'wa.weapons.retarget',
-    parameters: [{ name: 'spec', type: 'table', description: '{ weapon, sprite, cluster } -- sprite and cluster are WA sprite names' }],
+    parameters: [{ name: 'spec', type: 'table', description: '{ weapon, sprite, cluster_sprite } -- sprite and cluster_sprite are WA sprite names' }],
     returnType: 'void',
     description: "Swaps a placed weapon's flight sprite and cluster sprite (WA sprite names) at runtime.",
     example: 'wa.weapons.retarget({ weapon = "bazooka", sprite = "banana" })',
@@ -818,9 +809,18 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'wa.sound.play(worm, "soundbank/Kamikaze/Collect")',
   },
   {
+    name: 'wa.sound.ambient',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ path, volume = 1, fade_ms = 0, loop = true } -- path is a pack WAV; volume 0..1; fade_ms 0..60000' },
+    ],
+    returnType: 'AmbientHandle',
+    description: "Plays a pack WAV that belongs to no object: full width whatever the camera, no pan and no distance, looping unless loop = false, fading in over fade_ms. At most 8 at once; a ninth ends the oldest, and it ends with the match. Presentation only, so any callback may start one. The Weather add-on's rain uses it.",
+    example: 'local h = wa.sound.ambient({ path = "sounds/rain.wav", volume = 0.6 })',
+  },
+  {
     name: 'wa.draw.quad',
     parameters: [
-      { name: 'spec', type: 'table', description: '{ points = { {x, y}, {x, y}, {x, y}, {x, y} }, color = 0xAARRGGBB | colors = { c1, c2, c3, c4 }, sprite = "name", [frame = int], [blend = "alpha"|"add"], [depth = int] }' }
+      { name: 'spec', type: 'table', description: '{ points = { {x, y}, {x, y}, {x, y}, {x, y} }, color = 0xAARRGGBB | colors = { c1, c2, c3, c4 }, sprite = "name", frame = int, blend = "alpha"|"add", depth = int, uv = { u0, v0, u1, v1 }, visibility = worm }' }
     ],
     returnType: 'void',
     description: 'Issues world-space GPU quad each rendered frame inside wa.on.draw.',
@@ -829,7 +829,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.draw.ribbon',
     parameters: [
-      { name: 'spec', type: 'table', description: '{ points = { { x, y, width, color, u }, ... }, sprite = "name", [frame = int], [blend = "alpha"|"add"], [depth = int] }' }
+      { name: 'spec', type: 'table', description: '{ points = { { x, y, width, color, u }, ... }, sprite = "name", frame = int, blend = "alpha"|"add", depth = int, visibility = worm }' }
     ],
     returnType: 'void',
     description: 'Draws a continuous textured GPU ribbon with smooth miter joints inside wa.on.draw.',
@@ -850,15 +850,75 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'local t = wa.draw.fraction()\nlocal x = c.x + c.vx * t',
   },
   {
-    name: 'wa.hud.line',
+    name: 'wa.draw.tiles',
     parameters: [
-      { name: 'text', type: 'string', description: 'Text string to display' },
-      { name: 'x', type: 'int', optional: true, description: 'Screen X offset (default 14)' },
-      { name: 'y', type: 'int', optional: true, description: 'Screen Y offset (default auto-stacked)' },
+      { name: 'spec', type: 'table', description: '{ sprite, frame, thin, depth, blend, size, x, y, slant, color, view, from, fade, to } -- size at least 1 px; view is a world rectangle; frame -1 draws none' }
     ],
     returnType: 'void',
-    description: 'Pushes a text line onto the HUD overlay during wa.on.hud callback.',
-    example: 'wa.hud.line("Score: " .. score, 14, 30)',
+    description: "A lattice of square tiles size pixels wide with a corner at (x, y), each row slant pixels across per pixel down, over view: the Weather add-on's rain. One tile in thin (by its place) shows the frame before frame. No tile above from (fading in over fade pixels below it) or below to; a tile across either line shows the part between them. Inside wa.on.draw.",
+    example: 'wa.draw.tiles({ sprite = "sprites/rain", size = 8, x = 0, y = -40, slant = 2, view = view })',
+  },
+  {
+    name: 'wa.draw.flakes',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ sprite, frames = { a, b }, depth, blend, cell, size, sway, alpha, x, y, drift, fall, classes = { factors }, seed, keep, now, view, from, fade } -- cell and size in px; alpha 0..255; keep of 65536' }
+    ],
+    returnType: 'void',
+    description: "Flakes scattered over view, one class of lattice per factor in classes, each class's lattice at (x + drift x factor, y + fall x factor), cell pixels a cell. A cell holds a flake when its hash's top half is under keep (of 65536); the hash also sets its place in the cell, its sway, size (size is half a flake) and alpha (up to alpha), and which of the two frames it shows. Flakes fade in over fade pixels under from. Inside wa.on.draw.",
+    example: 'wa.draw.flakes({ sprite = "sprites/snow", frames = { 0, 1 }, cell = 24, size = 3, view = view })',
+  },
+  {
+    name: 'wa.draw.puffs',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ sprite, frame, depth, blend, y, rows, spacing, gap, drift, now, color, alpha, view } -- spacing at least 1 px; alpha 0..1' }
+    ],
+    returnType: 'void',
+    description: "The Weather add-on's band of clouds: rows rows of puffs gap pixels apart from y down, spacing pixels apart along a row, drifted by drift, breathing with now, over the view's width; each puff color (0xRRGGBB) at up to alpha. Inside wa.on.draw.",
+    example: 'wa.draw.puffs({ sprite = "sprites/cloud", rows = 3, y = 20, spacing = 120, gap = 40, view = view })',
+  },
+  {
+    name: 'wa.hud.line',
+    parameters: [
+      { name: 'text', type: 'string', description: 'Text of at most 1023 bytes; `\\n` starts a new line, and a line wider than the screen wraps at a space' },
+      { name: 'opts', type: 'table', optional: true, description: '{ font = "standard", color = "white" } -- font small, standard or medium; color white, grey, red, blue, green, yellow, purple or cyan' },
+    ],
+    returnType: 'void',
+    description: "Writes down the screen's left side from the top (14, 10, under WA's chat bar as it opens), each call under the last. Inside wa.on.hud only. Presentation only; needs WA's Direct3D 9 renderer.",
+    example: 'wa.hud.line("Score: " .. score, { font = "medium", color = "yellow" })',
+  },
+  {
+    name: 'wa.hud.size',
+    parameters: [],
+    returnType: 'int, int',
+    description: "The screen's width and height in pixels (0, 0 before the first frame is drawn). Inside wa.on.hud or wa.on.draw only.",
+    example: 'local w, h = wa.hud.size()',
+  },
+  {
+    name: 'wa.hud.sprite',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ sprite, frame = 0, x, y, part = { x, y, w, h }, color = 0xFFFFFFFF } -- screen px; part is whole pixels from the frame\'s top-left' }
+    ],
+    returnType: 'void',
+    description: 'Draws one frame of a GPU sheet at 1:1 on the screen, its top-left at (x, y), optionally clipped to part. Inside wa.on.hud only; at most 4096 HUD draws a frame in all packs together.',
+    example: 'wa.hud.sprite({ sprite = "sprites/icon", x = 8, y = 8 })',
+  },
+  {
+    name: 'wa.hud.rect',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ x, y, w, h, color = 0xFFFFFFFF } -- screen px' }
+    ],
+    returnType: 'void',
+    description: 'Draws a filled screen-space rectangle. Inside wa.on.hud only.',
+    example: 'wa.hud.rect({ x = 0, y = 0, w = 120, h = 24, color = 0x80000000 })',
+  },
+  {
+    name: 'wa.hud.text',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ text, x, y, font = "standard", color = "white", align = "left" } -- text is at most 255 bytes; `\\n` starts a line under it; font small, standard or medium; align left, center or right' }
+    ],
+    returnType: 'void',
+    description: 'Draws text in WA\'s font on the screen. x is the text\'s left, middle or right according to align, and y its top; `\\n` starts a line under it. Inside wa.on.hud only.',
+    example: 'wa.hud.text({ text = "Turn 3", x = 8, y = 8, font = "medium" })',
   },
   {
     name: 'wa.hud.message_top',
@@ -921,7 +981,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.perf.enable',
     parameters: [
-      { name: 'opts', type: 'table', optional: true, description: '{ profile = bool, packs = bool, spikes = bool, natives = bool }' }
+      { name: 'opts', type: 'table', optional: true, description: '{ profile = bool, packs = bool, spikes = bool, natives = bool, every = 1..60 } -- every is seconds between reports' }
     ],
     returnType: 'void',
     description: 'Profiler in wkLua.log. Diagnostics builds only; natives comes after 0.9.61. Up to 0.9.7 it also took counter, the FPS counter, now wa.hud.fps_counter.',
@@ -937,46 +997,42 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'local inv = wa.inventory.create({ id = "loot", slots = { "bazooka", "grenade" } })',
   },
   {
+    name: 'wa.on.skim',
+    parameters: [{ name: 'callback', type: 'function', description: 'function(event) - event.worm is the worm that skimmed across water' }],
+    returnType: 'void',
+    description: 'Fires when a worm skims (skips) across water.',
+    example: 'wa.on.skim(function(event)\n  wa.log(event.worm.id)\nend)',
+  },
+  {
     name: 'wa.on.turn_retreat',
-    parameters: [{ name: 'callback', type: 'function', description: 'function(worm) - worm is the active worm when it retreats' }],
+    parameters: [{ name: 'callback', type: 'function', description: 'function(event) - event.worm / event.active is the active worm when it retreats; {} when it is gone' }],
     returnType: 'void',
     description: 'Hook fired when the active worm retreats, ending its turn early.',
-    example: 'wa.on.turn_retreat(function(worm)\n  -- worm used its retreat\nend)',
+    example: 'wa.on.turn_retreat(function(event)\n  -- event.worm used its retreat\nend)',
   },
   {
     name: 'wa.on.turn_end',
-    parameters: [{ name: 'callback', type: 'function', description: 'function(worm) - worm is the active worm, or nil when it is gone' }],
+    parameters: [{ name: 'callback', type: 'function', description: 'function(event) - event.worm / event.active is the active worm; event is {} (never nil) when it is gone' }],
     returnType: 'void',
     description: 'When the turn ends (after the retreat), on the frame WA ends it, before WA waits for everything to settle. A turn whose worm is gone (a Kamikaze off the map) gets it then too, with no worm. A worm switch within the turn (Tab, Select Worm) does not end it.',
-    example: 'wa.on.turn_end(function(worm)\n  -- turn is over\nend)',
+    example: 'wa.on.turn_end(function(event)\n  if event.worm then -- turn is over\n  end\nend)',
   },
   {
     name: 'wa.on.turn_cleanup',
-    parameters: [{ name: 'callback', type: 'function', description: 'function(worm) - worm is the active worm during turn cleanup' }],
+    parameters: [{ name: 'callback', type: 'function', description: 'function(event) - event.worm / event.active is the active worm during turn cleanup' }],
     returnType: 'void',
     description: 'Hook fired during turn cleanup, after turn_end, for final per-turn bookkeeping.',
-    example: 'wa.on.turn_cleanup(function(worm)\n  -- safe to reset per-turn state\nend)',
-  },
-  {
-    name: 'wa.on.gravity_before',
-    parameters: [{ name: 'callback', type: 'function', description: 'function(m) - m is motion table, modify damp, wind_scale, gravity_scale' }],
-    returnType: 'void',
-    description: 'Hook executed immediately before projectile gravity, wind, and damping calculation.',
-    example: 'wa.on.gravity_before(function(m)\n  m.wind_scale = 0\nend)',
-  },
-  {
-    name: 'wa.on.gravity_after',
-    parameters: [{ name: 'callback', type: 'function', description: 'function(m) - m is motion table, modify vx, vy, x, y' }],
-    returnType: 'void',
-    description: 'Hook executed immediately after projectile gravity calculation to adjust velocity or position.',
-    example: 'wa.on.gravity_after(function(m)\n  m.vx = m.vx * 2\nend)',
+    example: 'wa.on.turn_cleanup(function(event)\n  -- safe to reset per-turn state\nend)',
   },
   {
     name: 'wa.on.missile_frame',
-    parameters: [{ name: 'callback', type: 'function', description: 'function(m) - m has id, weapon, sprite, collision_mask, msg, phase; x/y in px, vx/vy in px/frame, damp/wind_scale/gravity_scale as factors (1.0 = normal)' }],
+    parameters: [
+      { name: 'callback', type: 'function', description: 'function(m) - m has id, weapon, sprite, collision_mask, msg, phase; x/y in px, vx/vy in px/frame, damp/wind_scale/gravity_scale as factors (1.0 = normal)' },
+      { name: 'opts', type: 'table', optional: true, description: '{ weapons = { weapon ids }, phase = "pre" | "post" } -- only those missiles, and only that phase; either may be left out' },
+    ],
     returnType: 'void',
-    description: 'Ticked every frame for active in-flight projectiles. Inspects physics and writing m.sprite to dynamically swap or hide flight graphics (e.g. m.sprite = 0).',
-    example: 'wa.on.missile_frame(function(m)\n  if m.weapon == "chilli_bomb" then m.sprite = 0 end\nend)',
+    description: 'Ticked every frame for active in-flight projectiles. Inspects physics and writing m.sprite to dynamically swap or hide flight graphics (e.g. m.sprite = 0). Options skip Lua for a missile no handler wants. m.id is the missile\'s body id, the same on every machine and never reused; m.weapon is the id of the weapon it was fired from.',
+    example: 'wa.on.missile_frame(function(m)\n  if m.weapon == "chilli_bomb" then m.sprite = 0 end\nend, { weapons = { "px.chilli_bomb" }, phase = "post" })',
   },
   {
     name: 'wa.on.worm_message',
@@ -1014,7 +1070,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     parameters: [{ name: 'callback', type: 'function', description: 'function() called once per rendered frame for HUD overlay' }],
     returnType: 'void',
     description: 'Runs during HUD rendering pass to output text via wa.hud.line.',
-    example: 'wa.on.hud(function()\n  wa.hud.line("Game Active", 14, 20)\nend)',
+    example: 'wa.on.hud(function()\n  wa.hud.line("Game Active", { font = "medium" })\nend)',
   },
   {
     name: 'wa.on.draw',
@@ -1074,10 +1130,62 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   },
   {
     name: 'wa.crates.spawn',
-    parameters: [{ name: 'spec', type: 'table', description: '{ x, y, kind = "weapon"|"utility"|"health", health, drop = "chute"|"teleport"|"none" }' }],
+    parameters: [{ name: 'spec', type: 'table', description: '{ x, y, kind = "weapon"|"utility"|"health", health, drop = "chute"|"teleport"|"none", contents = "<weapon id>", amount } -- amount -1 infinite to 99' }],
     returnType: 'WorldHandle | nil',
-    description: 'Builds one of WA\'s crates: weapon, utility or health, dropped by chute, teleport or none. Simulation callbacks only. Returns the crate, or nil on error.',
-    example: 'local c = wa.crates.spawn({ x = w.x, y = w.y, kind = "weapon", health = 25, drop = "teleport" })',
+    description: 'Builds one of WA\'s crates: weapon, utility or health, dropped by chute, teleport or none. A weapon or utility crate holds WA\'s draw from the match\'s crate deck; contents gives it that weapon instead. Simulation callbacks only. Returns the crate, or nil on error.',
+    example: 'local c = wa.crates.spawn({ x = w.x, y = w.y, kind = "weapon", drop = "teleport" })',
+  },
+  {
+    name: 'wa.crates.set_drop',
+    parameters: [
+      { name: 'how', type: 'string | bool', description: "\"pop\", or false for WA's own drops" },
+      { name: 'spec', type: 'table', optional: true, description: '{ pitch = 0..12, height = 0..100 | { min = 0..100, max = 0..100 } } -- semitones and pixels above the land; both default to 0' },
+    ],
+    returnType: 'void',
+    description: "Makes WA's own crates (the turn drop and Crate Shower) pop in for the rest of the match, instead of arriving by parachute or teleport: WA walks each down onto the land with a puff and the stock CratePop. height lifts it that far above the land, or a deterministic range per crate; pitch plays each pop at a random pitch up to that many semitones either way. set_drop(false) restores the stock drops; each round starts with them. From an install or a simulation callback, never wa.on.draw / wa.on.hud. Crates from wa.crates.spawn and donor cards are unchanged.",
+    example: 'wa.crates.set_drop("pop", { pitch = 3, height = { min = 30, max = 50 } })',
+  },
+  {
+    name: 'wa.crates.odds',
+    parameters: [],
+    returnType: 'table',
+    description: 'Each kind\'s chance per turn drop in %: { weapon, health, utility, none }. Reads work in any callback.',
+    example: 'local odds = wa.crates.odds()',
+  },
+  {
+    name: 'wa.crates.set_odds',
+    parameters: [{ name: 'spec', type: 'table', description: '{ weapon, health, utility } -- whole %, 100 at most together; a kind left out is 0, the rest of 100 no crate' }],
+    returnType: 'void',
+    description: 'Deals WA a new deck of 100 turn drops, so the next drop draws from it. Lasts until the round ends. Simulation callbacks only.',
+    example: 'wa.crates.set_odds({ weapon = 60, health = 25, utility = 15 })',
+  },
+  {
+    name: 'wa.crates.shares',
+    parameters: [],
+    returnType: 'table',
+    description: 'By kind (weapon, super, utility), every weapon a crate may bring now and its % of that kind\'s crates, as WA\'s draw has it. Reads work in any callback.',
+    example: 'local shares = wa.crates.shares()',
+  },
+  {
+    name: 'wa.crates.set_shares',
+    parameters: [{ name: 'spec', type: 'table', description: '{ ["<weapon id>"] = pct } -- pct 0..100, or false to return the weapon to sharing the rest' }],
+    returnType: 'void',
+    description: 'Sets weapons\' shares of their kind\'s crates as a profile\'s crate_pct does; the others of the kind share the rest by their round-start weights. Spawned, mystery and Crate Shower crates go by the new shares from then on. Lasts until the round ends. Simulation callbacks only.',
+    example: 'wa.crates.set_shares({ ["px.javelin"] = 40, ["stock.bazooka"] = false })',
+  },
+  {
+    name: 'wa.teams.surrender',
+    parameters: [{ name: 'team', type: 'int', description: 'Team number 1 to 6 (worm.team)' }],
+    returnType: 'bool',
+    description: "WA's own Surrender for a team, on its turn or not. Simulation callbacks only. Returns whether the engine performed it.",
+    example: 'wa.teams.surrender(2)',
+  },
+  {
+    name: 'wa.teams.surrendered',
+    parameters: [{ name: 'team', type: 'int', description: 'Team number 1 to 6 (worm.team)' }],
+    returnType: 'bool | nil',
+    description: 'Whether a team has surrendered; nil outside a match. A read, so safe in any callback.',
+    example: 'if wa.teams.surrendered(2) then return end',
   },
   {
     name: 'wa.math.cos',
@@ -1139,7 +1247,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   },
   {
     name: 'wa.arrows.all',
-    parameters: [{ name: 'near', type: 'table', optional: true, description: '{ x, y, r } -- only arrows within r px of (x, y), in the same order' }],
+    parameters: [{ name: 'args', type: 'table | entity', optional: true, description: '{ near = { x, y, r }, from = entity } -- near filters by distance; from walks from that entity instead of the match root. A bare entity is from.' }],
     returnType: 'table',
     description: 'Every live arrow; with near, only those within r pixels of (x, y), in the same order. near comes after 0.9.61.',
     example: 'for _, ar in ipairs(wa.arrows.all()) do ... end',
@@ -1161,10 +1269,10 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.assets.load',
     parameters: [
-      { name: 'spec', type: 'table', description: '{ sprites = { "sprites/star.png", ... }, sounds = { "sounds/boom.wav", ... }, gpu_prefix = "sprites/" }' },
+      { name: 'spec', type: 'table', description: '{ sprites = { "sprites/star.png", ... }, sounds = { "sounds/boom.wav", ... }, gpu_prefix = "sprites/", wa_sprites = { "wbrth1", "worm" }, worm_glow = true | { radius = 1..16, pad = 0..40, gain = 0.1..8 } } -- wa_sprites names WA\'s own sprites (Gfx.dir names or the group "worm")' },
     ],
     returnType: 'void',
-    description: "Loads a component's own sprites and sounds on no weapon, from its install: how an add-on draws and plays its own art. Error outside an install (api.rs:312).",
+    description: "Loads a component's own sprites and sounds on no weapon, from its install: how an add-on draws and plays its own art. wa_sprites copies WA's own sprites in full colour with the match, so worm.tint has them at once; worm_glow sets the match's worm-glow shape and makes the placed weapons' worm poses glow with it. Error outside an install (api.rs:312).",
     example: 'wa.assets.load({ sprites = { "sprites/star.png" }, gpu_prefix = "sprites/" })',
   },
   {
@@ -1182,6 +1290,41 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'wa.panel.set_layout({ ["px.javelin"] = { row = "F3", column = 3 } })',
   },
   {
+    name: 'wa.panel.replace',
+    parameters: [],
+    returnType: 'bool',
+    description: "Keeps WA's own weapon panel shut for the rest of the match, so the pack draws its own in wa.on.hud. The right click is the pack's. Any callback. False when this DLL can't take WA's panel away or this machine can't draw a panel; it may differ between machines, so the simulation never depends on it.",
+    example: 'wa.panel.replace()',
+  },
+  {
+    name: 'wa.panel.mouse',
+    parameters: [],
+    returnType: 'table',
+    description: "This machine's cursor on the screen and the clicks since the last HUD frame: { x, y, left, right }. Inside wa.on.hud only.",
+    example: 'local m = wa.panel.mouse()',
+  },
+  {
+    name: 'wa.panel.capture',
+    parameters: [],
+    returnType: 'void',
+    description: "This HUD frame, and until the next, the mouse is the pack's. Only has an effect after wa.panel.replace(). Inside wa.on.hud only.",
+    example: 'wa.panel.capture()',
+  },
+  {
+    name: 'wa.panel.select',
+    parameters: [{ name: 'weapon', type: 'string', description: 'Placed weapon id' }],
+    returnType: 'bool',
+    description: "Picks the weapon for this machine's turn team, as a click on WA's panel does. Only has an effect after wa.panel.replace(). Inside wa.on.hud only. Returns whether the pack's pick could be made.",
+    example: 'wa.panel.select("px.javelin")',
+  },
+  {
+    name: 'wa.panel.stock',
+    parameters: [],
+    returnType: 'table | nil',
+    description: "WA's own panel on this machine's screen this HUD frame, for a pack that draws over it: nil while it is shut, else { x, y, w, h, open, opened, cells } in screen pixels. x, y, w, h is the panel as its slide has it this frame; open is false while it slides shut; opened is the wall-clock seconds since it last began to open. Each cell is { weapon = id, x, y, size = 24 }. Inside wa.on.hud only; presentation only, nothing synchronized.",
+    example: 'local panel = wa.panel.stock()\nfor _, cell in ipairs(panel and panel.cells or {}) do ... end',
+  },
+  {
     name: 'wa.weapons.data',
     parameters: [{ name: 'weapon', type: 'string', description: "Weapon id: a placed weapon (px.javelin) or stock.<name>" }],
     returnType: 'table',
@@ -1191,7 +1334,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.weapons.fire_bullet',
     parameters: [
-      { name: 'spec', type: 'table', description: '{ weapon = "stock.shotgun", owner = worm, x = int, y = int, dx = number, dy = number, damage = int, ignore = entity } -- x/y in px; owner must be a living worm' },
+      { name: 'spec', type: 'table', description: '{ weapon = "stock.shotgun", owner = worm, x = int, y = int, dx = number, dy = number, damage = int, push_pct = int, ignore = { entity, ... } } -- x/y in px; dx/dy is the direction; ignore is a list of bodies to pass through; owner must be a living worm' },
     ],
     returnType: 'void',
     description: "Fires one native hitscan round from a point, as WA's shotgun, handgun, uzi or minigun (weapon = stock.<name>, a template). Simulation callbacks only.",
@@ -1350,7 +1493,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.draw.trail',
     parameters: [
-      { name: 'spec', type: 'table', description: '{ sprite, width, glow, glow_width, color, max = 12, shed = 2, floor = 0.1, blend, depth }' },
+      { name: 'spec', type: 'table', description: '{ sprite, frame, width, glow, glow_width, color, max = 12, shed = 2, floor = 0.1, blend, depth, visibility = worm }' },
     ],
     returnType: 'TrailHandle',
     description: 'A ribbon the engine keeps and draws every frame, fed a point at a time from any callback: a trail behind a round. Point i of n (oldest first) is drawn at f = max(i / (n + 1), floor) of its width, u and colour; glow draws it again, wider. Finished, it sheds its oldest point every shed game frames. Since 0.9.62.',
@@ -1389,6 +1532,13 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'local r = wa.view.ripple({ x = 100, y = 200, amplitude = 8 })',
   },
   {
+    name: 'wa.view.disable_zoom',
+    parameters: [],
+    returnType: 'void',
+    description: 'Keeps the match at 1x for every player, whatever their zoom setting: the mouse wheel and the middle click leave the view alone. Any callback; a new match decides afresh.',
+    example: 'wa.view.disable_zoom()',
+  },
+  {
     name: 'wa.fog.shade',
     parameters: [
       { name: 'x', type: 'number', description: 'X in px' },
@@ -1405,38 +1555,32 @@ export const BUILTIN_CLASSES: ClassDef[] = [
   {
     name: 'LuaActor',
     description: 'Custom game entity with physics, animation, collision, and brain logic (ActorHandle).',
-    syntaxExample: 'local a = wa.actors.spawn({...})\na:gravity()\na:move({ terrain = true })',
+    syntaxExample: 'local a = wa.actors.spawn({...})\na.gravity = 1\na:move({ terrain = true })',
     members: [
-      { name: 'id', kind: 'property', returnType: 'int', description: 'Deterministic spawn sequence number' },
-      { name: 'kind', kind: 'property', returnType: 'string', description: 'Always "actor"' },
+      { name: 'id', kind: 'property', returnType: 'int', description: 'The body id in this match, shared with objects and missiles and counted from 0x100, so it never meets a worm\'s team * 16 + index. The same on every machine and never reused.' },
+      { name: 'kind', kind: 'property', returnType: 'string', description: 'Always "actor": what the handle is and which verbs it has. What an actor stands for is in what it declares (hit_by, body.layer, magnetic) and in the pack\'s own tables by a.id.' },
       { name: 'x', kind: 'variable', returnType: 'number', description: 'Position X in px' },
       { name: 'y', kind: 'variable', returnType: 'number', description: 'Position Y in px' },
       { name: 'vx', kind: 'variable', returnType: 'number', description: 'Velocity X in px/frame' },
       { name: 'vy', kind: 'variable', returnType: 'number', description: 'Velocity Y in px/frame' },
       { name: 'facing', kind: 'variable', returnType: 'int', description: 'Facing direction: -1 (left) or 1 (right) (writable)' },
+      { name: 'gravity', kind: 'variable', returnType: 'number', description: 'Gravity factor as worm.gravity: 1 normal, 0 none. A nonzero factor has WA move the actor. Writes need simulation callbacks.', example: 'a.gravity = 0.5' },
+      { name: 'visible', kind: 'variable', returnType: 'bool', description: 'Whether this machine draws the actor. Drawing only, so any callback may set it; the actor moves and collides as before.', example: 'a.visible = false' },
+      { name: 'camera', kind: 'variable', returnType: 'nil | bool | int', description: "This actor's camera requests: nil or false asks for nothing; a priority 0..13 asks for the camera at the actor every frame, as a WA object does. wa.camera.follow counts it as its owner's side. Any callback." },
       // `a:dig` is GONE in 0.9.1: no `dig` method exists anywhere in lua-host
       // (grep: zero hits) and no file in the new mods tree calls it -- the
       // engine's own note says "dig is cut's circle now". Suggesting it would
       // offer a method that reads as nil at run time.
       { name: 'collision_ignore', kind: 'method', parameters: [{ name: 'worm', type: 'WormHandle', description: 'Worm to pass through' }, { name: 'on', type: 'bool', description: 'true = ignore that worm' }], returnType: 'bool', description: "Lets one worm pass through the actor's body and mask (sim callback only). Returns whether it could be set.", example: 'a:collision_ignore(worm, true)' },
-      { name: 'cut', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ shape = "circle" | "drill" | "torch", radius = int, facing = -1|1, angle = number } -- px at the actor' }], returnType: 'void', description: 'Cuts the terrain where it is: wa.land.cut at the actor (sim callback only).', example: 'a:cut({ shape = "circle", radius = 20 })' },
       { name: 'explode', kind: 'method', parameters: [{ name: 'opts', type: 'table', optional: true, description: '{ damage = int, id = int, below = bool, at = "below" }' }], returnType: 'void', description: 'Detonates an explosion at actor coordinates.', example: 'a:explode({ damage = 40, id = 50 })' },
       { name: 'hit', kind: 'method', parameters: [{ name: 'damage', type: 'int', description: 'Damage, 0..10000' }, { name: 'vx', type: 'number', optional: true, description: 'Push X in px/frame' }, { name: 'vy', type: 'number', optional: true, description: 'Push Y in px/frame' }, { name: 'kind', type: 'string', optional: true, description: 'Hit kind (see Hit kinds); the Prod\'s when left out' }], returnType: 'bool', description: "Sends the actor WA's hit through its own handler, as a gun or a flame reaches it: body.hit_by filters it, and on.hit (or, without one, WA's push) takes it. Use it to hit an actor another pack spawned. Returns false when the actor is gone or refuses it. Simulation callbacks only. Since 0.9.83.", example: 'a:hit(25, 2, -1, "bullet")' },
-      { name: 'despawn', kind: 'method', parameters: [], returnType: 'void', description: 'Destroys this actor and frees native resources.', example: 'a:despawn()' },
-      { name: 'in_water', kind: 'method', parameters: [], returnType: 'bool', description: 'Tests if actor coordinates are submerged below water level.', example: 'if a:in_water() then a:despawn() end' },
+      { name: 'remove', kind: 'method', parameters: [], returnType: 'void', description: 'Removes this actor and frees its native resources (simulation callbacks only). It was a:despawn before 1.0.', example: 'a:remove()' },
+      { name: 'in_water', kind: 'method', parameters: [], returnType: 'bool', description: 'Tests if actor coordinates are submerged below water level.', example: 'if a:in_water() then a:remove() end' },
       { name: 'on_feet', kind: 'method', parameters: [], returnType: 'bool', description: 'Tests if actor is currently resting on solid ground.', example: 'if a:on_feet() then ... end' },
-      { name: 'gravity', kind: 'method', parameters: [], returnType: 'void', description: 'Applies world gravity to vy.', example: 'a:gravity()' },
-      { name: 'move', kind: 'method', parameters: [{ name: 'opts', type: 'table', optional: true, description: '{ terrain = bool, worms = bool }' }], returnType: 'table', description: 'Adds its speed to its position once and reports land under its feet: { terrain = bool, land = bool, left_ground = bool }. It is not WA\'s sweep: it does not stop at land, bounce or meet worms, and produces no bumps.', example: 'local hit = a:move({ terrain = true })' },
-      { name: 'advance', kind: 'method', parameters: [], returnType: 'void', description: 'Advances animation frame sequence.', example: 'a:advance()' },
-      { name: 'gfx', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ angle, scale, tint, depth, glow_of, follow } -- glow_of = worm makes it glow in that worm\'s place; follow = worm keeps it smooth with the worm between frames' }], returnType: 'void', description: "Sets several drawing fields at once. glow_of = worm: the actor is drawn in that worm's place (a vehicle hiding its body), so it glows behind it as worm.tint makes the worm glow; false ends it. follow = worm (since 0.9.83): art the pack puts at the worm every frame is drawn moved as the worm is drawn between frames. Drawing only.", example: 'a:gfx({ angle = 45, tint = 0xFF8000, glow_of = worm })' },
-      { name: 'angle', kind: 'method', parameters: [{ name: 'deg', type: 'float', description: 'Rotation in degrees' }], returnType: 'void', description: 'Sets hardware rotation angle.', example: 'a:angle(90)' },
-      { name: 'scale', kind: 'method', parameters: [{ name: 'factor', type: 'float', description: 'Scale factor (1.0 = native)' }], returnType: 'void', description: 'Sets vertex scale factor.', example: 'a:scale(1.5)' },
-      { name: 'tint', kind: 'method', parameters: [{ name: 'rgb', type: 'int', description: '0x00RRGGBB tint color' }], returnType: 'void', description: 'Applies vertex tinting.', example: 'a:tint(0xFF0000)' },
-      { name: 'blend', kind: 'method', parameters: [{ name: 'mode', type: 'string', description: '"normal" | "alpha" | "add" | "additive"' }], returnType: 'void', description: 'Sets blending mode.', example: 'a:blend("add")' },
-      { name: 'frame', kind: 'method', parameters: [{ name: 'index', type: 'int', description: '0-based frame index' }], returnType: 'void', description: 'Sets the active animation frame.', example: 'a:frame(3)' },
-      { name: 'look', kind: 'method', parameters: [{ name: 'spriteKey', type: 'string', description: 'Sprite key or pack relative path' }], returnType: 'void', description: 'Swaps current sprite graphic and resets phase.', example: 'a:look("sprites/flare.png")' },
-      { name: 'spawn', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: 'Child spawn spec table' }], returnType: 'ActorHandle', description: 'Spawns a child actor relative to this actor coordinates.', example: 'a:spawn({ x = a.x, y = a.y })' },
-      { name: 'sound', kind: 'method', parameters: [{ name: 'slot', type: 'int | string', description: 'WAV relative path or stock sound ID' }, { name: 'flags', type: 'int', optional: true, description: 'Flags (default 8)' }], returnType: 'void', description: 'Plays spatial sound effect.', example: 'a:sound("sounds/shot.wav")' },
+      { name: 'move', kind: 'method', parameters: [{ name: 'opts', type: 'table', optional: true, description: '{ terrain = bool, worms = bool }' }], returnType: 'table', description: 'Adds its speed to its position once and reports land under its feet: { terrain = bool, land = bool, left_ground = bool }. It is not WA\'s sweep: it does not stop at land, bounce or meet worms, and produces no bumps. Simulation callbacks only.', example: 'local hit = a:move({ terrain = true })' },
+      { name: 'gfx', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ angle, scale, tint, depth, glow_of, follow } -- glow_of = worm makes it glow in that worm\'s place; follow = worm keeps it smooth with the worm between frames' }], returnType: 'void', description: "Sets several drawing fields at once. It is the actor's one drawing setter: it replaced a:angle, a:scale, a:tint and a:blend. glow_of = worm: the actor is drawn in that worm's place (a vehicle hiding its body), so it glows behind it as worm.tint makes the worm glow; false ends it. follow = worm (since 0.9.83): art the pack puts at the worm every frame is drawn moved as the worm is drawn between frames. Drawing only.", example: 'a:gfx({ angle = 45, tint = 0xFF8000, glow_of = worm })' },
+      { name: 'frame', kind: 'method', parameters: [{ name: 'index', type: 'int', description: '0-based frame index' }], returnType: 'void', description: 'Sets the active animation frame (simulation callbacks only).', example: 'a:frame(3)' },
+      { name: 'look', kind: 'method', parameters: [{ name: 'spriteKey', type: 'string', description: 'Sprite key or pack relative path' }], returnType: 'void', description: 'Swaps current sprite graphic and resets phase (simulation callbacks only).', example: 'a:look("sprites/flare.png")' },
       { name: 'warp', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ x = number, y = number, vx = number, vy = number, facing = -1|1 } -- px positions, px/frame speeds; x/y required, speeds/facing optional' }], returnType: 'void', description: 'Atomically moves a live actor and wakes it (sim callback only). Omitted speeds retain momentum; facing is supported.', example: 'a:warp{ x = 100, y = 200 }' },
       { name: 'fits', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'Target X in px' }, { name: 'y', type: 'number', description: 'Target Y in px' }, { name: 'mode', type: 'string', optional: true, description: '"terrain" to test land only, else the actor\'s own collision mask' }], returnType: 'bool', description: "WA's collision test of the actor's shape at a place. A read, so safe outside a simulation callback.", example: 'if a:fits(x, y, "terrain") then a:warp{ x = x, y = y } end' },
       // Magnetism. A finite multiplier; 0 opts out.
@@ -1444,15 +1588,14 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'hits', kind: 'variable', returnType: 'table', description: 'Outgoing movement layers: { land, worms, mines, crates, objects, missiles }. Reads return booleans; writes need simulation callbacks.' },
       { name: 'hit_by', kind: 'variable', returnType: 'string | table', description: 'Incoming categories: "all" or { worms, missiles, arrows, mines, actors, bullets, melee, fire, dragon_ball, blasts }. Writes need simulation callbacks.' },
       { name: 'owner', kind: 'property', returnType: 'WormEntity | nil', description: 'The worm that spawned this actor, when it has one (read only).' },
-      { name: 'solid', kind: 'variable', returnType: 'bool', description: "Whether the actor is solid to WA's own collision. Writes need simulation callbacks." },
       // Fog of war (0.9.11). Presentation only, so it is safe in any callback.
-      { name: 'light', kind: 'variable', returnType: 'string | false | table', description: "The actor's fog-of-war light. A visible world actor has its profile's projectile light by default; invisible (sprite = false), cursor and screen-space actors have none until given one. A preset string (worm, animal, projectile, crate) uses that kind's profile settings; false removes the light; a table replaces the whole spec, and omitted geometry and shadow_cast come from its kind. mode is light (default), dark (shades what its cast sees) or shadow (shades what is hidden from it within reach); darkness wins over light. cone.toward is velocity (default), angle (the a:gfx rotation), facing or degrees. seen_by is owner (default: the owning worm's side, per view_ownership; public without an owning worm) or everyone. discover = true requires seen_by = owner; dark and shadow never record terrain memory. strength (0..255) is for dark and shadow only. Presentation only: any callback may set it. Reading returns the spec table, or false.", example: 'a.light = "projectile"\na.light = { kind = "dark", circle = { radius = 120 } }' },
+      { name: 'light', kind: 'variable', returnType: 'string | false | table', description: "The actor's fog-of-war light. A visible world actor has its profile's projectile light by default; invisible (sprite = false), cursor and screen-space actors have none until given one. A preset string (worm, animal, projectile, crate) uses that kind's profile settings; false removes the light; a table replaces the whole spec, and omitted geometry and shadow_cast come from its kind. mode is light (default), dark (shades what its cast sees) or shadow (shades what is hidden from it within reach); darkness wins over light. circle is the lit radius in px; fill = true or { flow = px } fills the circle instead of giving it a hard edge. cone.toward is velocity (default), angle (the a:gfx rotation), facing or degrees. seen_by is owner (default: the owning worm's side, per view_ownership; public without an owning worm) or everyone. discover = true requires seen_by = owner; dark and shadow never record terrain memory. strength (0..255) is for dark and shadow only. Presentation only: any callback may set it. Reading returns the spec table, or false.", example: 'a.light = "projectile"\na.light = { mode = "dark", circle = 120 }' },
     ],
   },
   {
     name: 'WormEntity',
     description: 'Stock Worms Armageddon player worm entity (WormHandle) with real engine properties and methods.',
-    syntaxExample: 'worm:equip("bazooka")\nworm:hurt(25)\nworm:heal(50)\nworm:carry(x, y)',
+    syntaxExample: 'worm:equip("bazooka")\nworm:hit(25)\nworm:heal(50)\nworm:carry(x, y)',
     members: [
       { name: 'id', kind: 'property', returnType: 'int', description: 'Stable worm ID (team * 16 + index)' },
       { name: 'x', kind: 'variable', returnType: 'number', description: 'Position X in px' },
@@ -1465,17 +1608,18 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'fuel', kind: 'variable', returnType: 'number', description: 'Jet pack fuel (0 is unlimited, writable)' },
       { name: 'gravity', kind: 'variable', returnType: 'number', description: 'Gravity scale factor (1.0 = normal, writable)' },
       { name: 'wind', kind: 'variable', returnType: 'number', description: 'Wind scale factor (1.0 = normal, writable)' },
+      { name: 'mass', kind: 'variable', returnType: 'number', description: 'Mass as a plain factor: hits and blasts push the worm by their force divided by it, and it weighs the worm when bodies trade speed (writable, simulation callbacks only).' },
       { name: 'collision_mask', kind: 'variable', returnType: 'int', description: 'Collision layer bitmask (bit 22 is landscape/water, writable)' },
+      { name: 'shape', kind: 'variable', returnType: 'string | nil', description: "Collision shape: \"worm\" (WA's own 9x16 shape) or \"mine\" (WA's 7x5 mine block); nil for any other. Writes from simulation callbacks change the shape index and mask together." },
       { name: 'keys', kind: 'property', returnType: 'table', description: 'Worm\'s own movement requests: { up, down, left, right }' },
       // The eighteen names `worm.state` can actually return, from
       // `worm_state_name()` in crates/lua-host/src/actor.rs. Anything else reads
       // as nil -- the lua-host does not guess. The old list here was partly
       // invented: it missed firing/fired/tumbling and advertised "sinking",
       // which is a set_state alias and never a value read back.
-      { name: 'state', kind: 'property', returnType: 'string | nil', description: 'State name: "standing" | "walking" | "ready" | "charging" | "prefiring" | "firing" | "fired" | "punching" | "drilling" | "teleporting" | "jetpacking" | "parachuting" | "sliding" | "roping" | "bungee" | "tumbling" | "frozen" | "kamikaze" | "jump_prepare" | "jumping" | "jump_falling" | "blasted" | "hit" | "dying" | "drowning" | "dead" | nil' },
-      { name: 'state_id', kind: 'property', returnType: 'int', description: 'Raw u32 state number' },
-      { name: 'state_label', kind: 'property', returnType: 'string | nil', description: 'Debug label for the raw state, including states worm.state does not name (e.g. "walking", "getting_up"). See data/wormStates.ts.' },
-      { name: 'state_address', kind: 'property', returnType: 'int', description: 'Pointer to worm state field in memory' },
+      { name: 'state', kind: 'property', returnType: 'string | nil', description: 'State name: "standing" | "walking" | "ready" | "charging" | "prefiring" | "firing" | "fired" | "punching" | "drilling" | "kamikaze" | "teleporting" | "rope_firing" | "torching" | "after_rope" | "getting_up" | "jetpacking" | "parachuting" | "falling" | "roping" | "bungee" | "tumbling" | "frozen" | "jump_prepare" | "jumping" | "jump_falling" | "blasted" | "hit" | "skimming" | "dying" | "drowning" | "dead" | nil' },
+      { name: 'state_id', kind: 'property', returnType: 'int', description: 'Raw u32 state number. Diagnostics builds only; packs read worm.state by name.' },
+      { name: 'state_label', kind: 'property', returnType: 'string | nil', description: 'Debug label for the raw state, including states worm.state does not name (e.g. "ledge?"). Diagnostics builds only; for logs, never game logic. See data/wormStates.ts.' },
       { name: 'team', kind: 'property', returnType: 'int', description: 'Team number (1 to 6)' },
       { name: 'slot', kind: 'property', returnType: 'int', description: 'Selected weapon slot index (1 to 70)' },
       { name: 'weapon', kind: 'property', returnType: 'string | nil', description: 'Stock weapon name e.g. "bazooka"' },
@@ -1502,40 +1646,36 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'body_scale', kind: 'variable', returnType: 'number | table | nil', description: 'The body drawn scale times its size about where WA draws it, then moved y pixels down: 0.85, { scale = 0.85, y = -5 }, or nil for WA\'s own size. Drawing only.' },
       { name: 'hide_hud', kind: 'variable', returnType: 'bool | table', description: 'Parts of WA\'s HUD for the worm left undrawn, the body still drawn: { labels, arrow, weapon, aim, from = "everyone" | "enemies" }, true or false. Drawing only; may differ between machines. Since 0.9.8.' },
       { name: 'time_scale', kind: 'variable', returnType: 'number', description: 'How many of its own frames the worm lives each world frame, 0..8: WA\'s step of its body and its frame repeated, a fraction carried to the next, so 2.5 is two then three. 1 is the world\'s pace, 0 stops it. Simulation callback only.' },
-      // Exactly the six names `settable_worm_state()` accepts (crates/lua-host).
-      // Five states, because "sinking" is the legacy alias of tumbling. A real
-      // state that is not settable -- "jetpacking", say -- is REJECTED by the
-      // engine here, so it must not be advertised as settable.
-      { name: 'set_state', kind: 'method', parameters: [{ name: 'name', type: 'string', description: '"standing" | "sliding" | "bungee" | "tumbling" | "sinking" (legacy alias of tumbling) | "teleporting"' }], returnType: 'void', description: 'Transitions worm into action state through WA SetState (sim callback only). Any other name is a hard Lua error, and run_mods then aborts every mod in the folder. Debug only: needs debug_worm_state = true in mod.toml.', example: 'worm:set_state("sliding")' },
+      // Exactly the five names `settable_worm_state()` accepts (crates/lua-host);
+      // "sinking" is gone. A state that is not settable -- "jetpacking", say --
+      // is REJECTED by the engine, so it must not be advertised as settable.
+      { name: 'set_state', kind: 'method', parameters: [{ name: 'name', type: 'string', description: '"standing" | "falling" | "bungee" | "tumbling" | "teleporting"' }], returnType: 'void', description: "Enters one of the five states a script may enter, through WA's own SetState, so the state's setup runs. Any bundle, every build; simulation callbacks only. Any other name is a hard Lua error; a worm in WA's death is left alone.", example: 'worm:set_state("falling")' },
       { name: 'clear_keys', kind: 'method', parameters: [], returnType: 'void', description: 'Consumes and clears movement keys this frame (sim callback only).', example: 'worm:clear_keys()' },
       { name: 'carry', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'Target X in px' }, { name: 'y', type: 'number', description: 'Target Y in px' }], returnType: 'void', description: 'Latches worm to coordinates and freezes turn timer.', example: 'worm:carry(target.x, target.y)' },
       // 0.9.11. WA's own jump take-off, without inventing a velocity.
       { name: 'jump', kind: 'method', parameters: [{ name: 'kind', type: 'string', optional: true, description: '"forward" | "back" | "up" | "backflip"; no argument repeats its last jump' }], returnType: 'void', description: "WA's own jump take-off from wherever the worm is; no argument repeats its last jump.", example: 'worm:jump("backflip")' },
       { name: 'freeze', kind: 'method', parameters: [], returnType: 'void', description: 'Freezes the worm in place.', example: 'worm:freeze()' },
-      { name: 'drop', kind: 'method', parameters: [], returnType: 'void', description: 'Releases carried worm into sliding/airborne physics state.', example: 'worm:drop()' },
-      { name: 'take', kind: 'method', parameters: [{ name: 'opts', type: 'table', optional: true, description: '{ hide = bool, turn = "run" | "freeze", fire = "nothing" | true | { weapon ids }, fire_as = "bungee" }' }], returnType: 'bool', description: "Hands the worm to the pack: it stays where the pack puts it. Returns whether it did. Refused (false) for a worm in WA's death (dying, drowning, dead): WA keeps it still until it is gone. fire is what it may fire while held: nothing (the default), everything (true) or a list of weapon ids. fire_as = \"bungee\" has WA judge that fire as from its bungee, whatever state the worm is held in, so strikes, the Teleport and the Girder fire where a jump or fall refuses them.", example: 'worm:take{ hide = false, fire = true }' },
-      { name: 'release', kind: 'method', parameters: [{ name: 'vx', type: 'int', optional: true, description: 'Release velocity X in px/frame' }, { name: 'vy', type: 'int', optional: true, description: 'Release velocity Y in px/frame' }, { name: 'opts', type: 'table', optional: true, description: '{ tumble = bool }' }], returnType: 'bool', description: "Gives the worm back to WA, flying or tumbling; on a worm never taken, a launch. Returns whether it did. Refused (false) for a worm in WA's death (dying, drowning, dead): WA keeps it still until it is gone. A zero-HP worm WA hasn't started killing still launches.", example: 'worm:release(0, 2, { tumble = true })' },
+      { name: 'take', kind: 'method', parameters: [{ name: 'opts', type: 'table', optional: true, description: '{ turn = "run" | "freeze", fire = "nothing" | true | { weapon ids }, fire_as = "bungee" }' }], returnType: 'bool', description: "Hands the worm to the pack: it stays where the pack puts it. Returns whether it did. Refused (false) for a worm in WA's death (dying, drowning, dead): WA keeps it still until it is gone. fire is what it may fire while held: nothing (the default), everything (true) or a list of weapon ids. fire_as = \"bungee\" has WA judge that fire as from its bungee, whatever state the worm is held in, so strikes, the Teleport and the Girder fire where a jump or fall refuses them. Hiding the worm is worm.visible / worm.body_visible, not an option here.", example: 'worm:take{ fire = true }' },
+      { name: 'release', kind: 'method', parameters: [{ name: 'vx', type: 'int', optional: true, description: 'Release velocity X in px/frame' }, { name: 'vy', type: 'int', optional: true, description: 'Release velocity Y in px/frame' }, { name: 'opts', type: 'table', optional: true, description: '{ tumble = bool }' }], returnType: 'bool', description: "Gives the worm back to WA, flying or tumbling; on a worm never taken, a launch. Returns whether it did. Refused (false) for a worm in WA's death (dying, drowning, dead): WA keeps it still until it is gone. A zero-HP worm WA hasn't started killing still launches. worm:release(0, 0) is the old worm:drop: a pinned worm's speed is 0, so it just lets go.", example: 'worm:release(0, 2, { tumble = true })' },
       { name: 'fits', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'Target X in px' }, { name: 'y', type: 'number', description: 'Target Y in px' }], returnType: 'bool', description: 'Whether the worm would touch nothing at (x, y), by the engine\'s own collision test and the worm\'s own shape. A read, so it is safe outside a simulation callback.', example: 'if worm:fits(x, y) then worm:carry(x, y) end' },
       { name: 'jetpack_steer', kind: 'method', parameters: [{ name: 'on', type: 'bool', optional: true, description: 'Steer the jet pack (default true)' }], returnType: 'void', description: 'While the engine\'s jet pack runs you steer it, and the engine neither thrusts nor burns fuel from the keys. It keeps its collisions, fuel HUD and landing. The claim lapses when the jet pack ends (sim callback only).', example: 'worm:jetpack_steer(true)' },
       { name: 'equip', kind: 'method', parameters: [{ name: 'weaponName', type: 'string', description: 'Placed weapon id (px.javelin) or stock slot name' }], returnType: 'int', description: "Selects a placed weapon, by its id, as the player's own selection does: WA's fire key then fires it, under WA's rules. With no ammo the team gets one shot, taken back at the end of the turn if it wasn't fired. Returns the ammo held, or 0 when WA refuses the selection (in the middle of a use). Since 0.9.82.", example: 'worm:equip("px.javelin")' },
-      { name: 'use', kind: 'method', parameters: [{ name: 'weaponName', type: 'string', description: 'Placed weapon id, else stock.<name>' }], returnType: 'bool', description: "WA's own action of a weapon, performed by the worm now without firing it: no ammo or delay, nothing to its team or the turn. So far the Fire Punch family and the Jet Pack family (an error for others). False for a dying worm, one already using one or on a jet pack, or the worm whose turn it is. Simulation callbacks only. Since 0.9.8; the Jet Pack since 0.9.83.", example: 'worm:use("stock.jetpack")' },
+      { name: 'use', kind: 'method', parameters: [{ name: 'weaponName', type: 'string', description: 'Placed weapon id, else stock.<name>' }], returnType: 'bool', description: "WA's own action of a weapon, performed by the worm now without firing it: no ammo or delay, nothing to its team or the turn. So far the Fire Punch family and the Jet Pack family (an error for others). False for a dying worm, one already using one or on a jet pack, or the worm whose turn it is. Simulation callbacks only. Since 0.9.8; the Jet Pack since 0.9.83.", example: 'worm:use("stock.fire_punch")' },
       { name: 'ammo', kind: 'method', parameters: [{ name: 'weaponName', type: 'string', description: 'Weapon name' }, { name: 'change', type: 'int | table', optional: true, description: 'Delta to add, or { set = count, keep_delay = bool } (-1 is infinite)' }], returnType: 'int', description: "Reads, adds or sets the team's ammo for a placed weapon, by its id. keep_delay = true changes ammo without clearing the weapon's delay. Returns ammo.", example: 'worm:ammo("bazooka", { set = 3 })' },
       { name: 'delay', kind: 'method', parameters: [{ name: 'weaponName', type: 'string', description: 'Placed weapon id, e.g. "px.javelin"' }, { name: 'turns', type: 'int | nil', optional: true, description: 'New delay in turns; omit to read it' }], returnType: 'int', description: "Reads or sets the team's delay for a placed weapon, in turns. Writing needs a simulation callback and a live worm. Returns the delay now in force.", example: 'worm:delay("px.javelin", 2)' },
       { name: 'input', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ fire = "press"|"release", aim = -90..90, fuse = 1..5, bounce = "min"|"max", click = { x, y }, key = "left"|"right"|"up"|"down"|"face_left"|"face_right"|"jump"|"backflip"|"special"|"tab" }' }], returnType: 'void', description: "Sends WA's own input messages for a worm, as its player's keys would: fire press or release, aim (degrees from level, -90 down to 90 up), fuse 1..5, bounce min or max, a click, or one key. Movement keys request one frame: send them each frame to hold. A worm without the turn walks too, and its keys never steer the team's released weapon. Simulation callbacks only. Since 0.9.8 any bundle, online too.", example: 'worm:input({ fire = "press", aim = 30 })' },
       { name: 'poison', kind: 'method', parameters: [{ name: 'amount', type: 'int', description: 'Poison damage, 1..1000' }], returnType: 'bool', description: 'Poisons this worm through WA, crediting the current spawn owner. Simulation callbacks only. Returns whether the engine performed it.', example: 'worm:poison(20)' },
       { name: 'reduce_health', kind: 'method', parameters: [{ name: 'amount', type: 'int', description: 'Damage to take, 0..10000' }], returnType: 'bool', description: "Takes health from this worm through WA's damage path without a synthetic hit or knockback. Simulation callbacks only. Returns whether the engine performed it.", example: 'worm:reduce_health(15)' },
-      { name: 'hurt', kind: 'method', parameters: [{ name: 'arg', type: 'int | table', description: 'Damage amount, or { amount = int, vx, vy, react = bool, kind } -- vx/vy knockback in px/frame; react = false skips WA\'s hit reaction' }], returnType: 'void', description: "Damages the worm, optionally with knockback. react = false: the damage alone, without WA's hit (no flinch, push or landing damage). kind is the hit's kind (see Hit kinds), the Prod's when left out. Since 0.9.83.", example: 'worm:hurt{ amount = 20, vx = 2, vy = -1 }' },
+      { name: 'hit', kind: 'method', parameters: [{ name: 'arg', type: 'int | table', description: 'Damage amount, or { amount = int, vx, vy, react = bool, kind } -- vx/vy knockback in px/frame; react = false skips WA\'s hit reaction' }], returnType: 'void', description: "Damages the worm, optionally with knockback. react = false: the damage alone, without WA's hit (no flinch, push or landing damage). kind is the hit's kind (see Hit kinds), the Prod's when left out. It was worm:hurt before 1.0. Since 0.9.83.", example: 'worm:hit{ amount = 20, vx = 2, vy = -1 }' },
       { name: 'heal', kind: 'method', parameters: [{ name: 'amount', type: 'int', description: 'HP to restore' }, { name: 'opts', type: 'table', optional: true, description: '{ from_zero = bool } -- revive a 0-HP worm WA has not started killing (since 0.9.8)' }], returnType: 'int', description: "Adds health. A worm at 0 HP is refused, unless from_zero = true and WA hasn't started killing it. Returns new HP.", example: 'worm:heal(25, { from_zero = true })' },
       // Health-timing verbs used by Core Utilities. Worm-only and simulation-only,
-      // like `teleport_pose`; no debug opt-in. See WormForgeNew actor.rs.
+      // like `teleport_pose`. See WormForgeNew actor.rs.
       { name: 'commit_health', kind: 'method', parameters: [], returnType: 'bool', description: "Commits only this worm's pending health display through WA message 0x44. The damage WA still owes stays owed, so a zero-HP worm is not left standing at 0; no synthetic hit or turn-wide death runs. Worm-only, simulation callback only. Returns whether the engine performed it.", example: 'worm:commit_health()' },
       { name: 'show_health', kind: 'method', parameters: [], returnType: 'bool', description: "Moves only this worm's health label down to its current HP while leaving WA's pending damage owed. The label updates without killing a zero-HP worm early. Worm-only, simulation callback only. Returns whether the engine performed it.", example: 'worm:show_health()' },
-      { name: 'allow_death', kind: 'method', parameters: [], returnType: 'bool', description: "Gives only this zero-HP worm WA's ordinary death permission (message 0x40). WA's frame handler still applies its movement and landing checks and starts the death animation; no SetState, damage or broadcast. Worm-only, simulation callback only. Returns whether the engine performed it.", example: 'if not worm.turn and worm.hp == 0 then worm:allow_death() end' },
-      { name: 'die', kind: 'method', parameters: [], returnType: 'bool', description: "Starts a zero-HP worm's death now, even in flight. False for a worm with health, already dying, waiting to be placed, or in the Kamikaze/Suicide Bomber flight. Worm-only, simulation callback only. Returns whether the engine performed it.", example: 'worm:die()' },
+      { name: 'die', kind: 'method', parameters: [{ name: 'opts', type: 'table', optional: true, description: '{ settled = true } -- with settled, WA starts the death once the worm stops moving instead of at once' }], returnType: 'bool', description: "Starts a zero-HP worm's death now, even in flight. With `{ settled = true }`, gives WA its ordinary death permission (message 0x40) instead: its frame handler still applies movement and landing checks and starts the death animation once the worm settles, without waiting for the battlefield. False for a worm with health, already dying, waiting to be placed, or in the Kamikaze/Suicide Bomber flight. Worm-only, simulation callback only. Returns whether the engine performed it.", example: 'if not worm.turn and worm.hp == 0 then worm:die{ settled = true } end' },
       { name: 'warp', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ x = number, y = number, vx = number, vy = number, facing = -1|1 } -- px positions, px/frame speeds; x/y required, speeds/facing optional' }], returnType: 'void', description: 'Atomically moves a live worm and wakes it (sim callback only). Omitted speeds retain momentum; facing is supported.', example: 'worm:warp{ x = 100, y = 200 }' },
-      { name: 'air_fire', kind: 'method', parameters: [{ name: 'on', type: 'bool', optional: true, description: 'Allow the selected pack fire to trigger in mid-air (default true)' }], returnType: 'void', description: 'Lets a pack weapon fire in mid-air, on synchronized fire-key edges (sim callback only).', example: 'worm:air_fire(true)' },
-      // Worm-only and needs NO debug opt-in, unlike worm:set_state: the engine
-      // exposes it on worms but not on actors (lua-host lib.rs:832-848).
+      // Worm-only: the engine exposes it on worms but not on actors
+      // (lua-host lib.rs:832-848).
       { name: 'teleport_pose', kind: 'method', parameters: [], returnType: 'bool', description: 'Shifts the worm into the teleport pose in place, without moving it (sim callback only). Returns whether the engine performed it.', example: 'if worm:teleport_pose() then ... end' },
     ],
   },
@@ -1544,9 +1684,8 @@ export const BUILTIN_CLASSES: ClassDef[] = [
     description: 'Stock world object handle for crates, mines, missiles, oil drums, and gravestones.',
     syntaxExample: 'mine:arm(2000)\ndrum:hit(50, 0, 0)\ngrave:revive(worm_id, 100)',
     members: [
-      { name: 'id', kind: 'property', returnType: 'int', description: 'Unique object entity handle' },
-      { name: 'kind', kind: 'property', returnType: 'string', description: '"mine" | "missile" | "crate" | "worm" | "oil" | "grave" | "land" | "object"' },
-      { name: 'uid', kind: 'property', returnType: 'int', description: 'Per-world construction number, unaffected by the allocator (read only)' },
+      { name: 'id', kind: 'property', returnType: 'int', description: 'The body id in this match: actors, objects and missiles share one counter, the body id from WA\'s world-entity constructor, counted from 0x100 so it never meets a worm\'s team * 16 + index. The same on every machine and never reused.' },
+      { name: 'kind', kind: 'property', returnType: 'string', description: '"mine" | "missile" | "crate" | "worm" | "oil" | "grave" | "arrow" | "land" | "object"' },
       { name: 'team', kind: 'property', returnType: 'int', description: 'Owning team number (1 to 6), 0 for none (read only)' },
       { name: 'alliance', kind: 'property', returnType: 'int', description: 'Visible coalition colour of the owning team, as worm.alliance; nil without a team (read only)' },
       { name: 'worm_id', kind: 'property', returnType: 'int', description: 'For gravestones: stable worm ID of the deceased worm' },
@@ -1629,10 +1768,10 @@ export const BUILTIN_CLASSES: ClassDef[] = [
   },
   {
     name: 'MissileEntity',
-    description: 'Motion data table passed to wa.on.missile_frame, gravity_before, and gravity_after hooks.',
+    description: 'Motion data table passed to wa.on.missile_frame hooks.',
     syntaxExample: 'wa.on.missile_frame(function(m)\n  if m.weapon == "chilli_bomb" then m.sprite = 0 end\nend)',
     members: [
-      { name: 'id', kind: 'property', returnType: 'int', description: 'Unique lockstep missile instance ID' },
+      { name: 'id', kind: 'property', returnType: 'int', description: 'The missile\'s body id: actors, objects and missiles share one counter, and a missile has the same id in every hook, never reused within a match.' },
       { name: 'class_type', kind: 'property', returnType: 'int', description: 'Engine class type' },
       { name: 'damp', kind: 'variable', returnType: 'number', description: 'Damping factor (1.0 = normal, read/write)' },
       { name: 'wind_scale', kind: 'variable', returnType: 'number', description: 'Wind influence factor (1.0 = normal, read/write)' },
@@ -1678,6 +1817,15 @@ export const BUILTIN_CLASSES: ClassDef[] = [
     syntaxExample: 'local r = wa.view.ripple({ x = 100, y = 200 })\nr:stop()',
     members: [
       { name: 'stop', kind: 'method', parameters: [], returnType: 'void', description: 'Ends the ripple early.', example: 'r:stop()' },
+    ],
+  },
+  {
+    name: 'AmbientHandle',
+    description: 'A sound of no object, returned by wa.sound.ambient (WormForge 1.0).',
+    syntaxExample: 'local rain = wa.sound.ambient({ path = "sounds/rain.wav", volume = 0.6 })\\nrain:stop({ fade_ms = 1500 })',
+    members: [
+      { name: 'set', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ volume = 1, fade_ms = 0 } -- volume 0..1; fade_ms 0..60000; a spec without volume changes nothing' }], returnType: 'void', description: "Fades the ambient sound to volume over fade_ms; a spec without volume changes nothing. Presentation only, from any callback.", example: 'rain:set({ volume = 0.3, fade_ms = 800 })' },
+      { name: 'stop', kind: 'method', parameters: [{ name: 'spec', type: 'table', optional: true, description: '{ fade_ms = 0 } -- 0..60000' }], returnType: 'void', description: 'Fades the ambient sound out and forgets it; without fade_ms it stops at once. Presentation only, from any callback.', example: 'rain:stop({ fade_ms = 1500 })' },
     ],
   },
 ];

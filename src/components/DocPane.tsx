@@ -29,7 +29,7 @@ export function receiverForClass(className: string): string {
   return RECEIVER_BY_CLASS[className] ?? className;
 }
 
-/** `worm:hurt(amount)` for a method, `worm.hp` for a property or variable. */
+/** `worm:hit(amount)` for a method, `worm.hp` for a property or variable. */
 export function formatMemberSignature(receiver: string, member: MemberDef): string {
   const params = member.parameters?.map((p) => p.name).join(', ') ?? '';
   return member.kind === 'method'

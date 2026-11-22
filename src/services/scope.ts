@@ -86,6 +86,7 @@ export function buildScopes(code: string): ScopeModel {
   // only the terminator string could not tell the two apart, which is why the
   // first inner `if ... end` used to close the enclosing function.
   const pending: { terminator: string; scopeId: number | null }[] = [];
+  let headerDo = false;
 
   // Token indices that are already bound as declarations by the `local`/`for`
   // branches. Needed because `local t = 1` contains BOTH a declaration and
@@ -193,6 +194,7 @@ for (let idx = 0; idx < tokens.length; idx++) {
     if (t.type === 'keyword' && t.value === 'for') {
       const s = push('loop', undefined, t.line);
       pending.push({ terminator: 'end', scopeId: s.id });
+      headerDo = true;
       for (let p = idx + 1; p < tokens.length; p++) {
         const lt = tokens[p];
         if (lt.value === 'in' || lt.value === '=' || lt.value === 'do') break;
@@ -248,6 +250,12 @@ for (let idx = 0; idx < tokens.length; idx++) {
     // Checking the kind alone is NOT enough: with `function > if > end`, the top
     // of the stack is still the function, so a kind test still popped it.
     if (t.type === 'keyword') {
+      if (t.value === 'do' && headerDo) {
+        // The `do` of a `for`/`while` header closes with the frame already pushed.
+        headerDo = false;
+        continue;
+      }
+      if (t.value === 'while') headerDo = true;
       if (t.value === 'if' || t.value === 'while' || t.value === 'do' || t.value === 'repeat') {
         pending.push({ terminator: t.value === 'repeat' ? 'until' : 'end', scopeId: null });
         continue;

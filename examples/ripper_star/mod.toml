@@ -8,9 +8,9 @@
 # three weapons and the art/sound assets.
 id = "example.ripper_star"
 name = "Ripper Star"
-version = "1.3.1"
+version = "1.3.7"
 author = "reddaz"
-api_version = 4
+api_version = 5
 format_version = 2
 dependencies = ["effects.sdk"]
 

@@ -1,7 +1,7 @@
--- Ice Arrow: record, art and behaviour.
+-- Ice Arrow: an arrow that freezes the worm it hits.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     remember_selection = true,
@@ -13,8 +13,6 @@ function weapon.definition()
   return require("lib/weapon").merge(weapon.record, {
     wep = "weps/armageddon.wep",
     panel_icon = "sprites/ice_arrow/icon.png",
-    -- WA's Longbow sheets, bow and cap in ice blue
-    -- (tools/bake_ice_arrow_sprites.py); WA still animates them.
     worm_sprites = {
       wbowlnk = "sprites/ice_arrow/wbowlnk.png",
       wbowlnku = "sprites/ice_arrow/wbowlnku.png",
@@ -36,15 +34,12 @@ function weapon.definition()
 end
 
 function weapon.setup()
-  -- Ice Arrow: let WA's ArrowEntity apply the bow hit and its momentum, then
-  -- freeze the worm on its next frame. PX's CWorm::Message defers SetState in
-  -- exactly this way, so the hit's native state setup runs first.
   local shared = require("lib/shared")
   local pending = {} -- stable worm id -> freeze on that worm's next frame
 
   wa.on.hurt(function(hit)
     if hit.phase == "post" and hit.source_weapon == "px.ice_arrow"
-      and hit.kind == "hit" then
+      and hit.kind == "arrow" then
       pending[hit.worm.id] = true
     end
   end)

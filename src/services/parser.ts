@@ -312,7 +312,7 @@ function isNilGuarded(meaningful: Token[], i: number): boolean {
  * Only CALLS are checked (`wa.a.b(...)`). A bare `wa.a.b` on the right of an
  * assignment is a field write, not a call, and is left to the member checks.
  *
- * Warning, never error: BUILTIN_FUNCTIONS is pinned to WormForge 0.9.1 (API 4)
+ * Warning, never error: BUILTIN_FUNCTIONS is pinned to WormForge 1.0 (API 5)
  * and may lag the engine, so a key this build does not know is SUSPICIOUS, not
  * wrong.
  */
@@ -394,8 +394,8 @@ function scanWaNamespaceTypos(meaningful: Token[], userVerbs: CustomVerb[] = [])
     //     if wa.get::<Value>("audit")...is_nil() { wa.set("audit", audit) }
     //
     // Nothing else in api.rs adds a public `wa.*` under a feature (the other
-    // diagnostics block installs `_debug_input` and `_debug_worm_state`, both
-    // underscore-prefixed), so this is the whole of it. Still a WARNING, and still
+    // diagnostics block installs `_debug_input`, underscore-prefixed), so this
+    // is the whole of it. Still a WARNING, and still
     // correct for a stock build -- the call really does raise "attempt to call a
     // nil value" there. Only the explanation changes. Mirrors
     // DIAGNOSTICS_ONLY_NAMESPACE in checks.rs.
@@ -450,8 +450,7 @@ function scanSpecKeyTypos(meaningful: Token[]): SyntaxDiagnostic[] {
     const t = meaningful[i];
     if (t.type !== 'identifier') continue;
     if (t.value !== 'wa') continue;
-    // Require `wa.weapons.replace(` or `wa.weapons.register(` -- the two calls
-    // that take a spec table.
+    // Require `wa.weapons.replace(` -- the only call that takes a spec table.
     if (
       meaningful[i + 1]?.value !== '.' ||
       meaningful[i + 2]?.value !== 'weapons' ||
@@ -461,7 +460,7 @@ function scanSpecKeyTypos(meaningful: Token[]): SyntaxDiagnostic[] {
       continue;
     }
     const fn = meaningful[i + 4].value;
-    if (fn !== 'replace' && fn !== 'register') continue;
+    if (fn !== 'replace') continue;
 
     // Find the argument list. Both `replace({ ... })` and the idiomatic
     // `replace{ ... }` reach the same keys; the brace form has no `(` at all.
@@ -1429,13 +1428,13 @@ export function parseAndValidate(
       }
     }
 
-    // WormForge Method invocation check: e.g. a:move, worm:hurt, a:explode
+    // WormForge Method invocation check: e.g. a:move, worm:hit, a:explode
     if (t.value === ':') {
       const left = meaningfulTokens[idx - 1];
       const right = meaningfulTokens[idx + 1];
       if (left && right && right.type === 'identifier') {
         const method = right.value;
-        // `function worm:hurt(...)` is a method DEFINITION, not an invocation:
+        // `function worm:hit(...)` is a method DEFINITION, not an invocation:
         // Rust's equivalent check runs on call expressions only, so definitions
         // are silent there. Match that -- the symbol extractor above still
         // records the member for autocomplete.
@@ -1464,7 +1463,7 @@ export function parseAndValidate(
           // custom_verbs.cfg, never from a global, so the browser path and the
           // desktop path read the same list.
           const customHit = customMembersFor(expected.className, userVerbs).includes(method);
-          const hasIt = customHit || !!cls?.members.some((m) => m.name === method);
+          const hasIt = customHit || !!cls?.members.some((m) => m.name === method && m.kind === 'method');
 
           if (hasIt) {
             // Fine on the assumed handle. Nothing to say.
@@ -1476,7 +1475,7 @@ export function parseAndValidate(
             // below are arbitrary identifiers, not HandleClassName members.
             const owners: string[] = ALL_HANDLE_CLASSES.filter(
               (name) =>
-                getClass(name)?.members.some((m) => m.name === method) ||
+                getClass(name)?.members.some((m) => m.name === method && m.kind === 'method') ||
                 customMembersFor(name, userVerbs).includes(method)
             );
             // A user class that is NOT an engine class can own the method too

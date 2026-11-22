@@ -1,7 +1,7 @@
--- Thumper Nade Strike: record, art and behaviour.
+-- Thumper Nade Strike: a carpet bomb of Thumper Nades.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     retreat = 3000,
@@ -89,7 +89,7 @@ function weapon.definition()
     name = "Thumper Nade Strike",
     panel_icon = "sprites/thumper_nade/thumpernst_ico.png",
     sprite = "sprites/thumper_nade/flight.png",
-    cluster = { sprite = "sprites/thumper_nade/cluster.png" },
+    cluster_sprite = "sprites/thumper_nade/cluster.png",
   })
 end
 

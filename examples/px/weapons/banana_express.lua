@@ -1,7 +1,7 @@
--- Banana Express: record, art and behaviour.
+-- Banana Express: an MB Bomb strike flown by the banana plane.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     remember_selection = false,

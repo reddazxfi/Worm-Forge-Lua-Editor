@@ -9,12 +9,8 @@ import { parseAndValidate } from '../parser';
  * a full function from a real pack.
  */
 const NO_SHIPPED_USAGE = new Set([
-  'LuaActor:cut',
-  'LuaActor:spawn',
   'WormEntity:clear_keys',
-  'WormEntity:air_fire',
   'WormEntity:show_health',
-  'WormEntity:die',
   'WormEntity:poison',
   'WormEntity:input',
   'WorldHandle:impulse',
@@ -27,6 +23,8 @@ const NO_SHIPPED_USAGE = new Set([
   'WindowHandle:set',
   'WindowHandle:close',
   'WindowHandle:is_open',
+  'AmbientHandle:set',
+  'AmbientHandle:stop',
 ]);
 
 describe('full documentation snippets', () => {

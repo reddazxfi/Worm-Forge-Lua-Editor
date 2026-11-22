@@ -1,7 +1,7 @@
--- Windy Cluster: record, art and behaviour.
+-- Windy Cluster: a cluster bomb whose bits are carried by the wind.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   missile = {
     alarm_worms = false,
@@ -27,7 +27,7 @@ function weapon.definition()
     copy_from = "stock.cluster_bomb",
     name = "Windy Cluster",
     panel_icon = "sprites/windy_cluster/ico_windyc.png",
-    cluster = { sprite = "sprites/windy_cluster/cluster.png" },
+    cluster_sprite = "sprites/windy_cluster/cluster.png",
   })
 end
 

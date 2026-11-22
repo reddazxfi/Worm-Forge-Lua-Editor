@@ -1,7 +1,4 @@
--- Ripper Star: PX's fifteen-shuriken burst, using the ninja star art.
--- Each shot reads the worm's live aim; impacts do 4 damage in a 20 px square,
--- or stick in the land. The hold is PX's Ripper gun. See README.md for the
--- source offsets and the standoff/hit departures.
+-- Ripper Star: Project X's Ripper, firing our ninja stars in a flurry.
 
 local seq = require("lib/fire_seq")
 local sb = require("lib/px_sprite_builder")
@@ -10,7 +7,6 @@ local hold_art = require("lib/px_hold_art")
 
 local M = {}
 
--- A component in no panel slot registers nothing.
 local function placed(ctx)
   local informed = false
   if type(ctx.weapons) == "table" then
@@ -26,10 +22,8 @@ local function placed(ctx)
   return not informed
 end
 
--- PX's trunc (integer division on fixed point, toward zero).
 local function trunc(n) return n < 0 and math.ceil(n) or math.floor(n) end
 
--- PX's 32 orientations by ratio bins.
 local function orientation(vx, vy)
   if vx == 0 then return vy > 0 and 16 or 0 end
   if vy == 0 then return vx > 0 and 8 or 24 end
@@ -39,7 +33,6 @@ local function orientation(vx, vy)
   return math.min(trunc(24 + 3 * -vy / -vx), 31)
 end
 
--- PX's strict square; the query is a circle, so apply the square here.
 local function within(o, x, y, r)
   return o and math.abs(x - o.x) < r and math.abs(y - o.y) < r
 end
@@ -53,18 +46,16 @@ function M.install(ctx)
   local ART = "sprites/ripper_star/"
   local SND = "sounds/ripper_star/"
   local DAMAGE = 4
-  local HIT_R = 20      -- strict square
-  local SELF_R = 25     -- the turn's worm
-  local SHOTS = 15
-  local SHOT_DELAY = 4  -- WA's fire interval for this record
-  local SPEED = 45
-  local LOW_AIM = 0.165
+  local HIT_R = 20 -- the strict 20 px square
+  local SELF_R = 25 -- and the 25 px square for the turn's worm
+  local SHOTS = 15 -- RSShotsFired<=14
+  local SHOT_DELAY = 4
+  local SPEED = 45 -- the constant in PX's velocity
+  local LOW_AIM = 0.165 -- the low-angle extra offset
   local BURIED = { soften = 3, blend = "mix" } -- as the ninja star's
 
-  -- Register callbacks from install: `wa` does not exist at require time.
   trail.install()
 
-  -- The ninja star's grey ribbon, reused so the burst reads as the same star.
   local TRAIL = { max = 7, every = 1, core_w = 4.0, glow_w = 7.0, r = 120, g = 120, b = 120 }
 
   local function current_worm()
@@ -73,8 +64,6 @@ function M.install(ctx)
     end
   end
 
-  -- WA destroys the missile on impact, so keep the last velocity for the hit
-  -- and the stick orientation.
   local speed = {}
   wa.on.missile_frame(function(m)
     if m.weapon ~= "px.ripper_star" then return end
@@ -84,7 +73,6 @@ function M.install(ctx)
     end
   end)
 
-  -- Hide WA's missile and draw the 32-orientation star.
   sb.flight(ctx, {
     weapon = "px.ripper_star",
     sheet = ART .. "stamp",
@@ -94,8 +82,6 @@ function M.install(ctx)
     mirror = false,
   })
 
-  -- PX's Ripper gun, arms baked into the 90x90 cell. The engine draws the
-  -- aiming frames; `px_hold_art` covers the two firing frames it drops.
   local hold = {
     weapon = "px.ripper_star",
     sheet = ART .. "hold",
@@ -115,16 +101,12 @@ function M.install(ctx)
     hold = hold,
     sounds = { SND .. "impact.wav" },
 
-    -- Read the aim on every shot: PX rebuilds it each FireFinal, and the
-    -- up/down keys move it through the burst.
     on_fire = function(ev)
       local w = ev.worm
-      -- Keep WA's muzzle distance, but re-apply it with the current facing:
-      -- PX does that on every shot, and a script can turn the worm mid-burst.
       local ox = math.abs(ev.x - w.x)
       local oy = ev.y - w.y
       local function angle(i, ww)
-        local n = i - 1 -- PX's shot counter is 0-based
+        local n = i - 1
         local base = ww.aim
         if n & 2 ~= 0 then return base - 0.010 end
         if n & 3 ~= 0 then return base + 0.010 end
@@ -133,7 +115,6 @@ function M.install(ctx)
       seq.fire_seq_mis({
         weapon = "px.ripper_star",
         cancel_weapon = "px.ripper_star",
-        -- The muzzle is inside the worm's collision circle; start clear of it.
         standoff = 12,
         owner = w,
         count = SHOTS,
@@ -155,13 +136,11 @@ function M.install(ctx)
       })
     end,
 
-    -- PX's impact, after the record's own (zero) blast.
     on_explode = function(ev)
       local v = speed[ev.missile]
       if ev.missile then speed[ev.missile] = nil; trail.drop(ev.missile) end
       local vx, vy = v and v[1] or 0, v and v[2] or 0
 
-      -- The first eligible object in the square, in the engine's order.
       local target
       for _, o in ipairs(wa.world.electrical_nearby(ev.x, ev.y, 29, false)) do
         if (o.kind == "worm" or o.kind == "mine" or o.kind == "crate" or o.kind == "oil")
@@ -173,16 +152,13 @@ function M.install(ctx)
       end
       if target then
         if target.kind == "worm" then
-          -- PX's damage and quarter-speed shove; WA commits the health on land.
-          target:hurt{ amount = DAMAGE, vx = trunc(vx / 4), vy = trunc(vy / 4) }
+          target:hit{ amount = DAMAGE, vx = trunc(vx / 4), vy = trunc(vy / 4) }
         else
-          -- Crates and oil drums take half the star's speed as force.
-          target:hit(DAMAGE, trunc(vx / 2), trunc(vy / 2), "projectile")
+          target:hit(DAMAGE, trunc(vx / 2), trunc(vy / 2), "bullet")
         end
         return
       end
 
-      -- No target: stick the star in the land and play PX's impact sound.
       wa.land.stamp{ sprite = ART .. "stamp", frame = orientation(vx, vy),
         x = ev.x, y = ev.y, buried = BURIED }
       local shooter = current_worm()

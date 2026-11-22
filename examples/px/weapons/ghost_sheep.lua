@@ -1,7 +1,7 @@
--- Ghost Sheep: record, art and behaviour.
+-- Ghost Sheep: a super sheep that flies through the land for eight seconds, then explodes.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     retreat = 5000,

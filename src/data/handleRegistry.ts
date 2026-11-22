@@ -37,7 +37,8 @@ export type HandleClassName =
   | 'WindowHandle'
   | 'HudTrayEntry'
   | 'TrailHandle'
-  | 'RippleHandle';
+  | 'RippleHandle'
+  | 'AmbientHandle';
 
 /**
  * returnType strings in wormforgeDefinitions.ts use the ENGINE's vocabulary
@@ -61,6 +62,7 @@ export const HANDLE_ALIASES: Record<string, HandleClassName> = {
   HudTrayEntry: 'HudTrayEntry',
   TrailHandle: 'TrailHandle',
   RippleHandle: 'RippleHandle',
+  AmbientHandle: 'AmbientHandle',
 };
 
 /** Every class the union check may consult. */
@@ -76,6 +78,7 @@ export const ALL_HANDLE_CLASSES: HandleClassName[] = [
   'HudTrayEntry',
   'TrailHandle',
   'RippleHandle',
+  'AmbientHandle',
 ];
 
 export interface ReceiverRow {
@@ -131,9 +134,9 @@ export const RECEIVER_REGISTRY: ReceiverRow[] = [
     // discriminated by .kind. They resolve here for convenience and get the
     // common object surface plus hit().
     prefixes: [
-      'mine', 'drum', 'oil', 'oildrum', 'crate', 'grave', 'obj', 'object', 'land',
+      'mine', 'drum', 'oil', 'oildrum', 'crate', 'grave', 'arrow', 'obj', 'object', 'land',
     ],
-    diagnose: ['mine', 'drum', 'oil', 'oildrum', 'crate', 'grave', 'obj', 'object'],
+    diagnose: ['mine', 'drum', 'oil', 'oildrum', 'crate', 'grave', 'arrow', 'obj', 'object'],
     className: 'WorldHandle',
     rule: 'world-object-api',
   },
@@ -206,6 +209,14 @@ export const RECEIVER_REGISTRY: ReceiverRow[] = [
     diagnose: [],
     className: 'RippleHandle',
     rule: 'ripple-api',
+  },
+  {
+    // Ambient sound handle (1.0): `local rain = wa.sound.ambient{...}`.
+    // Auto-complete only; `rain`/`sound` are not reliable local names.
+    prefixes: ['ambient'],
+    diagnose: [],
+    className: 'AmbientHandle',
+    rule: 'ambient-api',
   },
 ];
 

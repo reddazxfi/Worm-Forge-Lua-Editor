@@ -1,14 +1,11 @@
--- Set up the selected weapons and their dependencies once, in the established
--- hook order. Modules keep pure declarations separate from runtime setup.
+-- Set up the selected weapons and their dependencies once, in the established hook order.
+
 local shared = require("lib/shared")
 local index = require("weapons/index")
 local loader = {}
 local loaded, placed_ids = false, nil
--- Modules an add-on needs set up whether or not their weapon is placed.
 local also = {}
 
--- An add-on that installs before the weapons (before_weapons) asks for a
--- module's setup here, before anything loads.
 function loader.also(path)
   assert(not loaded, "loader.also(" .. path .. "): the modules are already set up")
   also[#also + 1] = path
@@ -24,25 +21,52 @@ local ORDER = {
   "lib/missile_sprites",
   "weapons/double_bazooka",
   "weapons/chilli_bomb",
+  "weapons/homing_fire_cluster",
+  "weapons/fire_cluster_bomb",
+  "weapons/digging_cluster_bomb",
+  "weapons/homing_digger",
+  "weapons/homing_cluster_bomb",
+  "weapons/ninja_bomb",
   "weapons/nuke_rocket",
   "weapons/helicopter",
   "weapons/hot_air_balloon",
   "weapons/hang_glider",
+  "weapons/wings",
   "weapons/swim_suit",
   "weapons/wind_changer",
   "weapons/gravity_control",
+  "weapons/sacrifice",
+  "weapons/parkour",
+  "weapons/anti_fall_damage",
+  "weapons/platform",
+  "weapons/toxic_grenade",
+  "weapons/bulldozer",
+  "weapons/trampoline",
+  "weapons/mine_launcher",
+  "weapons/gravity_gun",
+  "weapons/personal_invisibility",
+  "weapons/small_worm",
   "lib/turn_controls",
   "weapons/jump",
+  "weapons/thrown_dynamite",
+  "weapons/tnt",
   "weapons/laser_gun",
   "weapons/super_tele",
   "weapons/electric_grenade",
+  "weapons/barrel_launcher",
   "weapons/lightning_strike",
+  "weapons/tazer",
+  "weapons/skip_go_surrender",
+  "weapons/drilling_crew",
   "lib/electrical",
   "weapons/javelin",
+  "weapons/girder_launcher",
   "weapons/ice_arrow",
   "weapons/valyrian_fire",
   "weapons/reinforcement",
+  "lib/bowling_balls",
   "weapons/bowling_ball",
+  "weapons/bowling_ball_single",
   "weapons/ferret",
   "weapons/electromagnet",
   "weapons/crate_strike",
@@ -74,7 +98,6 @@ function loader.load(ids)
   shared.fires = {}
   shared.missile_sprites = {}
   local want = {}
-  -- Require only pure declarations here. No hooks run until ORDER below.
   for id, path in pairs(index) do
     local definition = require(path)
     if definition.missile_sprite then shared.missile_sprites[id] = definition.missile_sprite end
@@ -87,9 +110,7 @@ function loader.load(ids)
       for _, dependency in ipairs(module.requires or {}) do need(dependency) end
     end
   end
-  -- Common rendering hooks still install even for a record-only weapon.
   for _, path in ipairs({ "lib/holds", "weapons/old_woman_launcher", "lib/anim", "lib/missile_sprites" }) do
-    -- These libraries have runtime side effects; load them only in ORDER.
     want[path] = true
   end
   for _, id in ipairs(ids) do
@@ -109,8 +130,6 @@ function loader.install(ctx)
   local path = index[ctx.id]
   if not path then error(ctx.id .. ": not a Highlander weapon") end
   local weapon = require(path)
-  -- Copy declarations before applying this profile's component options.
-  -- Existing modules may still build their declaration in a function.
   local declaration = weapon.definition
   if type(declaration) == "function" then declaration = declaration() end
   local spec = require("lib/weapon").merge(declaration, {})

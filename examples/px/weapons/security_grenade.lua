@@ -1,6 +1,4 @@
--- Security Grenade: PX's grenade that bursts in a ring. This is the entry point
--- the component's install runs; the port itself is lib/px_security_grenade.lua,
--- which needs `wa` and so is loaded here rather than at load (REPORT.md 11.11).
+-- Security Grenade: a grenade whose blast is ringed by eight more blasts, 60 pixels out.
 
 local grenade = require("lib/px_security_grenade")
 

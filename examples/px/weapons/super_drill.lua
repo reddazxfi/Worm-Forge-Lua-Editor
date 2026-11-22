@@ -1,15 +1,11 @@
--- Super Drill: record, art and behaviour.
+-- Super Drill: a pneumatic drill that cuts a hole twice as wide.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   drill = {
     duration_ms = 2000,
   },
-}
-
-weapon.defaults = {
-  mid_air = false,
 }
 
 function weapon.definition()
@@ -21,14 +17,6 @@ function weapon.definition()
 end
 
 function weapon.setup()
-  local shared = require("lib/shared")
-
-  -- The two with a script of their own. Both run from worm messages, which WA
-  -- sends in lockstep on every peer and in replays.
-
-  -- Super Drill (PX weapon_super_drill): WA keeps drilling as it always does,
-  -- and a hidden actor cuts a second hole at the worm each frame until WA's
-  -- drill stops. The same as the super_drill example.
   local drills = {}
 
   local function follow_drill(worm, id)
@@ -39,18 +27,26 @@ function weapon.setup()
         wa.land.cut({ x = worm.x, y = worm.y, shape = "drill" })
         return
       end
-      -- WA enters its drilling state a few frames after the shot.
       if not started and waiting < 4 then
         waiting = waiting + 1
         return
       end
       drills[id] = nil
-      a:despawn()
+      a:remove()
     end
   end
 
-  shared.drills = drills
-  shared.follow_drill = follow_drill
+  wa.on.worm_message(function(worm, msg)
+    if worm.weapon == "px.super_drill" and not drills[worm.id]
+        and worm:ammo("px.super_drill") ~= 0 then
+      local id = worm.id
+      drills[id] = wa.actors.spawn({
+        sprite = false, x = worm.x, y = worm.y,
+        owner = worm,
+        on = follow_drill(worm, id),
+      })
+    end
+  end, { msgs = { wa.msg.FIRE_WEAPON } })
 end
 
 return weapon

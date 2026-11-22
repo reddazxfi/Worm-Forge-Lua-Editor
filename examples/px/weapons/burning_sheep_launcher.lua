@@ -1,7 +1,7 @@
--- Burning Sheep Launcher: record, art and behaviour.
+-- Burning Sheep Launcher: launches a burning sheep.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   fires = {
     launch_power_pct = "charged",
@@ -21,6 +21,7 @@ weapon.record = {
         water = true,
         worms = true,
         worms_frozen = true,
+        crates = true,
       },
       max_bounces = 2,
       terrain_keep_speed_pct = 30,
@@ -45,6 +46,10 @@ weapon.record = {
       speed = 50,
     },
   },
+}
+
+weapon.defaults = {
+  collects_crates = false,
 }
 
 function weapon.definition()

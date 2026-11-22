@@ -1,5 +1,5 @@
 # wfcheck: check WormForge mods without the game
-# SUPPORTS 0.9.9 API 4.0 - LATER VERSIONS WILL WARN A LOT
+# SUPPORTS 1.0.0 API 5.0 - LATER VERSIONS WILL WARN A LOT
 # NOT SOURCE OF TRUTH - VIBE CODED - TRUST EXISTING MODS UNDER PX OVER THIS
 
 Catch the mistakes that break a mod pack **before** you load it: syntax errors,
@@ -14,14 +14,14 @@ and you do not need to run a match.
 C:\Games\Worms\Mods> check-mods.bat
 
 mods\mymod\rules.lua:12:5: warning[wa-namespace-typo] wa.repalce is not an engine API.
-    = `wa.repalce` does not exist in WormForge 0.9.9.
+    = `wa.repalce` does not exist in WormForge 1.0.0.
 
 mods\mymod\rules.lua:44:1: error[lockstep-rng] math.random() is not lockstep-safe. It is
     seeded per-client, so each peer draws a different number and the match
     desyncs. Use wa.random(min, max) to draw from the shared lockstep RNG, or a
     counter seeded deterministically from the turn number.
 
-checked 3 file(s): 1 error(s), 1 warning(s), 0 note(s) (WormForge 0.9.9)
+checked 3 file(s): 1 error(s), 1 warning(s), 0 note(s) (WormForge 1.0.0)
 ```
 
 ---
@@ -108,10 +108,10 @@ Run `wfcheck --help`. The ones you are most likely to want:
 
 ## Known limits
 
-- The engine API tables are pinned to **WormForge 0.9.9**. A newer engine may
+- The engine API tables are pinned to **WormForge 1.0.0**. A newer engine may
   have calls this build does not know about; it will not invent them. The tables
   are generated from the editor's definitions and checked against the current
-  0.9.9 `verbs.md` surface plus the 0.9.9 release notes (camera, handle
+  1.0.0 `verbs.md` surface plus the 1.0.0 release notes (camera, handle
   lifetime). The older vendored engine snapshot cannot be re-run here, so a
   newly added verb is covered by the release list, not by a live engine call.
 - A **world object** (`mine:`, `drum:`, `crate:`, …) is really several classes

@@ -571,8 +571,8 @@ function optionBlocks(options: NewModOption[]): string {
  * component id, so a profile could not reference it and the "create a mod" flow
  * could not ship one.
  *
- * `api_version = 4` is not cosmetic: the engine rejects anything else
- * (`crates/weapons/src/components.rs:340`, "api_version {n} is not supported").
+ * `api_version = 5` is not cosmetic: the engine rejects anything else
+ * (`crates/weapons/src/components.rs`, "api_version {n} is not supported").
  *
  * No top-level `entry` and no `[weapons]` table: `BundleManifest` is
  * `#[serde(deny_unknown_fields)]`, so those v1 keys make the whole bundle fail
@@ -598,9 +598,8 @@ export function buildModManifest(
 name = ${tomlString(name)}
 version = "0.1.0"
 author = ${tomlString(author)}
-api_version = 4
+api_version = 5
 format_version = 2
-debug_worm_state = false
 
 [[components]]
 id = ${tomlString(componentId)}
@@ -784,6 +783,11 @@ export async function createModFolder(
   const normalizedRoot = isWin
     ? clean.replace(/\//g, '\\').replace(/\\+$/, '')
     : clean.replace(/\\/g, '/').replace(/\/+$/, '');
+
+  const { exists: pathExists } = await import('@tauri-apps/plugin-fs');
+  if (await pathExists(`${normalizedRoot}${sep}${built.slug}`).catch(() => false)) {
+    throw new Error(`A mod folder named "${built.slug}" already exists. Pick a different name.`);
+  }
 
   for (const [rel, content] of Object.entries(built.files)) {
     await saveModFile(normalizedRoot, `${built.slug}/${rel}`, content);

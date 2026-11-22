@@ -13,10 +13,11 @@
 // so this list errs toward INCLUSION. Unknown keys are reported as warnings, never
 // errors -- see scanSpecKeyTypos in parser.ts.
 
-/** Every spec key accepted by `wa.weapons.replace` / `wa.weapons.register`. */
+/** Every spec key accepted by `wa.weapons.replace`. */
 export const WEAPON_SPEC_KEYS: string[] = [
   // identity
   'weapon',
+  'slot',
   'name',
   'copy_from',
   'wep',
@@ -27,14 +28,15 @@ export const WEAPON_SPEC_KEYS: string[] = [
   'panel_icon',
   'icon',
   'sprite_overrides',
+  'cluster_sprite',
+  'cluster_homing_sprite',
+  'cluster_homing',
   // behaviour
   'is_weapon',
   'eat_fire',
   'fire_repeat',
   'params',
-  'mole_dig_rotation',
   'sounds',
-  'cluster',
   'plane',
   'mine',
   'patch',
@@ -53,19 +55,24 @@ export const WEAPON_SPEC_KEYS: string[] = [
   'retreat_time',
   'hud',
   // Lua API 4 (WormForge 0.9.1) claim fields. Verified against the engine:
-  // `table_to_claim` in crates/lua-host/src/api.rs reads id/actor/airborne/
+  // `table_to_claim` in crates/lua-host/src/api.rs reads id/hold_as/
   // click_finish/stock_fire_choice/hold/panel_icons directly off the spec, and
   // `record_table::replace_writes` reads the record groups `fires`, `handling`,
-  // `missile`, `clusters`, `mine`, `gun`, `strike`, `jet_pack` plus `raw`.
+  // `missile`, `clusters`, `mine`, `gun`, `strike`, `jet_pack`, `armageddon`
+  // plus `raw`.
   //   - `mine` was already here; the rest were missing and produced
   //     spec-key-typo FALSE POSITIVES on valid API 4 code.
+  //   - `actor` and `airborne` are GONE in 1.0: a claim's steps are functions
+  //     that spawn with wa.actors.spawn, and a weapon's airborne setting is
+  //     weapon data (`weapon.defaults = { airborne = true }`).
   //   - `patch` stays listed although the engine now rejects it loudly at
   //     install ("patch is gone (Lua API 4)"): it is a hard error with its own
   //     guidance, not a silently ignored key, so the generic "engine ignores
   //     unknown keys" message would be the wrong thing to show.
-  //   - `truecolor`, `gpu_worm_sprites` and `worm_sprites_animate` are read from
-  //     the NESTED `params` table (api.rs:1687-1697), never directly off the
-  //     spec, and spec-key-typo only checks direct keys -- so they stay out.
+  //   - `worm_sprites_animate` is read from the NESTED `params` table
+  //     (api.rs:2311), never directly off the spec, and spec-key-typo only
+  //     checks direct keys -- so it stays out. `truecolor`, `gpu_worm_sprites`
+  //     and `mole_dig_rotation` are gone in 1.0.
   // Overlay weapon (a stock slot's projectile replaced by a record of its own,
   // wa.weapons.launch builds the same shape). `projectile` is validated one
   // level deeper against PROJECTILE_SPEC_KEYS below.
@@ -76,8 +83,9 @@ export const WEAPON_SPEC_KEYS: string[] = [
   // The two flying sheep sheets, `{ first, second }` (api.rs).
   'sheep_sprites',
   'id',
-  'actor',
-  'airborne',
+  // `hold_as = "stock.<name>"`: the stock weapon whose held pose the worm
+  // takes, for a record whose missile sprite hides its round.
+  'hold_as',
   // Direct spec field read by `table_to_claim` (api.rs:2346). It is also
   // mirrored as `handling.available_in_caves` in the weapon record, but the
   // direct key is the one a `wa.weapons.replace{...}` table uses.
@@ -96,7 +104,7 @@ export const WEAPON_SPEC_KEYS: string[] = [
   'gun',
   'strike',
   'jet_pack',
-  // The rest of record_table::GROUPS (record_table.rs:11). All 16 are writable
+  // The rest of record_table::GROUPS (record_table.rs:11). All 17 are writable
   // through wa.weapons.replace; the older list stopped at jet_pack and so
   // reported every utility/parachute/sheep/... group as a spec-key typo.
   'utility',
@@ -107,6 +115,7 @@ export const WEAPON_SPEC_KEYS: string[] = [
   'arrow',
   'baseball_bat',
   'flame_thrower',
+  'armageddon',
   'raw',
 ];
 
@@ -122,7 +131,7 @@ export const PROJECTILE_SPEC_KEYS: string[] = [
   'missile',
   'clusters',
   'sprite',
-  'cluster',
+  'cluster_sprite',
   'params',
   'sprites',
 ];

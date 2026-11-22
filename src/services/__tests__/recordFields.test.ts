@@ -99,6 +99,7 @@ describe('recordFields.ts mirrors the engine field table', () => {
       'arrow',
       'baseball_bat',
       'flame_thrower',
+      'armageddon',
     ]) {
       expect(groups.has(g), g).toBe(true);
     }

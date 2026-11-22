@@ -1,6 +1,5 @@
 -- Collision silhouette above the eight buried pixels of PX's feet.
--- Rows relative to the mask's bottom anchor (source x=31, y=41).
--- These runs also describe turret_mask.png; the original base art is untouched.
+
 local rows = {
   { -22, -3, 4 },
   { -21, -4, 5 },
@@ -26,13 +25,9 @@ local rows = {
   { -1, -4, 5 },
   { 0, -4, -1, 1, 5 },
 }
--- A turret's footprint from its rows, contiguous from -top through zero:
--- `{ dy, x0, x1 [, x0, x1 ...] }` relative to the bottom anchor. `burial`
--- is how far its art reaches below that anchor, into the land.
 local function build(rows, top, left, right, burial)
   local mask = { rows = rows, top = top, left = left, right = right, burial = burial }
 
-  -- Constant-time membership in the exact authored row runs.
   function mask.contains(x, y, px, py)
     local row = rows[py - y + mask.top + 1]
     if not row then return false end
@@ -58,14 +53,12 @@ local function build(rows, top, left, right, burial)
     return false
   end
 
-  -- `other_mask`, the other turret's footprint, is this one's by default.
   function mask.intersects(x, y, other_x, other_y, other_mask)
     other_mask = other_mask or mask
     x, y, other_x, other_y = math.floor(x), math.floor(y), math.floor(other_x), math.floor(other_y)
     if x + mask.right < other_x + other_mask.left or x + mask.left > other_x + other_mask.right
       or y < other_y - other_mask.top or y - mask.top > other_y then return false end
     for _, row in ipairs(rows) do
-      -- Rows are contiguous from -top through zero: only one can share this y.
       local other = other_mask.rows[y + row[1] - other_y + other_mask.top + 1]
       if other then
         for i = 2, #row, 2 do
@@ -82,8 +75,6 @@ local function build(rows, top, left, right, burial)
     x, y = math.floor(x), math.floor(y)
     burial = burial or 0
     solid = solid or wa.land.solid
-    -- Test each worm once against the authored runs, rather than reading native
-    -- userdata properties again for every pixel. Burial never exempts a worm.
     for _, w in ipairs(worms) do
       if w.id ~= planter_id and w.hp > 0 and mask.overlaps_worm(x, y, w) then return false end
     end

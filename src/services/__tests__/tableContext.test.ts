@@ -311,8 +311,8 @@ describe('table value suggestions', () => {
   });
 
   it('offers a spawn key its names', () => {
-    const ctx = at('wa.actors.spawn({\n  from = ')!;
-    expect(tableValueSuggestions(ctx).map((i) => i.name)).toEqual(['sky', 'cursor', 'owner']);
+    const ctx = at('wa.actors.spawn({\n  origin = ')!;
+    expect(tableValueSuggestions(ctx).map((i) => i.name)).toEqual(['center', 'bottom']);
   });
 
   it('declines keys with no named values, and values that are not names', () => {

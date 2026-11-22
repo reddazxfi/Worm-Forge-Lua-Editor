@@ -170,247 +170,14 @@ end`,
     return
   end
   a.vx = 0
-  a:gravity()
   local hit = a:move({ terrain = true, worms = true })
   if hit.land then
     a:explode({ damage = 50, id = 100, at = "below" })
   end
   a.vx = 0
-  a:advance()
   if a:in_water() then
     born[a.id] = nil
-    a:despawn()
-  end
-end`,
-  },
-  "LuaActor:advance": {
-    source: "WormForgeNew/mods/examples/gif_donkey/lua.lua",
-    code: `local function brain(a)
-  local now = wa.world.frame()
-  born[a.id] = born[a.id] or now
-  if now - born[a.id] >= FUSE then
-    go_off(a)
-    return
-  end
-  a.vx = 0
-  a:gravity()
-  local hit = a:move({ terrain = true, worms = true })
-  if hit.land then
-    a:explode({ damage = 50, id = 100, at = "below" })
-  end
-  a.vx = 0
-  a:advance()
-  if a:in_water() then
-    born[a.id] = nil
-    a:despawn()
-  end
-end`,
-  },
-  "LuaActor:angle": {
-    source: "WormForgeNew/mods/user_mods/roaming_bees/lib/bee.lua",
-    code: `local function brain(a, ev)
-  local s = state[a.id]
-  if not s then return end
-  ev = ev or {}
-
-  -- Damage/knockback is handled by the \`hit\` handler (\`hurt\`), not here.
-  -- Calling takeHit again would double-apply damage and force a spin on
-  -- blasts that hurt() deliberately left unspun.
-
-  if s.freeMe then
-    state[a.id] = nil
-    a:despawn()
-    return
-  end
-
-  if s.dead and not s.spin and not s.softSpin then
-    s.spin = true
-    s.spinN = 0
-  end
-
-  checkClipping(a, s)
-
-  if s.spin or s.softSpin then
-    if s.spinN == 0 then playBuzz(a) end
-    --a.vx, a.vy = 0, 0
-    s.rot = (s.rot + (s.dead and 9 or 7)) % 360
-    a:angle(s.rot)
-    s.spinN = s.spinN + 1
-    if s.spinN >= SPIN_FRAMES then
-      if s.dead then
-        detonate(a, s)
-        return
-      end
-      s.spin, s.softSpin, s.spinN = false, false, 0
-    end
-    return
-  end
-
-  if shouldStop(s) then
-    a.vx, a.vy = 0, 0
-    return
-  end
-
-  s.ticks = (s.ticks or 0) + 1
-
-  if a:in_water() then
-    s.dead = true; log("[BEE] dead: in water")
-    return
-  end
-
-  updateAnim(a, s)
-
-  if a.vx ~= 0 then
-    a.facing = a.vx > 0 and 1 or -1
-  end
-
-  if (s.lookoutCooldown or 0) > 0 then
-    s.lookoutCooldown = s.lookoutCooldown - 1
-  end
-
-  local target = wormById(s.targetId)
-
-  if target and (target.hp <= 0 or (not s.rogue and target.team == s.team)) then
-    target = nil
-    s.targetId = nil
-  end
-  if not target then
-    target = findClosestEnemy(a, s)
-    s.targetId = target and target.id or nil
-  end
-
-  if target then
-    s.roamCooldown = 0
-
-    if distPx(a, s.startX, s.startY) > ROAM_MAX_DIST_PX then
-      s.targetId = nil
-      s.homingDuration = 0
-      s.lookoutCooldown = LOOKOUT_COOLDOWN_GIVEUP
-      s.spin, s.spinN = true, 0
-      return
-    end
-
-    local tdist = distPx(a, target.x, target.y)
-    if tdist > HOMING_MAX_DIST_PX then
-      s.targetId = nil
-      s.homingDuration = 0
-      s.lookoutCooldown = LOOKOUT_COOLDOWN_GIVEUP
-      s.spin, s.spinN = true, 0
-      return
-    end
-
-    s.homingDuration = (s.homingDuration or 0) + 1
-    if s.homingDuration > HOMING_MAX_DURATION then
-      s.targetId = nil
-      s.homingDuration = 0
-      s.lookoutCooldown = LOOKOUT_COOLDOWN_TIMEOUT
-      s.spin, s.spinN = true, 0
-      return
-    end
-
-    s.chaseCD = (s.chaseCD or 0) - 1
-    if s.chaseCD <= 0 then
-      steer(a, target.x, target.y, CHASE_SPEED, CHASE_STRENGTH)
-      s.chaseCD = CHASE_STEER_EVERY
-    end
-
-    if tdist <= CONTACT_RADIUS_PX then
-      s.dead = true; log("[BEE] dead: reached target")
-      detonate(a, s)
-      return
-    end
-
-    if s.homingDuration % 15 == 0 then
-      playBuzz(a)
-    end
-
-    local vxpx, vypx = a.vx, a.vy
-    if vxpx ~= 0 or vypx ~= 0 then
-      s.desiredAngle = deg(wa.math.atan(vypx, math.abs(vxpx) + 0.001))
-    end
-  else
-    s.homingDuration = 0
-
-    if (s.roamCooldown or 0) > 0 then
-      s.roamCooldown = s.roamCooldown - 1
-      s.desiredAngle = 0
-      a.vx = a.vx * 0.75
-      a.vy = a.vy * 0.75
-      if s.roamCooldown <= 0 then
-        pickRoamPoint(a, s)
-      end
-    elseif not s.arriveX then
-      pickRoamPoint(a, s)
-    elseif distPx(a, s.arriveX, s.arriveY) < ROAM_ARRIVE_PX then
-      s.roamCooldown = rand(ROAM_COOLDOWN_MIN, ROAM_COOLDOWN_MAX)
-    else
-      s.roamCD = (s.roamCD or 0) - 1
-      if s.roamCD <= 0 then
-        local baseSpeed = s.roamSpeed or ROAM_SPEED
-        local speed = baseSpeed
-        local dist = distPx(a, s.arriveX, s.arriveY)
-        if dist < ROAM_SLOWDOWN_RADIUS_PX then
-          local frac = dist / ROAM_SLOWDOWN_RADIUS_PX
-          if frac < ROAM_SLOWDOWN_MIN_FRAC then
-            frac = ROAM_SLOWDOWN_MIN_FRAC
-          end
-          speed = baseSpeed * frac
-        end
-        steer(a, s.arriveX, s.arriveY, speed, ROAM_STRENGTH)
-        s.roamCD = ROAM_STEER_EVERY
-      end
-      local vxpx, vypx = a.vx, a.vy
-      if vxpx ~= 0 or vypx ~= 0 then
-        s.desiredAngle = deg(wa.math.atan(vypx, math.abs(vxpx) + 0.001))
-      end
-    end
-  end
-
-  local MAX_PITCH_DEG = 90 * 0.7
-  s.desiredAngle = math.max(-MAX_PITCH_DEG, math.min(MAX_PITCH_DEG, s.desiredAngle or 0))
-
-  if s.rot < s.desiredAngle then
-    s.rot = math.min(s.rot + ROT_SMOOTH_DEG, s.desiredAngle)
-  elseif s.rot > s.desiredAngle then
-    s.rot = math.max(s.rot - ROT_SMOOTH_DEG, s.desiredAngle)
-  end
-
-  if a.facing < 0 then
-    a:angle(-s.rot)
-  else
-    a:angle(s.rot)
-  end
-end`,
-  },
-  "LuaActor:blend": {
-    source: "WormForgeNew/mods/examples/tools/stress/stress.lua",
-    code: `local function orb_brain(o)
-  local spin = 0
-  return function(a)
-    a:gravity()
-    local hit = a:move({ terrain = true, worms = true })
-    if hit.terrain or hit.land or hit.worm then
-      flashes[#flashes + 1] = { x = a.x, y = a.y, tint = o.tint, born = now }
-      orbs[o.id] = nil
-      a:explode({ damage = DAMAGE, id = BLAST })
-      a:despawn()
-      return
-    end
-    if now % TRAIL_EVERY == 0 then
-      table.insert(o.trail, 1, { x = a.x, y = a.y })
-      o.trail[TRAIL + 1] = nil
-    end
-    spin = (spin + 12) % 360
-    local scale = o.style.scale or 1.0
-    if o.style.pulse then
-      scale = 1.0 + 0.6 * wa.math.sin(now / 6)
-    end
-    a:gfx({ angle = spin, tint = o.tint, blend = o.style.blend, scale = scale, depth = o.style.depth })
-    a:advance()
-    if a:in_water() then
-      orbs[o.id] = nil
-      a:despawn()
-    end
+    a:remove()
   end
 end`,
   },
@@ -442,7 +209,7 @@ end`,
   magnets[#magnets + 1] = m
 end`,
   },
-  "LuaActor:despawn": {
+  "LuaActor:remove": {
     source: "WormForgeNew/mods/examples/gif_donkey/lua.lua",
     code: `local function brain(a)
   local now = wa.world.frame()
@@ -452,16 +219,14 @@ end`,
     return
   end
   a.vx = 0
-  a:gravity()
   local hit = a:move({ terrain = true, worms = true })
   if hit.land then
     a:explode({ damage = 50, id = 100, at = "below" })
   end
   a.vx = 0
-  a:advance()
   if a:in_water() then
     born[a.id] = nil
-    a:despawn()
+    a:remove()
   end
 end`,
   },
@@ -475,16 +240,14 @@ end`,
     return
   end
   a.vx = 0
-  a:gravity()
   local hit = a:move({ terrain = true, worms = true })
   if hit.land then
     a:explode({ damage = 50, id = 100, at = "below" })
   end
   a.vx = 0
-  a:advance()
   if a:in_water() then
     born[a.id] = nil
-    a:despawn()
+    a:remove()
   end
 end`,
   },
@@ -543,7 +306,7 @@ end`,
   sparks[a.id] = n
   if n >= SPARK_LIFE then
     sparks[a.id] = nil
-    a:despawn()
+    a:remove()
   end
 end`,
   },
@@ -552,13 +315,12 @@ end`,
     code: `local function orb_brain(o)
   local spin = 0
   return function(a)
-    a:gravity()
     local hit = a:move({ terrain = true, worms = true })
     if hit.terrain or hit.land or hit.worm then
       flashes[#flashes + 1] = { x = a.x, y = a.y, tint = o.tint, born = now }
       orbs[o.id] = nil
       a:explode({ damage = DAMAGE, id = BLAST })
-      a:despawn()
+      a:remove()
       return
     end
     if now % TRAIL_EVERY == 0 then
@@ -571,34 +333,10 @@ end`,
       scale = 1.0 + 0.6 * wa.math.sin(now / 6)
     end
     a:gfx({ angle = spin, tint = o.tint, blend = o.style.blend, scale = scale, depth = o.style.depth })
-    a:advance()
-    if a:in_water() then
+      if a:in_water() then
       orbs[o.id] = nil
-      a:despawn()
+      a:remove()
     end
-  end
-end`,
-  },
-  "LuaActor:gravity": {
-    source: "WormForgeNew/mods/examples/gif_donkey/lua.lua",
-    code: `local function brain(a)
-  local now = wa.world.frame()
-  born[a.id] = born[a.id] or now
-  if now - born[a.id] >= FUSE then
-    go_off(a)
-    return
-  end
-  a.vx = 0
-  a:gravity()
-  local hit = a:move({ terrain = true, worms = true })
-  if hit.land then
-    a:explode({ damage = 50, id = 100, at = "below" })
-  end
-  a.vx = 0
-  a:advance()
-  if a:in_water() then
-    born[a.id] = nil
-    a:despawn()
   end
 end`,
   },
@@ -612,16 +350,14 @@ end`,
     return
   end
   a.vx = 0
-  a:gravity()
   local hit = a:move({ terrain = true, worms = true })
   if hit.land then
     a:explode({ damage = 50, id = 100, at = "below" })
   end
   a.vx = 0
-  a:advance()
   if a:in_water() then
     born[a.id] = nil
-    a:despawn()
+    a:remove()
   end
 end`,
   },
@@ -632,11 +368,8 @@ end`,
     st.anim = name
     st.clock = 0
     a:look("sprites/" .. name)
-    if name == "FrontFlip" then
-      for _ = 1, 13 do
-        a:advance()
-      end
-    end
+    st.frame = name == "FrontFlip" and 13 or 0
+    a:frame(st.frame)
     return
   end
   st.clock = st.clock + 1
@@ -648,7 +381,8 @@ end`,
   if slow and st.clock % 2 ~= 0 then
     return
   end
-  a:advance()
+  st.frame = st.frame + 1
+  a:frame(st.frame)
 end`,
   },
   "LuaActor:move": {
@@ -661,16 +395,14 @@ end`,
     return
   end
   a.vx = 0
-  a:gravity()
   local hit = a:move({ terrain = true, worms = true })
   if hit.land then
     a:explode({ damage = 50, id = 100, at = "below" })
   end
   a.vx = 0
-  a:advance()
   if a:in_water() then
     born[a.id] = nil
-    a:despawn()
+    a:remove()
   end
 end`,
   },
@@ -699,7 +431,7 @@ end`,
       -- hiding place above the map.
       a:warp({ x = dest_x, y = dest_y })
       if last then
-        a:sound("sounds/emotional-damage.wav")
+        wa.sound.play(a, "sounds/emotional-damage.wav")
       end
     end
     if last and not shown and age == 20 then
@@ -722,72 +454,15 @@ end`,
       end
       return
     end
-    a:gravity()
     local hit = a:move({ terrain = true, worms = true })
     if not boom and (hit.land or a:on_feet()) then
       boom = true
       a:explode({ damage = 35, id = 100, at = "below" })
-      a:despawn()
+      a:remove()
       return
     end
     if a:in_water() then
-      a:despawn()
-    end
-  end
-end`,
-  },
-  "LuaActor:scale": {
-    source: "WormForgeNew/mods/px/lib/px_bunker.lua",
-    code: `local function blast(m, x, y)
-  local b = wa.actors.spawn({ sprite = ART .. "idle.png", x = x, y = y,
-    gravity = false, collide = false, owner = m.owner, on = function() end })
-  b:scale(0)
-  b:explode({ damage = DAMAGE, id = BLAST, below = false })
-  if not b.dead then b:despawn() end
-  if super_buster and m.owner then
-    wa.fire.spawn({ owner = m.owner, x = x, y = y, count = 6,
-      duration = FIRE.duration, up_power = FIRE.up_power, damage = FIRE.damage })
-  end
-end`,
-  },
-  "LuaActor:sound": {
-    source: "WormForgeNew/mods/examples/turret/weapons.lua",
-    code: `local function start_firing(a, s)
-  if s.firing then return end
-  s.firing = true
-  s.anim = 0
-  s.fire_sound = 35
-  a:sound("sounds/sentryfireloop.wav")
-end`,
-  },
-  "LuaActor:tint": {
-    source: "WormForgeNew/mods/examples/tools/stress/stress.lua",
-    code: `local function orb_brain(o)
-  local spin = 0
-  return function(a)
-    a:gravity()
-    local hit = a:move({ terrain = true, worms = true })
-    if hit.terrain or hit.land or hit.worm then
-      flashes[#flashes + 1] = { x = a.x, y = a.y, tint = o.tint, born = now }
-      orbs[o.id] = nil
-      a:explode({ damage = DAMAGE, id = BLAST })
-      a:despawn()
-      return
-    end
-    if now % TRAIL_EVERY == 0 then
-      table.insert(o.trail, 1, { x = a.x, y = a.y })
-      o.trail[TRAIL + 1] = nil
-    end
-    spin = (spin + 12) % 360
-    local scale = o.style.scale or 1.0
-    if o.style.pulse then
-      scale = 1.0 + 0.6 * wa.math.sin(now / 6)
-    end
-    a:gfx({ angle = spin, tint = o.tint, blend = o.style.blend, scale = scale, depth = o.style.depth })
-    a:advance()
-    if a:in_water() then
-      orbs[o.id] = nil
-      a:despawn()
+      a:remove()
     end
   end
 end`,
@@ -817,7 +492,7 @@ end`,
       -- hiding place above the map.
       a:warp({ x = dest_x, y = dest_y })
       if last then
-        a:sound("sounds/emotional-damage.wav")
+        wa.sound.play(a, "sounds/emotional-damage.wav")
       end
     end
     if last and not shown and age == 20 then
@@ -840,16 +515,15 @@ end`,
       end
       return
     end
-    a:gravity()
     local hit = a:move({ terrain = true, worms = true })
     if not boom and (hit.land or a:on_feet()) then
       boom = true
       a:explode({ damage = 35, id = 100, at = "below" })
-      a:despawn()
+      a:remove()
       return
     end
     if a:in_water() then
-      a:despawn()
+      a:remove()
     end
   end
 end`,
@@ -949,18 +623,6 @@ wa.on.death(update_selectable)`,
   end
 end)`,
   },
-  "wa.on.gravity_after": {
-    source: "WormForge API example (no shipped mod uses this hook)",
-    code: `wa.on.gravity_after(function(m)
-  m.vx = m.vx * 2
-end)`,
-  },
-  "wa.on.gravity_before": {
-    source: "WormForge API example (no shipped mod uses this hook)",
-    code: `wa.on.gravity_before(function(m)
-  m.wind_scale = 0
-end)`,
-  },
   "wa.on.hud": {
     source: "WormForgeNew/mods/examples/tools/worm_state_logger.lua",
     code: `wa.on.hud(function()
@@ -971,7 +633,7 @@ end)`,
       break
     end
   end
-  wa.hud.line(line, 14, 10)
+  wa.hud.line(line, { font = "standard" })
 end)`,
   },
   "wa.on.hurt": {
@@ -980,6 +642,12 @@ end)`,
   if hit.phase == "post" and hit.lost > 0 then
     wa.log(hit.kind .. " -" .. tostring(hit.lost) .. " hp")
   end
+end)`,
+  },
+  "wa.on.skim": {
+    source: "WormForgeNew/mods/skim_voices/features/skim_voices.lua",
+    code: `wa.on.skim(function(event)
+  wa.log("worm " .. tostring(event.worm.id) .. " skimmed")
 end)`,
   },
   "wa.on.missile_frame": {
@@ -999,7 +667,7 @@ end`,
     source: "WormForgeNew/mods/px/lib/oil_drums.lua",
     code: `wa.on.oil_explode(function(ev)
   local kind = take(ev.drum)
-  local burst = launched[ev.drum.uid] and LAUNCHED[kind] or BURST[kind]
+  local burst = launched[ev.drum.id] and LAUNCHED[kind] or BURST[kind]
   if not burst then return end
   ev:replace()
   burst(ev, owner_for(ev.team))
@@ -1134,11 +802,10 @@ end`,
     source: "WormForgeNew/mods/px/lib/px_blast_zone.lua",
     code: `local function boom(z, obj)
   local b = wa.actors.spawn({
-    sprite = false, x = z.x, y = z.y, gravity = false, collide = false,
-    owner = z.owner, on = function() end,
+    sprite = false, x = z.x, y = z.y, owner = z.owner, on = function() end,
   })
   b:explode({ damage = DAMAGE, id = PUSH, below = false })
-  if not b.dead then b:despawn() end
+  b:remove()
   -- PX then arms the mine that tripped the zone, rather than leaving it to be
   -- caught by the blast (:288-303): \`Active = 0\` and \`Prefuse <= 0\` are the
   -- engine's "not armed yet", which is \`fuse < 0\` here, and the random 1-5
@@ -1223,11 +890,11 @@ end`,
     fx, fy = fx * DAMAGE_FORCE, fy * DAMAGE_FORCE
   end
   if obj.kind == "worm" then
-    obj:hurt({ amount = damage, vx = fx, vy = fy })
+    obj:hit({ amount = damage, vx = fx, vy = fy })
   else
     obj:hit(damage, fx, fy)
   end
-  a:sound(crushed and SOUND_CRUSH or SOUND_HIT)
+  wa.sound.play(a, crushed and SOUND_CRUSH or SOUND_HIT)
 end`,
   },
   "WorldHandle:remove": {
@@ -1247,12 +914,12 @@ end`,
     ang = ang, rgb = BEAM_RGB[s.alliance + 1] or { 125, 125, 125 },
     seed = (x0 // 1 * 7919 + y0 // 1) % 0x80000000 }
   rays[#rays + 1] = r
-  a:sound("sounds/laser_gun/laser_start.wav")
+  wa.sound.play(a, "sounds/laser_gun/laser_start.wav")
 
   wa.land.cut({ x = hx, y = hy, shape = "circle", radius = HOLE })
   for _, obj in ipairs(touched(x0, y0, dx, dy, length, target.obj and target.obj.id)) do
     if obj.kind == "worm" then
-      if obj.hp > 0 then obj:hurt(WORM_DAMAGE) end
+      if obj.hp > 0 then obj:hit(WORM_DAMAGE) end
     elseif obj.kind == "crate" or obj.kind == "oil" then
       obj:hit(OBJECT_DAMAGE, dx, dy)
     elseif obj.kind == "mine" and not s.armed[obj.id] then
@@ -1270,7 +937,7 @@ end`,
       target.obj:remove()
     end
     fx_disintegrate(r, target.x, target.y)
-    a:sound(SND .. "sentrylaserdisin.wav")
+    wa.sound.play(a, SND .. "sentrylaserdisin.wav")
     -- The target is gone: acquire the next one with its own beep and delay.
     s.tid, s.had_target = nil, false
   end
@@ -1411,7 +1078,7 @@ wa.on.worm_message(function(worm, msg)
   end
   for _, w in ipairs(wa.worms.all()) do
     if w.alliance ~= worm.alliance and w.hp > 0 then
-      w:hurt(10)
+      w:hit(10)
     end
   end
   return "eat"
@@ -1465,18 +1132,6 @@ end`,
   end
 
   prev_down = down
-end`,
-  },
-  "WormEntity:drop": {
-    source: "WormForgeNew/mods/examples/pooz/weapons.lua",
-    code: `local function restore(worm, a)
-  live[worm.id] = nil
-  if a then
-    worm.x = a.x
-    worm.y = a.y
-  end
-  worm.visible = true
-  worm:drop()
 end`,
   },
   "WormEntity:equip": {
@@ -1586,18 +1241,19 @@ wa.on.hurt(function(hit)
   end
 end)`,
   },
-  "WormEntity:allow_death": {
+  "WormEntity:die": {
     source: "WormForgeNew/mods/utilities/features/instant_death.lua",
-    code: `-- Let each zero-HP victim die once its own movement settles, without waiting
--- for the battlefield. Frame polling also covers falls and direct HP writes.
--- WA owns the death animation, explosion and grave; repeat requests are inert.
+    code: `-- Let each zero-HP victim die without waiting for the battlefield.
+-- In flight mode, die now; otherwise let WA start it once the worm settles.
 wa.on.worm_message(function(worm)
   if not worm.turn and worm.hp == 0 then
-    worm:allow_death()
+    if not (in_flight and worm:die()) then
+      worm:die{ settled = true }
+    end
   end
 end, { msgs = { wa.msg.FRAME_FINISH } })`,
   },
-  "WormEntity:hurt": {
+  "WormEntity:hit": {
     source: "WormForgeNew/mods/examples/labs/hurt_lab.lua",
     code: `local TEN = "labs.hurt_lab"
 
@@ -1617,7 +1273,7 @@ wa.on.worm_message(function(worm, msg)
   end
   for _, w in ipairs(wa.worms.all()) do
     if w.alliance ~= worm.alliance and w.hp > 0 then
-      w:hurt(10)
+      w:hit(10)
     end
   end
   return "eat"
@@ -1727,7 +1383,7 @@ end, { msgs = { wa.msg.FIRE_WEAPON } })`,
   -- What PX draws in the worm's place.
   local f = worm.facing
   if h.flying then
-    if h.climb then h.climb:despawn(); h.climb = nil end
+    if h.climb then h.climb:remove(); h.climb = nil end
     h.body = h.body or heli_actor(worm, "sprites/helicopter/flying.png")
     local a = h.body
     a.x, a.y, a.vx, a.vy, a.facing = worm.x, worm.y, 0, 0, f
@@ -1752,7 +1408,7 @@ end`,
     source: "WormForgeNew/mods/px/weapons/double_jump.lua",
     code: `wa.on.worm_message(function(worm, msg)
   if msg == wa.msg.FRAME_FINISH then
-    if on and not armed and worm.turn and GROUNDED[worm.state_id] then
+    if on and not armed and worm.turn and GROUNDED[worm.state] then
       armed = true
     end
   elseif msg == wa.msg.FIRE_WEAPON then
@@ -1814,10 +1470,9 @@ end`,
     source: "WormForgeNew/mods/user_mods/roaming_bees/semantic_all_rules.lua",
     code: `local function everySettableStateIsFine(worm)
   worm:set_state("standing")
-  worm:set_state("sliding")
+  worm:set_state("falling")
   worm:set_state("bungee")
   worm:set_state("tumbling")
-  worm:set_state("sinking")   -- misrepresented, its actually tumbling, sinking is a worm drowning.
   worm:set_state("teleporting")
   -- EXPECT: 0 findings on both sides.
 end`,
@@ -1901,9 +1556,7 @@ end`,
   if worm.hp <= 0 then return end
   local y = ev.y
   if wa.world.cavern() and y < 19 then y = 19 end
-  local previous = fires.teleports[worm.id]
-  if previous and previous.marker then previous.marker:despawn() end
-  -- Waiting 50 frames there makes an unplaced worm fall and take damage
+  -- Waiting 50 frames there would make an unplaced worm fall and take damage
   -- before the arrival, so it is placed now. It sounds like WA's own
   -- placement.
   if unplaced(worm) then
@@ -1913,14 +1566,9 @@ end`,
     fires.teleports[worm.id] = { placed = true, frames = 0 }
     return
   end
-  -- FireWeapon clears WA's planted X for click-only weapons. Keep a fixed
-  -- stock planted-X marker at the saved target until the worm arrives instead;
-  -- the engine plays it once, as WA plays its own.
-  local marker = wa.actors.spawn({
-    owner = worm, x = ev.x, y = y, sprite = "markerr",
-    gravity = false, collide = false, drown = false,
-  })
-  fires.teleports[worm.id] = { x = ev.x, y = y, frames = 0, pending = true, marker = marker }
+  -- FireWeapon clears WA's planted X for click-only weapons; the engine draws
+  -- the saved target's marker itself, as it draws WA's own.
+  fires.teleports[worm.id] = { x = ev.x, y = y, frames = 0, pending = true }
   wa.sound.play(worm, SOUND_COMMUNICATOR, TELE_SOUND_PRIORITY) -- PX's M_SETTARGET confirmation
 end`,
   },
@@ -1960,8 +1608,8 @@ end`,
   "WormEntity:use": {
     source: "WormForge API example",
     code: `local function give_jetpack(worm)
-  if worm.turn then
-    return worm:use("stock.jetpack")
+  if not worm.turn then
+    return worm:use("stock.jet_pack")
   end
   return false
 end`,

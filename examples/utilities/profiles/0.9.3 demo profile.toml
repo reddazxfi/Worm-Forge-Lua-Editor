@@ -6,7 +6,7 @@ features = ["core.fog", "core.utilities"]
 fog_floor = 40
 
 [options."core.utilities"]
-instant_death = true
+instant_death = "settled"
 live_hp = true
 
 [scheme]
@@ -15,7 +15,6 @@ automatic_end_of_turn_retreat = true
 block_roofing = "block_everywhere"
 blood = true
 donor_cards = true
-expedite_instant_utilities = true
 floating_weapon_glitch = false
 glide_glitch = false
 hazards = 245
@@ -71,3 +70,15 @@ row = "F12"
 [weapons."stock.surrender"]
 column = 2
 row = "F12"
+
+[weapon_settings."stock.damage_x2"]
+placement_collect = "activate"
+
+[weapon_settings."stock.crate_spy"]
+placement_collect = "activate"
+
+[weapon_settings."stock.double_turn_time"]
+placement_collect = "activate"
+
+[weapon_settings."stock.crate_shower"]
+placement_collect = "activate"

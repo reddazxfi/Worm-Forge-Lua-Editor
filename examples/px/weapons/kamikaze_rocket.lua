@@ -1,7 +1,7 @@
--- Kamikaze Rocket: record, art and behaviour.
+-- Kamikaze Rocket: Ctrl + Space turns the worm into a steerable rocket for four seconds.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     ends_turn = true,
@@ -12,7 +12,6 @@ function weapon.definition()
   return require("lib/weapon").merge(weapon.record, {
     wep = "weps/suicide_bomber.wep",
     panel_icon = "sprites/kamikaze_rocket/icon.png",
-    -- The Kamikaze's take-out (its last frame the hold) and launch, PX's.
         worm_sprites = {
           wkamlnk = "sprites/kamikaze_rocket/take_out.png", wkamlnku = "sprites/kamikaze_rocket/take_out.png",
           wkamlnkd = "sprites/kamikaze_rocket/take_out.png", wkamjmp = "sprites/kamikaze_rocket/launch.png",
@@ -23,31 +22,20 @@ function weapon.definition()
 end
 
 function weapon.setup()
-  -- Highlander: Kamikaze Rocket (PX weapon_kamikaze_rocket: KamikazeRocket.txt,
-  -- by Pablo, updated by rafa``2), on the Suicide Bomber slot as PX's
-  -- Highlander scheme has it. Its record is WA's Kamikaze's: WA's own
-  -- Kamikaze flies the worm, digs its way and hits the worms it passes. As PX
-  -- does, the pack sets where the worm is before each of WA's frames: a rocket
-  -- at 8 px a frame from the worm along its aim, turned 9 degrees a frame by
-  -- left and right, digging, for 4 seconds; then it blows up (damage 30,
-  -- blast 100) and the worm goes into the water. Fired only with Ctrl held
-  -- (Ctrl + Space); without, nothing is used.
   local shared = require("lib/shared")
-  local SPEED = 8             -- px a frame (kRocketSpeed)
-  local TURN = 0.05           -- PX angle units (times pi) a frame
-  local LIFE = 4000           -- ms, less 20 a frame: 200 frames
-  local HOLE = 8              -- MakeHole(8) each frame
+  local SPEED = 8 -- px a frame (kRocketSpeed)
+  local TURN = 0.05 -- PX angle units (times pi) a frame
+  local LIFE = 4000 -- ms, less 20 a frame: 200 frames
+  local HOLE = 8 -- MakeHole each frame
   local BOOM = { damage = 30, id = 100 }
-  local STALE = 200           -- other worms' frames without one of its own
+  local STALE = 200 -- other worms' frames without one of its own
   local FLY = "sprites/kamikaze_rocket/fly.png"
   local FLY_FRAMES, FLY_HALF_W, FLY_HALF_H = 5, 30, 40
   local DEPTH = wa.depth.FRONT
 
   local rockets = {} -- worm id -> its rocket
-  local armed = {}   -- worm id -> fired with Ctrl, its flight not yet begun
+  local armed = {}
 
-  -- PX's FireFinal: from the worm, at its aim (FireAngle, 0 down to 1 up)
-  -- on its side.
   local function launch(worm)
     rockets[worm.id] = {
       worm = worm,
@@ -62,26 +50,24 @@ function weapon.setup()
     worm.visible = true
   end
 
-  -- One of WA's frames, before WA's Kamikaze runs it.
   local function fly(worm, r)
     local keys = wa.world.keys()
     if keys.left then r.angle = r.angle + TURN end
     if keys.right then r.angle = r.angle - TURN end
     local a = r.angle * math.pi
-    r.x = r.x + (SPEED * wa.math.sin(a))
-    r.y = r.y + (SPEED * wa.math.cos(a))
+    r.vx, r.vy = SPEED * wa.math.sin(a), SPEED * wa.math.cos(a)
+    r.x = r.x + r.vx
+    r.y = r.y + r.vy
     worm.x, worm.y = r.x, r.y
     r.age = r.age + 1
     r.life = r.life - 20
     if r.life <= 0 then
-      -- The blast, then the worm out of the map into the water, where WA's
-      -- Kamikaze ends it (0x85, drowning).
       local boom = wa.actors.spawn({
-        sprite = false, x = r.x, y = r.y, gravity = false, collide = false, owner = worm,
+        sprite = false, x = r.x, y = r.y, owner = worm,
         on = function() end,
       })
       boom:explode(BOOM)
-      boom:despawn()
+      boom:remove()
       worm.x, worm.y = -2500, wa.world.water() + 1000
       r.done = true
       return
@@ -93,16 +79,12 @@ function weapon.setup()
     if msg == wa.msg.FIRE_WEAPON then
       if worm.weapon ~= "px.kamikaze_rocket" then return end
       if not wa.world.keys().ctrl then
-        wa.hud.message_top("Hold Ctrl and press Space to use the Kamikaze Rocket.",
-          {to = "coalition", alliance = worm.alliance})
+        require("lib/weapon_hint").notice(worm, "Hold Ctrl and press Space\nto use the Kamikaze Rocket.")
         return "eat"
       end
       armed[worm.id] = true
       return
     end
-    -- FRAME_FINISH
-    -- Leaving the map sideways, WA's Kamikaze blows the worm up and frees it:
-    -- its frames stop, so its rocket goes once the other worms have had a few.
     for id, other in pairs(rockets) do
       if id ~= worm.id then
         other.stale = other.stale + 1
@@ -123,7 +105,6 @@ function weapon.setup()
     end
   end, { msgs = { wa.msg.FIRE_WEAPON, wa.msg.FRAME_FINISH } })
 
-  -- A worm armed but never flying (its fire cancelled) is not armed next turn.
   wa.on.turn_start(function()
     armed = {}
   end)
@@ -139,8 +120,6 @@ function weapon.setup()
     end)
   end
 
-  -- The rocket, drawn as PX's: its art faces down, turned to its heading and
-  -- mirrored for a worm facing right.
   if wa.on.draw and wa.draw.quad then
     local QUAD = { sprite = FLY, blend = "alpha", color = 0xFFFFFFFF, depth = DEPTH,
       points = { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } } }

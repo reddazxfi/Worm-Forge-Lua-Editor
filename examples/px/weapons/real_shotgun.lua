@@ -1,7 +1,7 @@
--- Real Shotgun: record, art and behaviour.
+-- Real Shotgun: a shotgun that fires five pellets per shot.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   gun = {
     burst_spread_deg = 10,

@@ -1,7 +1,7 @@
--- Nuke Rocket: record, art and behaviour.
+-- Nuke Rocket: a placed rocket that fuses, then launches a nuke that bursts into clusters.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   fires = {
     launch_power_pct = 5,
@@ -91,17 +91,17 @@ function weapon.definition()
     panel_icon = "sprites/nuke_rocket/nuke_rocket_ico.png",
     sprite = "sprites/nuke_rocket/nuke_rocket_bullet.png",
     on_explode = function(ev) shared.nuke_rocket_explode(ev) end,
-    -- The engine draws its PX sprite-builder hold from PX_HOLDS:
-        -- the record's own sprite is PX-only, which left WA no sheet to draw
-        -- the worm with.
-        worm_sprites = PX_POSTURE,
+        worm_sprites = {
+          weaponlnk = sdk.PX_LEVEL.weaponlnk, weaponlnku = sdk.PX_LEVEL.weaponlnku,
+          weaponlnkd = sdk.PX_LEVEL.weaponlnkd,
+          wthrow = PX_POSTURE.wthrow, wthrowu = PX_POSTURE.wthrowu, wthrowd = PX_POSTURE.wthrowd,
+        },
     sprites = {
           "sprites/px_hold/nuke_rocket.png",
         },
     sounds = { "sounds/nuke_rocket_launch.wav" },
     params = { gpu_prefix = "sprites/px_hold/" },
-    hold = { -- Nuke Rocket (nuke_rocket_anim): held at a fixed angle, not
-        -- the aim's (dont_rotate_with_angle), and placed, so never put away.
+    hold = {
         thrown = true,
         sheet = "sprites/px_hold/nuke_rocket.png", hand_type = 2, hand_radius = 13.0,
         hand_rotation = -0.6, hand_radial_rotation = -0.95, hand_scale = 1.0,
@@ -114,57 +114,58 @@ end
 
 function weapon.setup()
   local shared = require("lib/shared")
+  local own_time = require("wf-lib/own_time")
 
-  -- ------------------------------------------------------------ Nuke Rocket
   do
-  --
-  -- PX's nuke_rocket_script, on the mine slot. The scheme's record is a
-  -- placed weapon that WA fires as a missile (fire type 2, method 2:
-  -- CreateWeaponProjectile), and it already has every value PX's FireFinal
-  -- gives its first rocket (a 3 s fuse, damage 0, bias 50, push 70, sound
-  -- 66). So WA's own shot is PX's first rocket: it fuses on the ground,
-  -- hissing (sound 66 every 10 frames). When it explodes, a nuke climbs out
-  -- of it: a real WA missile of the same slot (wa.weapons.launch, as PX's
-  -- MakeNuke creates a CMissile), silent, with a 1.6 s fuse, bursting into
-  -- the record's clustlets. For 53 frames it climbs, randomly and jittering
-  -- sideways, and carries worms and missiles within 17 pixels along; then
-  -- it brakes. Its explosion adds PX's two 40/40 blasts and sounds 85, 70.
-  -- PX's build of 28.09.2026 gives the nuke reddaz's bounce physics, with
-  -- restitution 0.11; here it keeps 11% of its speed when it hits terrain
-  -- (the record's terrain friction, 0 on WA's Mine record: it stopped dead).
-  -- The fusing rocket keeps the record's 0 and stays where it lands.
-  --
-  -- Not ported: PX's particle trails, and carrying mines, crates, oil drums
-  -- and bowling balls (their speed is not writable from Lua).
-  local NR_HISS = 66    -- the fusing rocket's hiss, every 10 frames
-  local NR_CLIMB = 53   -- frames the nuke climbs (PX: "1.1-1.2 second")
-  local NR_CARRY = 17   -- pixels: what the climbing nuke carries along
+  local NR_HISS = 66 -- the fusing rocket's hiss, every 10 frames
+  local NR_CLIMB = 53 -- frames the nuke climbs (PX: "1.1-1.2 second")
+  local NR_CARRY = 17 -- pixels: what the climbing nuke carries along
   local NUKE = { fuse = 1600, sound = 0, burst = "clusters", terrain_keep_speed_pct = 11,
     clusters = { launch_power_pct = 33, power_variation_pct = 33 } }
   local NUKE_BLAST = { damage = 40, id = 40 } -- PX's DoExplosion(x, y, 40, 40), twice
 
-  local nr_first = {}    -- missile id -> frames: a first rocket, fusing
-  local nr_speed = {}    -- missile id -> { vx, vy } at its last frame
-  local nr_nuke = {}     -- missile id -> frames flown: a nuke
+  local nr_first = {} -- missile id -> frames: a first rocket, fusing
+  local nr_speed = {} -- missile id -> { vx, vy } at its last frame
+  local nr_nuke = {} -- missile id -> frames flown: a nuke
   local nr_climbing = {} -- nuke id -> { x, y, vx, vy }, while it climbs
-  local nr_pending = {}  -- nukes to launch once the rocket's blast is over
-  local nr_shooter       -- the worm that fired (PX's ClWT / ClWN)
-  local nr_owner = {}    -- missile id -> its worm, for a rocket nobody fired (an oil drum's)
-  local nr_expect        -- fired: the next mine-slot missile is the rocket
+  local nr_pending = {} -- nukes to launch once the rocket's blast is over
+  local nr_shooter_id -- the id of the worm that fired (PX's ClWT / ClWN)
+  local nr_owner = {}
+  local nr_expect -- fired: the next mine-slot missile is the rocket
+
+  local NO_TEAM = 0
+
+  local function keep(owner)
+    return owner.kind == "worm" and owner.id or NO_TEAM
+  end
 
   local function near(ax, ay, bx, by)
     local r = NR_CARRY
     return math.abs(ax - bx) < r and math.abs(ay - by) < r
   end
 
+  local function owner_of(id)
+    if id == NO_TEAM then return nil end
+    local turn, any
+    for _, w in ipairs(wa.worms.all()) do
+      if w.id == id then return w end
+      if w.turn then turn = w end
+      any = any or w
+    end
+    return turn or any
+  end
+
+  local function owner_at(id, x, y)
+    if id == NO_TEAM then return shared.no_team_owner(x, y) end
+    return owner_of(id)
+  end
+
   wa.on.missile_frame(function(m)
     local t = nr_nuke[m.id]
     if t ~= nil then
-      -- Before WA moves it, as PX's M_FRAME runs before super.
       if m.phase ~= "pre" then
         return
       end
-      -- Retain the original lottery and RNG draw count; convert its speed to pixels.
       if t < NR_CLIMB then
         m.vy = m.vy - wa.random(19661, 52429) / 65536 -- 0.3 to 0.8 a frame
         if t % 2 == 1 then
@@ -173,7 +174,9 @@ function weapon.setup()
         nr_climbing[m.id] = { x = m.x, y = m.y, vx = m.vx, vy = m.vy }
         for _, w in ipairs(wa.worms.all()) do
           if near(w.x, w.y, m.x, m.y) then
-            w.vx, w.vy = m.vx, m.vy
+            local k = own_time.scale(w)
+            if k <= 0 then k = 1 end
+            w.vx, w.vy = m.vx / k, m.vy / k
           end
         end
       else
@@ -185,8 +188,6 @@ function weapon.setup()
       nr_nuke[m.id] = t + 1
       return
     end
-    -- The rocket is the missile WA fires after the fire key. Later ones of
-    -- the slot (the nuke's cluster bits) are no rockets.
     if nr_first[m.id] == nil and nr_expect and m.weapon == "px.nuke_rocket" then
       nr_first[m.id], nr_expect = 0, false
     end
@@ -195,14 +196,13 @@ function weapon.setup()
         nr_speed[m.id] = { m.vx, m.vy }
         local n = (nr_first[m.id] or 0) + 1
         nr_first[m.id] = n
-        local owner = nr_owner[m.id] or nr_shooter
-        if n % 10 == 0 and owner then
-          wa.sound.play(owner, NR_HISS)
+        local id = nr_owner[m.id] or nr_shooter_id
+        if n % 10 == 0 and id and id ~= NO_TEAM then
+          wa.sound.play(owner_of(id), NR_HISS)
         end
       end
       return
     end
-    -- Any other missile a climbing nuke passes is carried along.
     if m.phase == "pre" then
       for _, c in pairs(nr_climbing) do
         if near(m.x, m.y, c.x, c.y) then
@@ -212,14 +212,10 @@ function weapon.setup()
     end
   end)
 
-  -- PX's nuke oil drum (oildrums.txt): a first rocket, as the weapon's own
-  -- shot but fired for `owner` from (x, y), climbing into a nuke when its
-  -- fuse runs out. The weapon's record is PX's first rocket. Its id, nil
-  -- when WA made none.
   shared.nuke_rocket_first = function(owner, x, y, vx, vy)
     local id = wa.weapons.launch({ weapon = "px.nuke_rocket", owner = owner, x = x, y = y, vx = vx, vy = vy })
     if id then
-      nr_first[id], nr_owner[id] = 0, owner
+      nr_first[id], nr_owner[id] = 0, keep(owner)
     end
     return id
   end
@@ -231,8 +227,9 @@ function weapon.setup()
     end
     if nr_nuke[id] then
       nr_nuke[id], nr_climbing[id] = nil, nil
-      local owner = nr_owner[id] or nr_shooter
+      local owner_id = nr_owner[id] or nr_shooter_id
       nr_owner[id] = nil
+      local owner = owner_id and owner_at(owner_id, ev.x, ev.y)
       if owner then
         wa.sound.play(owner, 85)
         wa.sound.play(owner, 70) -- "louder please :D"
@@ -248,35 +245,36 @@ function weapon.setup()
     if nr_first[id] then
       local speed = nr_speed[id] or { 0, 0 }
       nr_first[id], nr_speed[id] = nil, nil
-      local owner = nr_owner[id] or nr_shooter
+      local owner_id = nr_owner[id] or nr_shooter_id
       nr_owner[id] = nil
-      if owner then
-        wa.sound.play(owner, "sounds/nuke_rocket_launch.wav")
+      if owner_id and owner_id ~= NO_TEAM then
+        wa.sound.play(owner_of(owner_id), "sounds/nuke_rocket_launch.wav")
       end
-      -- Launched after the blast, as PX's comes after super.
-      nr_pending[#nr_pending + 1] = { x = ev.x, y = ev.y, vx = speed[1], vy = speed[2], owner = owner }
+      nr_pending[#nr_pending + 1] = { x = ev.x, y = ev.y, vx = speed[1], vy = speed[2], owner = owner_id }
     end
   end
 
   wa.on.worm_message(function(worm, msg)
     if msg == wa.msg.FIRE_WEAPON and worm.weapon == "px.nuke_rocket" then
-      nr_shooter, nr_expect = worm, true
+      nr_shooter_id, nr_expect = worm.id, true
     elseif msg == wa.msg.FRAME_FINISH and #nr_pending > 0 then
-      for _, p in ipairs(nr_pending) do
-        local owner = p.owner or nr_shooter or worm
+      local pending = nr_pending
+      nr_pending = {}
+      for _, p in ipairs(pending) do
+        local owner = owner_at(p.owner or nr_shooter_id, p.x, p.y) or worm
         local id = wa.weapons.launch({
           weapon = "px.nuke_rocket", owner = owner, x = p.x, y = p.y, vx = p.vx, vy = p.vy,
           missile = {
             fuse = NUKE.fuse, flight_sound = NUKE.sound, burst = NUKE.burst,
             bounce = { terrain_keep_speed_pct = NUKE.terrain_keep_speed_pct },
           },
-          -- The first rocket has no payload; only this stage ejects clusters.
           clusters = NUKE.clusters,
         })
-        nr_nuke[id] = 0
-        nr_owner[id] = owner
+        if id then
+          nr_nuke[id] = 0
+          nr_owner[id] = keep(owner)
+        end
       end
-      nr_pending = {}
     end
   end, { msgs = { wa.msg.FIRE_WEAPON, wa.msg.FRAME_FINISH } })
   end

@@ -1,0 +1,814 @@
+# Project X Specialists 2.3 (five worms), 0rang3's September 2026 build.
+# Generated from the PX scheme's records and its WSC by a local script
+# (local/specialists/make_profile.py) that no longer exists: edit this file.
+# Start-of-round delays are PX's own per-weapon Delay (record metadata), not the WSC's.
+description = "Specialists: five worms per team, each a class with its own weapons; the Soldier returns once as a zombie."
+features = ["core.utilities", "specialists.rules"]
+
+[options."core.utilities"]
+live_hp = true
+ex_turn_side = true
+fast_aim = true
+
+[options."px.lightning_strike"]
+revive_health = 25
+
+[scheme]
+angle_cheat_glitch = true
+anti_lock_aim = false
+anti_lock_power = false
+aqua_sheep = false
+artillery_mode = false
+auto_place_worms_by_ally = false
+automatic_end_of_turn_retreat = false
+batty_rope = false
+block_roofing = "allow"
+blood = false
+blood_level = 255
+circular_aim = false
+constant_wind = false
+data_version = 0
+display_total_round_time = true
+donor_cards = false
+dud_mines = false
+editor_marker = 137
+explosions_push_all_objects = "default"
+fall_damage = 1
+fall_damage_is_triggered_by_explosions = false
+floating_weapon_glitch = true
+fractional_round_timer = false
+game_engine_speed = 1.0
+girder_radius_assist = false
+glide_glitch = true
+god_worms = false
+gravity = 0.239990234375
+hazards = 69
+health_crate_energy = 25
+health_crate_weight = 10
+health_crates_cure_poison = "team"
+herd_doubling_glitch = "default"
+hot_seat_delay = 10
+indestructible_land = false
+indian_rope_glitch = "default"
+jet_pack_bungee_glitch = true
+keep_control_after_bumping_head = false
+keep_control_after_skimming = "lose_control"
+loss_of_control_doesn_t_end_turn = true
+manual_worm_placement = false
+maximum_crate_count_on_map_at_once = 5
+maximum_flamelet_count = 200
+maximum_jet_pack_speed = 5.0
+maximum_projectile_speed = 32.0
+maximum_rope_speed = 16.0
+mine_delay = 3
+no_crate_probability = 255
+pause_timer_while_firing = true
+petrol_touch_decay = 30
+petrol_turn_decay = 0.199981689453125
+phased_worms_allied = "off"
+phased_worms_enemy = "off"
+pneumatic_drill_imparts_velocity = "default"
+retreat_time = 0
+rope_knocking = 255
+rope_retreat_time = 0
+rope_roll_drops = "disabled"
+round_time = 15
+rubberworm_air_viscosity = 0.0
+rubberworm_air_viscosity_applies_to_worms = false
+rubberworm_anti_lock_aim = false
+rubberworm_anti_sink = false
+rubberworm_bounciness = 0.0
+rubberworm_crate_rate = 0
+rubberworm_crate_shower = false
+rubberworm_extended_fuses_herds = false
+rubberworm_gravity_strength = 1.0
+rubberworm_gravity_type = "unmodified"
+rubberworm_remember_weapons = false
+rubberworm_wind_influence = 0.0
+rubberworm_wind_influence_applies_to_worms = false
+sheep_heaven = false
+sheep_heaven_effects = 7
+skipwalking = "possible"
+stockpiling = "off"
+sudden_death = "nothing"
+sudden_death_disables_worm_select = false
+sudden_death_worm_damage_per_turn = 5
+super_weapons = false
+team_weapons = false
+terrain_friction = 0.959991455078125
+terrain_overlap_phasing_glitch = "default"
+turn_time = 35
+undetermined_crates = "default"
+undetermined_fuses = "default"
+unrestrict_rope = false
+unrestricted_weapon_use = false
+upgraded_clusters = false
+upgraded_grenade = false
+upgraded_longbow = false
+upgraded_shotgun = false
+utility_crate_weight = 50
+water_rise_rate = 1
+weapon_crate_weight = 80
+weapon_use_doesn_t_end_turn = true
+wind = 100
+wind_bias = 15
+wins = 2
+worm_energy = 100
+worm_select = "on"
+worm_selection_doesn_t_end_hot_seat = false
+worm_selection_is_never_cancelled = true
+x_impact_loss_of_control = "lose_control"
+
+[weapon_settings."stock.bazooka"]
+# Bazooka, PX slot bazooka
+ammo = 0
+delay = 0
+after_use = "continue"
+power = 2
+crate_pct = 0
+
+[weapons."stock.bazooka"]
+row = "F1"
+column = 1
+
+[weapon_settings."px.igniter"]
+# Igniter, PX slot homing_missile
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 4.6296
+
+[weapons."px.igniter"]
+row = "F1"
+column = 2
+
+[weapon_settings."px.mine_launcher"]
+# Mine Launcher, PX slot mortar
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 9.2593
+
+[weapons."px.mine_launcher"]
+row = "F1"
+column = 3
+
+[weapon_settings."px.gravler"]
+# Gravler, PX slot homing_pigeon
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 9.2593
+
+[weapons."px.gravler"]
+row = "F1"
+column = 4
+
+[weapon_settings."px.barrel_launcher"]
+# Barrel Launcher, PX slot sheep_launcher
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 4.6296
+
+[weapons."px.barrel_launcher"]
+row = "F1"
+column = 5
+
+[weapon_settings."stock.grenade"]
+# Grenade, PX slot grenade
+ammo = 0
+delay = 0
+after_use = "continue"
+power = 2
+crate_pct = 0
+
+[weapons."stock.grenade"]
+row = "F2"
+column = 1
+
+[weapon_settings."px.chilli_bomb"]
+# Chilli Bomb, PX slot cluster_bomb
+ammo = 0
+delay = 1
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.chilli_bomb"]
+row = "F2"
+column = 2
+
+[weapon_settings."stock.banana_bomb"]
+# Banana Bomb, PX slot banana_bomb
+ammo = 0
+delay = 0
+after_use = "continue"
+power = 2
+crate_pct = 0
+
+[weapons."stock.banana_bomb"]
+row = "F2"
+column = 3
+
+[weapon_settings."px.electric_grenade"]
+# Electric Grenade, PX slot battle_axe
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 4.6296
+
+[weapons."px.electric_grenade"]
+row = "F2"
+column = 4
+
+[weapon_settings."px.toxic_grenade"]
+# Toxic Grenade, PX slot earthquake
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 4.6296
+
+[weapons."px.toxic_grenade"]
+row = "F2"
+column = 5
+
+[weapon_settings."px.real_shotgun"]
+# Real Shotgun, PX slot shotgun
+ammo = 0
+delay = 0
+after_use = "continue"
+shots = 2
+crate_pct = 0
+
+[weapons."px.real_shotgun"]
+row = "F3"
+column = 1
+
+[weapon_settings."px.gatling_gun"]
+# Gatling Gun, PX slot handgun
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.gatling_gun"]
+row = "F3"
+column = 2
+
+[weapon_settings."px.mines_gun"]
+# Mines Gun, PX slot uzi
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.mines_gun"]
+row = "F3"
+column = 3
+
+[weapon_settings."px.shadow_bolt"]
+# Shadow-Bolt, PX slot minigun
+ammo = 0
+delay = 0
+after_use = "continue"
+shots = 2
+crate_type = "weapon"
+crate_pct = 9.2593
+
+[weapons."px.shadow_bolt"]
+row = "F3"
+column = 4
+
+[weapon_settings."px.tazer"]
+# Tazer, PX slot longbow
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 9.2593
+
+[weapons."px.tazer"]
+row = "F3"
+column = 5
+
+[weapon_settings."stock.fire_punch"]
+# Fire Punch, PX slot fire_punch
+ammo = 0
+delay = 0
+after_use = "continue"
+power = 2
+crate_pct = 0
+
+[weapons."stock.fire_punch"]
+row = "F4"
+column = 1
+
+[weapon_settings."stock.prod"]
+# Prod, PX slot dragon_ball
+ammo = 0
+delay = 0
+after_use = "continue"
+power = 2
+crate_pct = 0
+
+[weapons."stock.prod"]
+row = "F4"
+column = 2
+
+[weapon_settings."px.sentry_gun"]
+# Sentry Gun, PX slot kamikaze
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.sentry_gun"]
+row = "F4"
+column = 3
+
+[weapon_settings."px.sentry_laser"]
+# Sentry Laser, PX slot suicide_bomber
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.sentry_laser"]
+row = "F4"
+column = 4
+
+[weapon_settings."px.ninja_star"]
+# Ninja Star, PX slot prod
+ammo = 0
+delay = 0
+after_use = "continue"
+shots = 2
+crate_pct = 0
+
+[weapons."px.ninja_star"]
+row = "F4"
+column = 5
+
+[weapon_settings."px.tnt"]
+# TNT, PX slot dynamite
+ammo = 0
+delay = 1
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.tnt"]
+row = "F5"
+column = 1
+
+[weapon_settings."stock.mine"]
+# Mine, PX slot mine
+ammo = 0
+delay = 0
+after_use = "continue"
+power = 2
+crate_pct = 0
+
+[weapons."stock.mine"]
+row = "F5"
+column = 2
+
+[weapon_settings."px.thrown_dynamite"]
+# Thrown Dynamite, PX slot sheep
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 2.7778
+
+[weapons."px.thrown_dynamite"]
+row = "F5"
+column = 3
+
+[weapon_settings."px.drilling_crew"]
+# Drilling Crew, PX slot super_sheep
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 2.7778
+
+[weapons."px.drilling_crew"]
+row = "F5"
+column = 4
+
+[weapon_settings."px.lightning_strike"]
+# Lightning Strike, PX slot air_strike
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 4.6296
+
+[weapons."px.lightning_strike"]
+row = "F6"
+column = 1
+
+[weapon_settings."stock.blow_torch"]
+# BlowTorch, PX slot blow_torch
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."stock.blow_torch"]
+row = "F7"
+column = 1
+
+[weapon_settings."stock.pneumatic_drill"]
+# Pneumatic Drill, PX slot pneumatic_drill
+ammo = 0
+delay = 0
+after_use = "continue"
+power = 2
+crate_type = "weapon"
+crate_pct = 4.6296
+
+[weapons."stock.pneumatic_drill"]
+row = "F7"
+column = 2
+
+[weapon_settings."stock.girder"]
+# Girder, PX slot girder
+ammo = 0
+delay = 0
+after_use = "continue"
+power = 2
+crate_pct = 0
+placement_range = 150
+
+[weapons."stock.girder"]
+row = "F7"
+column = 3
+
+[weapon_settings."px.electromagnet"]
+# Electromagnet, PX slot baseball_bat
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.electromagnet"]
+row = "F7"
+column = 4
+
+[weapon_settings."px.girder_launcher"]
+# Girder Launcher, PX slot flame_thrower
+ammo = 0
+delay = 0
+after_use = "continue"
+shots = 4
+crate_type = "weapon"
+crate_pct = 4.6296
+
+[weapons."px.girder_launcher"]
+row = "F7"
+column = 5
+
+[weapon_settings."stock.ninja_rope"]
+# Ninja Rope, PX slot ninja_rope
+ammo = 0
+delay = 0
+after_use = "continue"
+power = 4
+crate_pct = 0
+
+[weapons."stock.ninja_rope"]
+row = "F8"
+column = 1
+
+[weapon_settings."px.platform"]
+# Platform, PX slot bungee
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.platform"]
+row = "F8"
+column = 2
+
+[weapon_settings."stock.parachute"]
+# Parachute, PX slot parachute
+ammo = 0
+delay = 0
+after_use = "retreat"
+crate_pct = 0
+remembered = true
+
+[weapons."stock.parachute"]
+row = "F8"
+column = 3
+
+[weapon_settings."stock.teleport"]
+# Teleport, PX slot teleport
+ammo = 0
+delay = 0
+after_use = "end"
+crate_pct = 0
+
+[weapons."stock.teleport"]
+row = "F8"
+column = 4
+
+[weapon_settings."px.jump"]
+# Jump, PX slot scales_of_justice
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.jump"]
+row = "F8"
+column = 5
+
+[weapon_settings."px.tele_arrow"]
+# Tele Arrow, PX slot salvation_army
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.tele_arrow"]
+row = "F8"
+column = 6
+
+[weapon_settings."stock.holy_grenade"]
+# Holy Hand-Grenade, PX slot holy_grenade
+ammo = 0
+delay = 0
+after_use = "continue"
+power = 2
+crate_pct = 0
+
+[weapons."stock.holy_grenade"]
+row = "F9"
+column = 1
+
+[weapon_settings."px.laser_gun"]
+# Laser Gun, PX slot mb_bomb
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 4.6296
+
+[weapons."px.laser_gun"]
+row = "F9"
+column = 2
+
+[weapon_settings."stock.petrol_bomb"]
+# Petrol Bomb, PX slot petrol_bomb
+ammo = 0
+delay = 0
+after_use = "continue"
+power = 2
+crate_pct = 0
+
+[weapons."stock.petrol_bomb"]
+row = "F10"
+column = 1
+
+[weapon_settings."px.bulldozer"]
+# Bulldozer, PX slot skunk
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 4.6296
+
+[weapons."px.bulldozer"]
+row = "F10"
+column = 2
+
+[weapon_settings."px.valyrian_fire"]
+# Valyrian Fire, PX slot ming_vase
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 1.8519
+
+[weapons."px.valyrian_fire"]
+row = "F10"
+column = 3
+
+[weapon_settings."px.remote_roller"]
+# Remote Roller, PX slot sheep_strike
+ammo = 0
+delay = 0
+after_use = "retreat"
+crate_pct = 0
+
+[weapons."px.remote_roller"]
+row = "F10"
+column = 4
+
+[weapon_settings."px.small_worm"]
+# Small Worm, PX slot carpet_bomb
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "utility"
+crate_pct = 14.8148
+
+[weapons."px.small_worm"]
+row = "F11"
+column = 1
+
+[weapon_settings."px.sacrifice"]
+# Sacrifice, PX slot donkey
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "utility"
+crate_pct = 1.8519
+
+[weapons."px.sacrifice"]
+row = "F11"
+column = 2
+
+[weapon_settings."px.parkour"]
+# Parkour, PX slot nuclear_test
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.parkour"]
+row = "F11"
+column = 3
+
+[weapon_settings."stock.skip_go"]
+# Skip Go, PX slot skip_go
+ammo = -1
+delay = 0
+after_use = "end"
+crate_pct = 0
+
+[weapons."stock.skip_go"]
+row = "F12"
+column = 1
+
+[weapon_settings."stock.surrender"]
+# Surrender, PX slot surrender
+ammo = -1
+delay = 0
+after_use = "end"
+crate_pct = 0
+
+[weapons."stock.surrender"]
+row = "F12"
+column = 2
+
+[weapon_settings."px.ice_arrow"]
+# Ice Arrow, PX slot freeze
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 4.6296
+
+[weapons."px.ice_arrow"]
+row = "F12"
+column = 3
+
+[weapon_settings."px.health_zone"]
+# Health Zone, PX slot magic_bullet
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "weapon"
+crate_pct = 9.2593
+
+[weapons."px.health_zone"]
+row = "F12"
+column = 4
+
+[weapon_settings."px.swim_suit"]
+# Swim Suit, PX slot mad_cow
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.swim_suit"]
+row = "utility"
+column = 1
+
+[weapon_settings."px.gravity_gun"]
+# Gravity Gun, PX slot old_woman
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_pct = 0
+
+[weapons."px.gravity_gun"]
+row = "utility"
+column = 2
+
+[weapon_settings."stock.jet_pack"]
+# Jet Pack, PX slot jet_pack
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "utility"
+crate_pct = 18.5185
+
+[weapons."stock.jet_pack"]
+row = "utility"
+column = 3
+
+[weapon_settings."stock.low_gravity"]
+# Low Gravity, PX slot low_gravity
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "utility"
+crate_pct = 18.5185
+
+[weapons."stock.low_gravity"]
+row = "utility"
+column = 4
+
+[weapon_settings."stock.fast_walk"]
+# Fast Walk, PX slot fast_walk
+ammo = -1
+delay = 0
+after_use = "continue"
+crate_pct = 0
+auto_use = true
+
+[weapons."stock.fast_walk"]
+row = "utility"
+column = 5
+
+[weapon_settings."px.trampoline"]
+# Trampoline, PX slot laser_sight
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "utility"
+crate_pct = 18.5185
+
+[weapons."px.trampoline"]
+row = "utility"
+column = 6
+
+[weapon_settings."px.personal_invisibility"]
+# Personal Invisibility, PX slot invisibility
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "utility"
+crate_pct = 3.7037
+
+[weapons."px.personal_invisibility"]
+row = "utility"
+column = 7
+
+[weapon_settings."stock.crate_spy"]
+# Crate Spy, PX slot crate_spy
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "utility"
+crate_pct = 9.2593
+
+[weapons."stock.crate_spy"]
+row = "utility"
+column = 8
+
+[weapon_settings."stock.double_turn_time"]
+# Double Turn Time, PX slot double_turn_time
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "utility"
+crate_pct = 5.5556
+
+[weapons."stock.double_turn_time"]
+row = "utility"
+column = 9
+
+[weapon_settings."stock.crate_shower"]
+# Crate Shower, PX slot crate_shower
+ammo = 0
+delay = 0
+after_use = "continue"
+crate_type = "utility"
+crate_pct = 9.2593
+
+[weapons."stock.crate_shower"]
+row = "utility"
+column = 10

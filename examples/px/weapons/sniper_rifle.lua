@@ -1,7 +1,7 @@
--- Sniper Rifle: record, art and behaviour.
+-- Sniper Rifle: a rifle with a laser sight: one precise shot.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     shots = 3,
@@ -49,15 +49,9 @@ function weapon.definition()
         },
     sounds = { "sounds/sniper_firing.wav" },
     params = { gpu_prefix = "sprites/" },
-    hold = { -- Sniper Rifle (sniper_rifle_script): its hand at scale 0
-        -- Up through each shot, with its laser, over the snipefire poses (the
-        -- worm lit by the muzzle), so it does not flicker between the three.
-        -- Not PX's: PX hides it until the worm aims again.
+    hold = {
         keep_while_firing = true,
         put_away = true,
-        -- A muzzle flash on each shot. Not PX's: its rifle and snipefire poses
-        -- have none. The sentry gun's flare, smaller, at the barrel's tip (30
-        -- pixels out, on the barrel 2 to the side, as the laser leaves it).
         flash = { sheet = "sprites/sniper_rifle/flash.png", out = 30, side = 2, scale = 0.45, frames = 3 },
         sheet = "sprites/px_hold/sniper_rifle.png", draw_hand = false, hand_radius = -6.0,
         hand_rotation = 1.0, hand_radial_rotation = 0.9,
@@ -69,12 +63,14 @@ end
 function weapon.setup()
   local shared = require("lib/shared")
 
-  -- The Sniper Rifle's sight remains a draw callback. Keep only its last aim
-  -- through its firing poses; the rifle and flash themselves are engine draws.
   local held = {}
   wa.on.worm_message(function(worm, msg)
     local h = held[worm.id]
     if msg == wa.msg.FIRE_WEAPON and h then h.firing = true end
+    if msg == wa.msg.FIRE_WEAPON and worm.weapon == "px.sniper_rifle"
+        and worm:ammo("px.sniper_rifle") ~= 0 then
+      wa.sound.play(worm, "sounds/sniper_firing.wav")
+    end
     if msg ~= wa.msg.FRAME_FINISH then return end
     if worm.weapon == "px.sniper_rifle" and worm.aiming and shared.owns("px.sniper_rifle") then
       held[worm.id] = { weapon = "px.sniper_rifle", aim = worm.aim }
@@ -84,32 +80,18 @@ function weapon.setup()
     end
   end, { msgs = { wa.msg.FIRE_WEAPON, wa.msg.FRAME_FINISH } })
 
-  -- ------------------------------------------ the Sniper Rifle's laser sight
-  -- Shared with later sections; the rest of this section is local to it.
   local STOPPERS
   do
-  --
-  -- PX's LaserSight (weapon_gun_sniper_rifle_sb, on utility_laser_pointer's
-  -- laserray): while the current worm aims the rifle, a red ray from 12 pixels
-  -- out along the aim to the first thing in its way, drawn every rendered
-  -- frame as 100-pixel quads of laser.png, added to the scene, narrowing along
-  -- the ray, with a faint 7-pixel tip. It is drawing only: wa.on.draw, never
-  -- the simulation.
 
   local LASER_LEN = 15000
   local LASER_WIDTH = 2
   local LASER_STEP = 5 -- PX's Trace tests every 5 pixels
-  -- PX starts the ray on the worm's centre line, but the rifle art's barrel
-  -- runs 2 pixels to its left (columns 26-29 of 60), so the ray ran that far
-  -- under the barrel. It starts on the barrel instead.
   local LASER_BARREL = 2
   local function argb(a, r, g, b)
     return ((a * 256 + r) * 256 + g) * 256 + b
   end
   local LASER_RED, LASER_START, LASER_TIP =
     argb(255, 255, 48, 48), argb(192, 255, 96, 96), argb(16, 255, 48, 48)
-  -- PX's Trace stops at anything its 2x2 mask touches. Terrain is traced
-  -- exactly; objects by these radii in pixels, an estimate of their masks.
   STOPPERS = { { wa.worms, 6 }, { wa.mines, 4 }, { wa.crates, 10 }, { wa.oil, 9 } }
 
   local function laser_length(x, y, dx, dy, shooter)
@@ -136,7 +118,6 @@ function weapon.setup()
     return math.floor(len / LASER_STEP) * LASER_STEP
   end
 
-  -- laserray's MakeLaserRayF, point for point.
   local function laser_ray(x, y, ang, len, worm)
     local rdx, rdy = wa.math.sin(ang - 1.57), -wa.math.cos(ang - 1.57)
     local dx, dy = wa.math.sin(ang), -wa.math.cos(ang)
@@ -176,8 +157,6 @@ function weapon.setup()
   if wa.on.draw then
     wa.on.draw(function()
       for _, worm in ipairs(wa.worms.all()) do
-        -- The aim the rifle was drawn with, so the ray leaves along it; while
-        -- the worm aims or fires the rifle, not while it puts it away.
         local h = worm.turn and held[worm.id]
         local aim = h and h.weapon == "px.sniper_rifle" and h.aim
         if aim then
@@ -195,8 +174,6 @@ function weapon.setup()
   end
   end
 
-  shared.STOPPERS = STOPPERS
-  shared.held = held
 end
 
 return weapon

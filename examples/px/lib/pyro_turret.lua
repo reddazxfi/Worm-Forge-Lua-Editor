@@ -1,23 +1,5 @@
--- PyroMan's turrets (Project X's p_turrets library: turretbase.txt's
--- CTurretBase), on lib/turret.lua's body: planted where the worm stands,
--- health, capture, its death blast. This is the brain and the look.
---
--- Each frame of a running turn clock, with ammo left, a turret picks a moving
--- enemy worm (each one in range with a 30% chance, from WA's RNG), waits 15
--- frames, then turns its head toward a lobbed shot: the speed that reaches the
--- worm in `flight` frames under gravity times `g_factor`. Aligned and
--- reloaded, it traces that arc with a 3-pixel circle against the land; when
--- blocked it keeps the worm (65%) with another flight time, or drops it.
--- Otherwise it fires its weapon's `shoot` at the solved speed plus a random
--- 0 to 63/96. Flight times cycle (+10, x1.1, back to 16 past 100); the time
--- between shots starts at `fire_rate_ms` (PX's 20 frames) and grows by
--- `fire_increase_pct` a shot (PX's x1.12), and ammo is per turn. Angles are PX's: radians
--- from straight up, toward the side it faces (`dir`).
---
--- Differences: PX's turret is an oil drum's shape dropped 50 pixels above
--- the worm; ours is planted as the sentries are, with the drum's radius-9
--- circle. PX darkens the whole head as health falls; ours also shows the
--- sentries' health digits.
+-- PyroMan's turrets on lib/turret.lua's body: planting, health, capture, death blast.
+
 local turret = require("lib/turret")
 local mask = require("lib/sentry_mask")
 local health_label = require("lib/sentry_health")
@@ -31,8 +13,6 @@ pyro.AMMO_PETROL = ART .. "ammo_petrol.png"
 pyro.AMMO_FLAME = ART .. "ammo_flame.png"
 local AIM_SOUND, SETUP_SOUND = SND .. "turret_aim.wav", SND .. "turret_setup.wav"
 
--- pyr_turrets.png's frames (PX's index x 13), and the same frames mirrored
--- 14 on, for a head facing left (PX's flipped sprite).
 pyro.FRAMES = {
   mine = { head = 0, base = 1 },
   petrol = { head = 2, base = 3 },
@@ -41,7 +21,6 @@ pyro.FRAMES = {
 }
 local MIRROR, RETICLE = 14, 13
 
--- PX's turret centre (PosX, PosY) sits R above our bottom anchor.
 local R = 9
 local rows = {}
 for dy = -2 * R, 0 do
@@ -51,24 +30,20 @@ for dy = -2 * R, 0 do
 end
 pyro.feet = mask.build(rows, 2 * R, -R, R, 0)
 
--- PX's z planes: its weapon's sprite in front, then the head, then the base
--- and the aiming reticle, all in front of the worms (13).
 local Z_AMMO, Z_HEAD, Z_BASE = 0xA0000, 0xB0000, 0xC0000
 
 local FRAME_MS = 20 -- WA's 50 frames a second
 
--- PX tints by the team's colour, each channel at least 128: the sentries'
--- colours (red to cyan, worm.alliance + 1), so lifted.
 local TINTS = { 0xFF8080, 0x8080FF, 0x80FF80, 0xE6E680, 0xE680E6, 0x80E6E6 }
 
 local BASE = {
-  tower_offset = 25,  -- pixels from the centre up to the head's pivot
-  tower_len = 10,     -- from the pivot to the muzzle
-  g_factor = 1,       -- the gravity its aim assumes
-  thinking = 15,      -- frames between finding a worm and aiming
+  tower_offset = 25, -- pixels from the centre up to the head's pivot
+  tower_len = 10, -- from the pivot to the muzzle
+  g_factor = 1, -- the gravity its aim assumes
+  thinking = 15, -- frames between finding a worm and aiming
   min_px = 40, sensor_px = 350, lost_px = 450,
-  speed = 0.08,       -- radians a frame the head turns
-  fire_rate_ms = 400,     -- between its first two shots a turn (PX's 20 frames)
+  speed = 0.08, -- radians a frame the head turns
+  fire_rate_ms = 400,
   fire_increase_pct = 12, -- how much longer each next wait is
   aim_sound_gap = 180,
   health = 50, explode_damage = 50,
@@ -90,8 +65,6 @@ local function worm_by_id(id)
   end
 end
 
--- PX's moving worm: walking, or any speed. A worm whose position changed
--- since the last frame walked.
 local function note_motion(s)
   for _, w in ipairs(wa.worms.all()) do
     local p, x, y = s.seen[w.id], w.x, w.y
@@ -105,14 +78,12 @@ local function note_motion(s)
   end
 end
 
--- CTurretBase::FindTarget: every living, moving enemy within range gets a 30%
--- chance; the last taken wins. An invisible one ends the search (PX's break).
 local function find_target(t, a, s)
   local cx, cy = centre(a)
   local py = cy - t.tower_offset
   for _, w in ipairs(wa.worms.all()) do
     local seen = s.seen[w.id]
-    if w.alliance ~= s.alliance and seen and seen.moving and w.hp > 0 then
+    if w.alliance ~= s.alliance and seen and seen.moving and w.hp > 0 and w.state ~= "frozen" then
       if w.visible == false then break end
       local dx, dy = w.x - cx, w.y - py
       local d = math.sqrt(dx * dx + dy * dy)
@@ -121,8 +92,6 @@ local function find_target(t, a, s)
   end
 end
 
--- GetShootAngle: the start speed (rx, ry) that reaches the worm in `flight`
--- frames (Project X's SolveBallistic), its angle from up and its side.
 local function solve(t, a, s, target)
   local cx, cy = centre(a)
   local tm = s.flight
@@ -139,8 +108,6 @@ local function solve(t, a, s, target)
   s.lrx, s.lry = rx, ry
 end
 
--- AimToEnemy: drop a worm beyond `lost_px`, else turn toward the shot; true
--- once aligned.
 local function aim(t, a, s, target)
   local cx, cy = centre(a)
   local dx, dy = target.x - cx, target.y - cy
@@ -156,14 +123,11 @@ local function aim(t, a, s, target)
   return true
 end
 
--- UpdateTime: the next flight time to try.
 local function next_flight(s)
   s.flight = (s.flight + 10) * 1.1
   if s.flight > 100 then s.flight = 16 end
 end
 
--- CheckTrace (Project X's BTrace): the arc from the pivot, a frame a step,
--- against the land only.
 local function blocked(t, a, s)
   local x, y = centre(a)
   y = y - t.tower_offset
@@ -178,13 +142,11 @@ local function blocked(t, a, s)
   return false
 end
 
--- ShootAtEnemy's first test: nothing within 3 pixels of the muzzle.
 function pyro.muzzle_clear(a, shot)
   return not wa.world.collides({ x = shot.x, y = shot.y, radius = 3,
     with = { "terrain", "worms", "mines", "crates", "oil", "graves" }, ignore = { a } })
 end
 
--- Its launch speed: the solved one less 0.1, plus 0 to 63/96 from WA's RNG.
 function pyro.force(s)
   return s.power - 0.1 + wa.random(0, 63) / 96
 end
@@ -193,17 +155,15 @@ local function think(t, a, s)
   note_motion(s)
   if s.reload > 0 then s.reload = math.max(0, s.reload - FRAME_MS) end
   local target = s.tid and worm_by_id(s.tid)
+  if target and target.state == "frozen" then target = nil end
   if s.tid and not target then s.tid = nil end
-  -- The reticle glides toward the worm it fired at, 4 pixels a frame.
   if s.draw_aim and target then
     if s.aim_x < target.x then s.aim_x = s.aim_x + 4 elseif s.aim_x > target.x then s.aim_x = s.aim_x - 4 end
     if s.aim_y < target.y then s.aim_y = s.aim_y + 4 elseif s.aim_y > target.y then s.aim_y = s.aim_y - 4 end
   end
-  -- PX's Root->IsTimerActive(): the turn clock is counting down.
   local clock = wa.world.turn_clock()
   local running = s.clock ~= nil and clock < s.clock
   s.clock = clock
-  -- Captured (Lightning), it waits for the next turn, as the sentries do.
   if not running or s.ammo <= 0 or s.disabled then return end
   if s.aim_sound > 0 then s.aim_sound = s.aim_sound - 1 end
   if not target then
@@ -224,7 +184,6 @@ local function think(t, a, s)
     s.reload = s.reload_time
     return
   end
-  -- FillShootingInfo
   local sn, cs = wa.math.sin(s.ta), wa.math.cos(s.ta)
   local cx, cy = centre(a)
   local shot = { x = cx + sn * s.dir * t.tower_len, y = cy - t.tower_offset - cs * t.tower_len,
@@ -233,11 +192,10 @@ local function think(t, a, s)
   if t.shoot(t, a, s, shot) then
     s.draw_aim = true
     s.reload = s.reload_time
-    -- PX's int(reloadTime * 1.12) frames: the increase in whole frames.
     s.reload_time = s.reload_time + s.reload_time * t.fire_increase_pct // 100 // FRAME_MS * FRAME_MS
     s.ammo = s.ammo - 1
     if s.aim_sound <= 0 then
-      a:sound(AIM_SOUND)
+      wa.sound.play(a, AIM_SOUND)
       s.aim_sound = t.aim_sound_gap
     end
   else
@@ -245,7 +203,6 @@ local function think(t, a, s)
   end
 end
 
--- Placed, it waits for the next turn: PX gives it ammo only as a turn begins.
 local function init(t, a, s)
   local cx, cy = centre(a)
   s.ammo, s.ta, s.dir, s.want, s.power = 0, 1.57, 1, 1.57, 0
@@ -259,10 +216,8 @@ local function turn_begin(t, s)
   s.reload_time = t.fire_rate_ms
 end
 
--- PX ignores hits from its own side's arrows (the Auto Ballista's). By
--- colour: its arrows are fired for a living member of the coalition.
 local function ignore_hit(t, a, s, hit)
-  if hit.kind ~= "hit" or hit.hit_kind ~= 9 then return false end
+  if hit.kind ~= "arrow" then return false end
   for _, w in ipairs(wa.worms.all()) do
     if w.team == hit.team then return w.alliance == s.alliance end
   end
@@ -286,8 +241,6 @@ local function dim(rgb, k)
   return (math.floor(r * k) << 16) | (math.floor(g * k) << 8) | math.floor(b * k)
 end
 
--- CTurretBase's M_DRAWQUEUE: the base and reticle in its colour, its weapon's
--- sprite and the head darker as its health falls.
 local function draw(t, s)
   local cx, cy = s.x, s.y - R
   local rgb = TINTS[s.alliance + 1] or TINTS[1]
@@ -304,16 +257,11 @@ local function draw(t, s)
   health_label.draw(s.health, s.max_health, cx, py - 10, Z_AMMO - 1)
 end
 
--- A turret's component options: Health, Ammo per turn, Fire rate (ms) and
--- Fire increase (%), as `t` reads them at the next placing and the next turn.
 function pyro.configure(t, ctx)
   t.health, t.ammo = ctx.option("health"), ctx.option("ammo")
   t.fire_rate_ms, t.fire_increase_pct = ctx.option("fire_rate"), ctx.option("fire_increase_pct")
 end
 
--- `cfg`: `kind`, `weapon`, `frames` (pyro.FRAMES'), `shoot(t, a, s, shot)`
--- (fires once from shot.x/y along shot.dx/dy, the speed pyro.force's; false
--- leaves the worm), and PX's numbers over BASE. Returns lib/turret's `t`.
 function pyro.new(cfg)
   pyro.install()
   local c = {}
@@ -325,6 +273,7 @@ function pyro.new(cfg)
   c.boom_up = R
   c.boom = { damage = c.explode_damage, id = 100, below = false }
   c.disable_on_damage = false
+  c.capture_keeps_firing = true
   c.art = { mask = ART .. "mask.png" }
   c.sounds = { place = SETUP_SOUND }
   c.tints = TINTS

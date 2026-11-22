@@ -46,7 +46,7 @@ const SEVERITY_WARNING: &str = "warning";
 /// compares only the SET of rule ids per file and never looks at severity.
 const SEVERITY_INFO: &str = "info";
 
-const ENGINE_VERSION: &str = "0.9.9";
+const ENGINE_VERSION: &str = "1.0.0";
 
 /// `wa.*` namespaces the engine installs only under a cargo feature, and so cannot
 /// appear in `engine_data.rs`'s function list.
@@ -357,12 +357,11 @@ fn check_method_call(&mut self, call: &FunctionCall) {
         let Some(segs) = dotted_path(call) else {
             return;
         };
-        // Exactly `wa.weapons.replace` / `wa.weapons.register` -- the two calls that take
-        // a spec table. Anything else with a table argument is the user's own business.
+        // Exactly `wa.weapons.replace` -- the only call that takes a spec table.
         if segs.len() != 3 || segs[0] != "wa" || segs[1] != "weapons" {
             return;
         }
-        if segs[2] != "replace" && segs[2] != "register" {
+        if segs[2] != "replace" {
             return;
         }
 
@@ -461,14 +460,14 @@ fn check_method_call(&mut self, call: &FunctionCall) {
     /// not measured. So A5 was checking a fiction, and the list it enforced is gone.
     ///
     /// What replaces it is real and much smaller. `settable_worm_state()` in
-    /// crates/lua-host/src/actor.rs accepts exactly SIX names for FIVE states:
+    /// crates/lua-host/src/actor.rs accepts exactly FIVE names:
     ///
     /// ```text
     /// worm:set_state: "x" is not a state a script may enter;
-    /// valid: sliding, standing, bungee, tumbling, teleporting
+    /// valid: falling, standing, bungee, tumbling, teleporting
     /// ```
     ///
-    /// ("sinking" is the legacy alias of tumbling, so the engine accepts it too.)
+    /// The old `sinking` alias of tumbling is gone in 1.0.
     /// Anything else is a hard Lua error, and `run_mods` then aborts every mod in the
     /// folder -- the same consequence as the unknown-method check, hence WARNING and
     /// never error.
@@ -844,7 +843,7 @@ impl Visitor for Checker {
         self.check_worm_message_filter(call);
 
         // ---- desync checks: the whole point of the product -----------------
-        if segs.len() >= 2 && segs[0] == "math" && segs[1] == "random" {
+        if segs.len() >= 2 && segs[0] == "math" && (segs[1] == "random" || segs[1] == "randomseed") {
             self.add(
                 call,
                 SEVERITY_ERROR,
@@ -1166,7 +1165,7 @@ impl Visitor for MsgScan {
 /// File-global scan for `.kind` tests: the duck-typing half of `handle-union`.
 ///
 /// A PRE-pass over the whole tree, deliberately. parser.ts scans its token stream
-/// BEFORE its main walk, so an `obj:hurt()` on line 1 is ducked by a `.kind` test on
+/// BEFORE its main walk, so an `obj:poison()` on line 1 is ducked by a `.kind` test on
 /// line 3. Collecting these during the main walk instead would make the result depend
 /// on visit order -- and every disagreement with the baseline is drift the sweep counts.
 #[derive(Default)]
@@ -1810,8 +1809,8 @@ pub fn run_with_custom(
 /// The string a node renders to, which for a token IS the token text.
 ///
 /// This is why the checks work off `to_string()` rather than a token-type match:
-/// `Index::Dot`'s name field already includes its leading `:`, so `worm:hurt`
-/// renders as `":hurt"` and needs trimming before it can be compared to `"hurt"`.
+/// `Index::Dot`'s name field already includes its leading `:`, so `worm:hit`
+/// renders as `":hit"` and needs trimming before it can be compared to `"hit"`.
 fn text<N: Node + std::fmt::Display>(node: &N) -> String {
     node.to_string()
 }
@@ -1940,12 +1939,12 @@ impl FirstArg<'_> {
 ///
 /// `Suffix::Call` wraps a `Call`, whose `MethodCall` holds `args: FunctionArgs`.
 ///
-/// The `String` arm is `worm:set_state "sliding"` -- Lua allows a single call argument
+/// The `String` arm is `worm:set_state "falling"` -- Lua allows a single call argument
 /// to drop its parentheses, and this function USED to return `None` for it, so the whole
 /// parentheseless spelling went unchecked. That is a silent hole, not a limitation of
 /// the AST: the value is right there in `FunctionArgs::String`.
 ///
-/// It matters because `worm:set_state "sliding"` is the shape a Lua author naturally
+/// It matters because `worm:set_state "falling"` is the shape a Lua author naturally
 /// writes, so the typo this check exists to catch (`"slidng"`) was caught only when the
 /// author happened to use parens.
 fn first_argument(method_call: &full_moon::ast::MethodCall) -> Option<FirstArg<'_>> {
@@ -1974,7 +1973,7 @@ fn string_literal(expr: &Expression) -> Option<String> {
 
 /// The same unquoting, for a bare string TOKEN rather than an `Expression`.
 ///
-/// Needed because `worm:set_state "sliding"` does not parse the `"sliding"` as an
+/// Needed because `worm:set_state "falling"` does not parse the `"falling"` as an
 /// `Expression` at all -- `FunctionArgs::String` holds a `TokenReference` directly, so
 /// there is no `Expression` to hand to `string_literal`. Copying the unquote rules
 /// instead of sharing them would let the two spellings drift, which is precisely the
@@ -2691,14 +2690,14 @@ mod tests {
     /// registry prefix, only `worm` is -- and 46 false `worm-api` warnings appear.
     #[test]
     fn the_loop_binding_does_not_leak_past_the_loop_body() {
-        let src = "for _, w in ipairs(wa.worms.all()) do\n  w:hurt(10)\nend\nlocal function setup(w)\n  w:input({ aim = 45 })\nend";
+        let src = "for _, w in ipairs(wa.worms.all()) do\n  w:hit(10)\nend\nlocal function setup(w)\n  w:input({ aim = 45 })\nend";
         assert!(rules(src).is_empty(), "got {:?}", rules(src));
     }
 
-    /// Innermost wins, so this is a worm and `hurt` is a worm method.
+    /// Innermost wins, so this is a worm and `hit` is a worm method.
     #[test]
     fn a_nested_loop_over_the_same_name_answers_for_the_inner_one() {
-        let src = "for _, v in ipairs(wa.missiles.all()) do\n  for _, v in ipairs(wa.worms.all()) do\n    v:hurt(10)\n  end\nend";
+        let src = "for _, v in ipairs(wa.missiles.all()) do\n  for _, v in ipairs(wa.worms.all()) do\n    v:hit(10)\n  end\nend";
         assert!(rules(src).is_empty(), "got {:?}", rules(src));
     }
 
@@ -2999,7 +2998,7 @@ mod tests {
 
     #[test]
     fn known_handle_method_is_silent() {
-        assert!(rules("worm:hurt(10)").is_empty());
+        assert!(rules("worm:hit(10)").is_empty());
     }
 
     #[test]
@@ -3061,13 +3060,13 @@ mod tests {
     fn a_custom_owner_joins_the_union_notice() {
         // The `.kind`-union owner list merges engine + custom owners, so the
         // notice reads `WormEntity and GhostProxy` -- the same "and" phrasing
-        // the engine-only case uses, just with one more name in it. `hurt` is
+        // the engine-only case uses, just with one more name in it. `hit` is
         // owned by WormEntity alone in the generated tables, so the custom row
         // is demonstrably what appends GhostProxy.
-        let src = "if obj.kind == \"worm\" then\n  obj:hurt(10)\nend";
+        let src = "if obj.kind == \"worm\" then\n  obj:poison(10)\nend";
         let msgs = {
             let ast = full_moon::parse(src).expect("test input must parse");
-            run_with_custom(&ast, vec![("GhostProxy".into(), "hurt".into())])
+            run_with_custom(&ast, vec![("GhostProxy".into(), "poison".into())])
                 .into_iter()
                 .filter(|d| d.rule == "handle-union")
                 .map(|d| d.message)
@@ -3094,9 +3093,9 @@ mod tests {
         // REGRESSION, and now on the rule that actually matters. `name_of` replaced a
         // `.trim()`-based helper because a trailing `-- comment` is trivia and therefore
         // SURVIVES `.trim()`. The old code read `hurtt -- typo` as the method name; the
-        // same trap on a set_state name would read `"sliding" -- release the worm` and
+        // same trap on a set_state name would read `"falling" -- release the worm` and
         // report a perfectly VALID state as wrong -- the worst direction for a checker.
-        assert!(rules("function M.onTick()\n  worm:set_state(\"sliding\") -- release\nend").is_empty());
+        assert!(rules("function M.onTick()\n  worm:set_state(\"falling\") -- release\nend").is_empty());
     }
 
     #[test]
@@ -3112,7 +3111,7 @@ mod tests {
 
     #[test]
     fn a_valid_method_followed_by_a_comment_is_silent() {
-        assert!(rules("function M.onTick()\n  worm:hurt(10) -- damage\nend").is_empty());
+        assert!(rules("function M.onTick()\n  worm:hit(10) -- damage\nend").is_empty());
     }
 
     #[test]
@@ -3144,7 +3143,7 @@ mod tests {
         // The other half of the guard: the trivia handling must not turn valid indented
         // code into a finding.
         assert!(rules(
-            "function M.onTick()\n  worm:hurt(10)\n  worm:set_state(\"bungee\")\nend"
+            "function M.onTick()\n  worm:hit(10)\n  worm:set_state(\"bungee\")\nend"
         )
         .is_empty());
     }
@@ -3186,14 +3185,14 @@ mod tests {
 
     #[test]
     fn a_kind_narrowed_union_receiver_gets_one_info_notice() {
-        // The port of `handle-union`. `obj` resolves to WorldHandle, `hurt` is a
+        // The port of `handle-union`. `obj` resolves to WorldHandle, `hit` is a
         // WormEntity method, and a `.kind` test ducks the receiver: this is CORRECT
         // code, so the finding is an info notice at (first line, column 1) -- measured
         // as exactly that on the TS baseline. The pre-port version of this test
         // asserted SILENCE; that silence was UNCHECKED_CLASSES declining the class
         // wholesale, which also hid every world-object-api warning TS raises.
         assert_eq!(
-            only_finding("if obj.kind == 'worm' then\n  obj:hurt(10)\nend"),
+            only_finding("if obj.kind == 'worm' then\n  obj:poison(10)\nend"),
             ("handle-union".to_string(), "info".to_string(), 2, 1)
         );
     }
@@ -3203,7 +3202,7 @@ mod tests {
         // Two call sites, one notice -- the aggregation parser.ts `unionPasses`
         // performs -- reported at the FIRST site (measured line 2, column 1) with both
         // lines listed in the message.
-        let src = "if obj.kind == \"worm\" then\n  obj:hurt(10)\nend\nfunction f()\n  obj:hurt(20)\nend";
+        let src = "if obj.kind == \"worm\" then\n  obj:poison(10)\nend\nfunction f()\n  obj:poison(20)\nend";
         assert_eq!(
             only_finding(src),
             ("handle-union".to_string(), "info".to_string(), 2, 1)
@@ -3211,7 +3210,7 @@ mod tests {
         let m = messages(src, "handle-union");
         assert_eq!(m.len(), 1);
         assert!(
-            m[0].starts_with("Passed - lines 2 and 5 call `obj:hurt()`"),
+            m[0].starts_with("Passed - lines 2 and 5 call `obj:poison()`"),
             "got {}",
             m[0]
         );
@@ -3224,7 +3223,7 @@ mod tests {
         // for a test on line 2 -- visit order, not file semantics. Measured: line 1,
         // column 1.
         assert_eq!(
-            only_finding("local a = obj:hurt(10)\nif obj.kind == \"worm\" then end"),
+            only_finding("local a = obj:poison(10)\nif obj.kind == \"worm\" then end"),
             ("handle-union".to_string(), "info".to_string(), 1, 1)
         );
     }
@@ -3232,7 +3231,7 @@ mod tests {
     #[test]
     fn tilde_equals_narrows_just_like_double_equals() {
         assert_eq!(
-            only_finding("if obj.kind ~= \"worm\" then\n  obj:hurt(10)\nend"),
+            only_finding("if obj.kind ~= \"worm\" then\n  obj:poison(10)\nend"),
             ("handle-union".to_string(), "info".to_string(), 2, 1)
         );
     }
@@ -3242,7 +3241,7 @@ mod tests {
         // Measured: `base.obj.kind == "worm"` ducks `obj` -- the token immediately
         // before `.kind`, not `base` -- which is parser.ts's window pattern exactly.
         assert_eq!(
-            only_finding("if base.obj.kind == \"worm\" then\n  obj:hurt(10)\nend"),
+            only_finding("if base.obj.kind == \"worm\" then\n  obj:poison(10)\nend"),
             ("handle-union".to_string(), "info".to_string(), 2, 1)
         );
     }
@@ -3320,7 +3319,7 @@ mod tests {
         // notice position, NOT the indentation. Measured: line 3, column 1.
         assert_eq!(
             only_finding(
-                "function M.onTick()\n  if obj.kind == \"worm\" then\n    obj:hurt(10)\n  end\nend"
+                "function M.onTick()\n  if obj.kind == \"worm\" then\n    obj:poison(10)\n  end\nend"
             ),
             ("handle-union".to_string(), "info".to_string(), 3, 1)
         );
@@ -3331,11 +3330,11 @@ mod tests {
         // mergeDiagnostics keeps the TS wording on (line, column, rule) collisions, so
         // this text only shows when Rust runs alone -- the day parser.ts is deleted a
         // Rust-only run must say exactly what the reviewed baseline said.
-        let m = messages("if obj.kind == 'worm' then obj:hurt(10) end", "handle-union");
+        let m = messages("if obj.kind == 'worm' then obj:poison(10) end", "handle-union");
         assert_eq!(m.len(), 1);
         assert!(
             m[0].starts_with(
-                "Passed - lines 1 call `obj:hurt()`, which WormEntity has but \
+                "Passed - lines 1 call `obj:poison()`, which WormEntity has but \
                  WorldHandle does not."
             ),
             "got {}",
@@ -3344,7 +3343,7 @@ mod tests {
         // The half that used to make this row unreadable now lives in `detail`.
         // Pinned so a future edit cannot quietly move the reasoning back into
         // `message`, which is the thing §23 exists to prevent.
-        let d = details("if obj.kind == 'worm' then obj:hurt(10) end", "handle-union");
+        let d = details("if obj.kind == 'worm' then obj:poison(10) end", "handle-union");
         assert_eq!(d.len(), 1);
         assert!(
             d[0].contains("narrowed by a `.kind` test") && d[0].contains("WorldHandle"),
@@ -3382,7 +3381,7 @@ mod tests {
         // registered name -> silent), and a parenthesized prefix has `)` before the
         // colon -> silent. All three measured silent on the TS baseline.
         assert!(rules("M.sounds:find(\"x\")").is_empty());
-        assert!(rules("(a or b):hurt(1)").is_empty());
+        assert!(rules("(a or b):hit(1)").is_empty());
     }
 
     #[test]
@@ -3407,7 +3406,7 @@ mod tests {
 
     #[test]
     fn dot_call_on_a_handle_is_not_a_method_call() {
-        assert!(rules("worm.hurt(10)").is_empty());
+        assert!(rules("worm.hit(10)").is_empty());
     }
 
     // ---- diagnostics are ordered ------------------------------------------
@@ -3469,7 +3468,7 @@ mod tests {
     fn a_parentheseless_valid_state_is_silent() {
         // The other direction: covering the parentheseless form must not make it noisy.
         // If unquoting or anchoring were wrong, a VALID name would be flagged here.
-        let found = rules("local function f(worm) worm:set_state \"sliding\" end");
+        let found = rules("local function f(worm) worm:set_state \"falling\" end");
         assert!(
             !found.iter().any(|r| r == "worm-state-typo"),
             "a valid parentheseless state must be silent, got {:?}",
@@ -3688,17 +3687,24 @@ mod tests {
     // ---- worm:set_state ---------------------------------------------------
     //
     // The list is `settable_worm_state()` in crates/lua-host/src/actor.rs, verbatim.
-    // It is much smaller than the state table and that is the point: five states, six
-    // names, everything else a hard Lua error.
+    // It is much smaller than the state table and that is the point: five names,
+    // everything else a hard Lua error.
 
     #[test]
     fn every_settable_state_is_silent() {
-        for name in ["standing", "sliding", "bungee", "tumbling", "sinking", "teleporting"] {
+        for name in ["standing", "falling", "bungee", "tumbling", "teleporting"] {
             assert!(
                 rules(&format!("worm:set_state(\"{name}\")")).is_empty(),
                 "`{name}` IS settable -- the engine accepts it"
             );
         }
+    }
+
+    #[test]
+    fn the_old_sliding_name_is_no_longer_settable() {
+        // 1.0 renamed 0x7E from `sliding` to `falling`; code still calling
+        // `worm:set_state("sliding")` is a real error now.
+        assert_eq!(rules("worm:set_state(\"sliding\")"), vec!["worm-state-typo"]);
     }
 
     #[test]
@@ -3772,10 +3778,10 @@ mod tests {
     }
 
     #[test]
-    fn the_legacy_alias_stays_settable() {
-        // `sinking` is the OLD name of tumbling (0x7F) and the engine keeps it as an
-        // alias until packs move off it. Dropping it would warn on working code.
-        assert!(rules("worm:set_state(\"sinking\")").is_empty());
+    fn the_removed_alias_is_flagged() {
+        // `sinking` was the old name of tumbling; 1.0 removed it, so a pack still
+        // calling it is a real error and the checker must say so.
+        assert_eq!(rules("worm:set_state(\"sinking\")"), vec!["worm-state-typo"]);
     }
 
     #[test]
@@ -3816,24 +3822,24 @@ mod tests {
         // crates/game/src/worm_state.rs.
         assert_eq!(
             engine_data::WORM_STATES.len(),
-            28,
+            32,
             "worm state count changed -- check src/data/wormStates.ts against worm_state.rs"
         );
     }
 
     #[test]
     fn the_settable_list_is_the_engines_and_nothing_more() {
-        // Six names for five states. Widening this list is the one change that would make
-        // the check wrong in the safe-looking direction, so it is pinned exactly --
-        // including the legacy alias, and including what is NOT settable.
-        assert_eq!(engine_data::WORM_SETTABLE_STATES.len(), 6);
+        // Five names. Widening this list is the one change that would make the
+        // check wrong in the safe-looking direction, so it is pinned exactly --
+        // including what is NOT settable.
+        assert_eq!(engine_data::WORM_SETTABLE_STATES.len(), 5);
         let names: Vec<&str> = engine_data::WORM_SETTABLE_STATES
             .iter()
             .map(|(n, _)| *n)
             .collect();
         assert_eq!(
             names,
-            ["standing", "sliding", "bungee", "tumbling", "sinking", "teleporting"]
+            ["standing", "falling", "bungee", "tumbling", "teleporting"]
         );
         let by_name = |n: &str| {
             engine_data::WORM_SETTABLE_STATES
@@ -3841,10 +3847,9 @@ mod tests {
                 .find(|(name, _)| *name == n)
                 .map(|(_, id)| *id)
         };
-        assert_eq!(by_name("sinking"), Some(0x7f), "the alias points at tumbling");
         assert_eq!(by_name("tumbling"), Some(0x7f));
         // The engine's own error message enumerates five:
-        // "valid: sliding, standing, bungee, tumbling, teleporting".
+        // "valid: falling, standing, bungee, tumbling, teleporting".
         assert!(!names.contains(&"jetpacking"), "jetpacking is NOT settable");
         assert!(!names.contains(&"parachuting"), "parachuting is NOT settable");
     }
@@ -3869,17 +3874,12 @@ mod tests {
 
     #[test]
     fn uncertain_states_are_marked_unconfirmed() {
-        // The engine marks these with `?`: one observation or one source only. They must
-        // never be described to a user as "real", and must not justify a finding.
+        // The engine's only remaining `?` label is the one-frame stand on a
+        // ledge (0x88), which `worm.state` does not name. It must never be
+        // described as a state a pack can rely on.
         for (name, _, confirmed) in engine_data::WORM_STATES {
-            if matches!(
-                *name,
-                "rope_firing" | "torching" | "rope_rolling" | "roping" | "dying" | "drowning" | "dead"
-            ) {
-                assert!(
-                    !confirmed,
-                    "`{name}` is `?`-marked in the engine and must be unconfirmed here"
-                );
+            if *name == "ledge" {
+                assert!(!confirmed, "`ledge?` is the one unconfirmed engine label");
             }
         }
     }
@@ -4068,8 +4068,7 @@ mod tests {
         for (name, _, _) in engine_data::WORM_STATES {
             assert!(names.insert(*name), "duplicate worm state name: {name}");
         }
-        // Ids are unique across the canonical table; the `sinking` ALIAS is only in
-        // WORM_SETTABLE_STATES and deliberately shares tumbling's 0x7F.
+        // Ids are unique across the canonical table.
         let mut ids = HashSet::new();
         for (name, id, _) in engine_data::WORM_STATES {
             assert!(ids.insert(*id), "two names share id 0x{id:X}: {name}");
@@ -4154,6 +4153,7 @@ mod tests {
                 "HudTrayEntry",
                 "TrailHandle",
                 "RippleHandle",
+                "AmbientHandle",
             ]
         );
     }
@@ -4225,7 +4225,7 @@ end
 
     #[test]
     fn an_ordinary_table_elsewhere_is_never_checked() {
-        // Only `wa.weapons.replace` / `register` take a spec table. Flagging a user's own
+        // Only `wa.weapons.replace` takes a spec table. Flagging a user's own
         // table would be the most damaging false positive available.
         assert!(rules("local cfg = { my_own_field = 1, another = 2 }").is_empty());
         assert!(rules("wa.inventory.create({ weapon = 'bazooka' })").is_empty());
@@ -4239,9 +4239,9 @@ end
     }
 
     #[test]
-    fn both_replace_and_register_are_checked() {
+    fn replace_is_checked() {
         assert_eq!(
-            rules("wa.weapons.register({ copy_fromm = 'x' })"),
+            rules("wa.weapons.replace({ copy_fromm = 'x' })"),
             vec!["spec-key-typo"]
         );
     }
@@ -4421,6 +4421,7 @@ end
             "arrow",
             "baseball_bat",
             "flame_thrower",
+            "armageddon",
         ] {
             let src = format!("wa.weapons.replace({{ {key} = {{}} }})");
             assert!(rules(&src).is_empty(), "`{key}` must be accepted");
@@ -4435,7 +4436,7 @@ end
             "missile",
             "clusters",
             "sprite",
-            "cluster",
+            "cluster_sprite",
             "params",
             "sprites",
         ] {
@@ -4458,11 +4459,12 @@ end
     fn spec_key_data_survived_the_move_into_the_generator() {
         assert_eq!(
             SPEC_KEYS.len(),
-            62,
+            64,
             "spec key count changed -- check src/data/specKeys.ts was not truncated"
         );
         for required in [
             "weapon",
+            "slot",
             "copy_from",
             "patch",
             "on_fire",
@@ -4482,6 +4484,7 @@ end
             "arrow",
             "baseball_bat",
             "flame_thrower",
+            "armageddon",
         ] {
             assert!(
                 SPEC_KEYS.contains(&required),
@@ -4550,7 +4553,7 @@ function M.onTick()
     worm:set_state('slidng')
   end
   if obj.kind == 'worm' then
-    obj:hurt(10)
+    obj:poison(10)
   end
   worm:hurtt(10)
   wa.weapons.repalce({ copy_fromm = 'bazooka' })

@@ -1,6 +1,4 @@
--- Keeper Bee: reddaz's bee launcher. This is the entry point the component's
--- install runs; the port itself is lib/bee.lua, which needs `wa` and so is
--- loaded here rather than at load.
+-- Keeper Bee: fires a bee that hunts the worm whose turn it is, stings it, lifts it and bursts.
 
 local bee = require("lib/bee")
 

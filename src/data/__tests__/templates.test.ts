@@ -13,7 +13,7 @@ describe('initial editor template', () => {
   });
 
   it('uses the component install contract and pixel units', () => {
-    expect(INITIAL_TEMPLATE).toContain('API 4 units are pixels');
+    expect(INITIAL_TEMPLATE).toContain('API 5 units are pixels');
     expect(INITIAL_TEMPLATE).toContain('return function(ctx)');
     expect(INITIAL_TEMPLATE).toContain('install(ctx)');
     expect(INITIAL_TEMPLATE).not.toContain('onInit');

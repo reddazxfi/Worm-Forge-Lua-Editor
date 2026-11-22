@@ -1,7 +1,7 @@
--- Pigeon Strike: record, art and behaviour.
+-- Pigeon Strike: a mail strike whose pigeons home in on worms and burst into bouncing bits.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     retreat = 3000,

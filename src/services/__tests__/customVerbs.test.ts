@@ -35,7 +35,7 @@ const grapple = (): CustomVerb => ({
 const engineWorm = (): ClassDef => ({
   name: 'WormEntity',
   description: 'engine',
-  members: [{ name: 'hurt', kind: 'method', description: 'x' }],
+  members: [{ name: 'poison', kind: 'method', description: 'x' }],
 });
 
 describe('sanitizeVerb', () => {
@@ -93,7 +93,7 @@ describe('mergeCustomClasses', () => {
   it('lands a verb on an EXISTING class instead of dropping it', () => {
     const merged = mergeCustomClasses([engineWorm()], [grapple()]);
     expect(merged).toHaveLength(1);
-    expect(merged[0].members.map((m) => m.name)).toEqual(['hurt', 'grapple']);
+    expect(merged[0].members.map((m) => m.name)).toEqual(['poison', 'grapple']);
   });
 
   it('marks the added member custom so the badge paints', () => {
@@ -198,7 +198,7 @@ describe('parseAndValidate with a user verb overlay', () => {
   });
 
   it('a custom owner joins the handle-union notice text', () => {
-    const src = 'if obj.kind == "worm" then\n  obj:hurt(10)\nend';
+    const src = 'if obj.kind == "worm" then\n  obj:poison(10)\nend';
     const notice = (verbs: CustomVerb[]) =>
       parseAndValidate(src, verbs)
         .diagnostics.filter((d) => d.rule === 'handle-union')
@@ -209,7 +209,7 @@ describe('parseAndValidate with a user verb overlay', () => {
     expect(notice([])[0]).toContain('WormEntity');
     expect(notice([])[0]).not.toContain('GhostProxy');
     // The overlay appends GhostProxy -- same phrasing checks.rs emits.
-    const withGhost = notice([{ ...grapple(), class: 'GhostProxy', name: 'hurt' }]);
+    const withGhost = notice([{ ...grapple(), class: 'GhostProxy', name: 'poison' }]);
     expect(withGhost).toHaveLength(1);
     expect(withGhost[0]).toContain('WormEntity and GhostProxy');
   });

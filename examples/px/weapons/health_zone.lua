@@ -1,6 +1,4 @@
--- Health Zone: PX's zone launcher. This is the entry point the component's
--- install runs; the port itself is lib/px_health_zone.lua, which needs `wa` and
--- so is loaded here rather than at load (REPORT.md 11.11).
+-- Health Zone: a thrown zone that heals the worm inside it or revives a grave; + heals, - damages.
 
 local health_zone = require("lib/px_health_zone")
 

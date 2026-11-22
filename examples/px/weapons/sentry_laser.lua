@@ -1,7 +1,7 @@
--- Sentry Laser: record, art and behaviour.
+-- Sentry Laser: a turret that shoots down missiles, mines and bowling balls with a laser.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {}
 
 function weapon.definition()
@@ -18,7 +18,6 @@ function weapon.definition()
           wthrow = "sprites/sentry_laser/unequip.png", wthrowu = "sprites/sentry_laser/unequipu.png",
           wthrowd = "sprites/sentry_laser/unequipd.png",
         },
-    -- The body coloured per team, as on the planted turret; its barrel stays grey.
         worm_sprites_team_tint = {
           worm_sprites = {
             weaponlnk = "sprites/sentry_laser/equip_housing.png", weaponlnku = "sprites/sentry_laser/equipu_housing.png",
@@ -29,16 +28,15 @@ function weapon.definition()
           colours = { 0xFF6447, 0x4764FF, 0x47FF64, 0xE6E647, 0xE647E6, 0x47E6E6 },
         },
     sprites = {
-          "sprites/sentry_laser/turret_base.png", "sprites/sentry_laser/turret_body.png",
+          "sprites/sentry_laser/turret_base.png", "sprites/sentry_laser/turret_head.png",
           "sprites/sentry_laser/turret_barrel.png", "sprites/sentry_laser/turret_light.png",
-          -- The Laser Gun's beam (lib/laser.lua), its own here: a match
-          -- without the Laser Gun would not have it.
           "sprites/laser_gun/laser_beam.png", "sprites/laser_gun/laser_glow.png",
         },
     sounds = {
           "sounds/sentry_laser/sentrylaserplace.wav", "sounds/sentry_laser/sentrylaserbeep.wav",
           "sounds/sentry_laser/sentrylaserstart.wav", "sounds/sentry_laser/sentrylaserloop.wav",
           "sounds/sentry_laser/sentrylaserend.wav", "sounds/sentry_laser/sentrylaserdisin.wav",
+          "sounds/laser_gun/laser_start.wav", "sounds/laser_gun/laser_end.wav",
         },
     params = {
           sprite_columns = 1,
@@ -52,38 +50,18 @@ function weapon.definition()
 end
 
 function weapon.setup()
-  -- Highlander: Sentry Laser (PX weapon_sentry_laser: SentryLaser.txt's
-  -- PxSentryLaser and CLaserRayS, by rafa``2), on the Dragon Ball slot as
-  -- PX's Highlander scheme has it. Projectile defence: the turret of
-  -- lib/turret.lua, aimed not at worms but at the nearest moving missile, mine
-  -- or Bowling Ball of another colour within 300 px, in sight beyond its barrel-sweep grace area. Each of
-  -- its 4 shots a turn is a short laser in its owner's colour that
-  -- disintegrates the target (gone, no explosion) and burns what is in
-  -- between: worms 10, crates and oil drums 20, a mine armed, a 4 px hole
-  -- where it stops. It fires on any colour's turn.
-  --
-  -- Differences: WA's arrows (PX also shot them) are not listed to Lua, so it
-  -- ignores them; a mine the beam crosses is armed on its fuse, as the Laser
-  -- Gun's beam does, rather than sent PX's gun damage.
   local shared = require("lib/shared")
   local turret = require("lib/turret")
   local laser = require("lib/laser")
   local ART = "sprites/sentry_laser/"
   local SND = "sounds/sentry_laser/"
-  local RAY_LIFE = 10          -- CLaserRayS LifeTime: frames the beam shows
-  -- PX's ray starts at the barrel's centre (BarrelOffsetX 17, scaled 0.8) and
-  -- 6 px on.
+  local RAY_LIFE = 10 -- CLaserRayS LifeTime: frames the beam shows
   local MUZZLE_OUT = 17 * 0.8 + 6
-  -- PX rocks the barrel (2 px either way) while it fires; here for this long
-  -- after each shot.
   local RECOIL_FRAMES = 12
-  local HOLE = 4               -- MakeHole(4) where the beam stops
+  local HOLE = 4 -- MakeHole where the beam stops
   local WORM_DAMAGE, OBJECT_DAMAGE = 10, 20
-  -- The circles the beam touches things within (as the Laser Gun's).
   local RADIUS = { worm = 6, mine = 5, crate = 9, oil = 9 }
 
-  -- The body's tint (as the Sentry Gun's housing, red to cyan) and the beam's
-  -- colour, PX's pure team colours.
   local TEAM_TINT = shared.sentry_team_tint or { 0xFF6447, 0x4764FF, 0x47FF64, 0xE6E647, 0xE647E6, 0x47E6E6 }
   local BEAM_RGB = {
     { 255, 0, 0 }, { 0, 0, 255 }, { 0, 255, 0 }, { 255, 255, 0 }, { 255, 0, 255 }, { 0, 255, 255 },
@@ -91,8 +69,6 @@ function weapon.setup()
 
   local rays = {} -- every ray still showing, in the order fired
 
-  -- What it shoots at: WA's missiles and mines (their team's colour), then the
-  -- Bowling Balls, each in its list's order, which every machine shares.
   local function targets()
     local out = {}
     for _, group in ipairs({ wa.missiles, wa.mines }) do
@@ -110,8 +86,6 @@ function weapon.setup()
     return out
   end
 
-  -- Everything the beam from (x0, y0) along (dx, dy), `length` px, touches:
-  -- worms, mines, crates and oil drums, in that order.
   local function touched(x0, y0, dx, dy, length, skip)
     local out = {}
     for _, group in ipairs({ wa.worms, wa.mines, wa.crates, wa.oil }) do
@@ -129,7 +103,6 @@ function weapon.setup()
     return out
   end
 
-  -- FX_HitObject: a yellow flash and three sparks.
   local function fx_hit_object(r, x, y)
     local tone = math.floor(laser.between(r, 0, 50))
     laser.particle(r, { x = x, y = y, life = 10, drag = 0, grav = 0,
@@ -143,7 +116,6 @@ function weapon.setup()
     end
   end
 
-  -- PX's Disintegrate: bursts at the muzzle and where the target was.
   local function fx_disintegrate(r, x, y)
     local c, dim = r.rgb, { r.rgb[1] * 0.2, r.rgb[2] * 0.2, r.rgb[3] * 0.2 }
     for _ = 1, 5 do -- FX_InitialBurst
@@ -166,36 +138,31 @@ function weapon.setup()
         life = 60, drag = 0.05, grav = 0, s0 = 0.5, s1 = 0.01, c0 = c, c1 = dim })
     end
     fx_hit_object(r, x, y)
-    -- FX_HitTerrain
     laser.particle(r, { x = x, y = y, life = 40, drag = 0.2, grav = -0.4, jitter = 0.6,
       s0 = laser.between(r, 0.6, 0.9), s1 = 0.01, c0 = c, c1 = c })
     laser.particle(r, { x = x, y = y, life = 50, drag = 0, grav = 0, s0 = 0.6, s1 = 0.1,
       c0 = c, c1 = { c[1] * 0.3, c[2] * 0.3, c[3] * 0.3 } })
   end
 
-  -- The ray shows for RAY_LIFE frames and its particles live on after it.
   local function ray_actor(r, body)
     wa.actors.spawn({
-      sprite = false, x = r.x, y = r.y, gravity = false, collide = false, owner = body,
+      sprite = false, x = r.x, y = r.y, owner = body,
       on = function(a)
         laser.step(r)
         r.life = r.life - 1
         r.size = r.size - 0.07
         if r.size < 0.5 then r.size = 1.0 end
-        if r.life == 0 then a:sound("sounds/laser_gun/laser_end.wav") end
+        if r.life == 0 then wa.sound.play(a, "sounds/laser_gun/laser_end.wav") end
         if r.life <= 0 and #r.fx == 0 then
           for i, other in ipairs(rays) do
             if other == r then table.remove(rays, i) break end
           end
-          a:despawn()
+          a:remove()
         end
       end,
     })
   end
 
-  -- One shot (CLaserRayS): from the muzzle to the target, or to the land or
-  -- object before it; burns what is in between, cuts a hole where it stops,
-  -- and disintegrates the target.
   local function fire(t, a, s, target)
     local ang = math.rad(s.angle)
     local x0, y0 = turret.muzzle(t, a, s.angle)
@@ -211,12 +178,12 @@ function weapon.setup()
       ang = ang, rgb = BEAM_RGB[s.alliance + 1] or { 125, 125, 125 },
       seed = (x0 // 1 * 7919 + y0 // 1) % 0x80000000 }
     rays[#rays + 1] = r
-    a:sound("sounds/laser_gun/laser_start.wav")
+    wa.sound.play(a, "sounds/laser_gun/laser_start.wav")
 
     wa.land.cut({ x = hx, y = hy, shape = "circle", radius = HOLE })
     for _, obj in ipairs(touched(x0, y0, dx, dy, length, target.obj and target.obj.id)) do
       if obj.kind == "worm" then
-        if obj.hp > 0 then obj:hurt(WORM_DAMAGE) end
+        if obj.hp > 0 then obj:hit(WORM_DAMAGE) end
       elseif obj.kind == "crate" or obj.kind == "oil" then
         obj:hit(OBJECT_DAMAGE, dx, dy)
       elseif obj.kind == "mine" and not s.armed[obj.id] then
@@ -226,7 +193,6 @@ function weapon.setup()
       fx_hit_object(r, obj.x + (3 * dx), obj.y + (3 * dy))
     end
 
-    -- A shot stopped by intervening terrain cannot destroy a target beyond it.
     if not land then
       if target.ball then
         shared.remove_bowling_ball(target.ball)
@@ -234,8 +200,7 @@ function weapon.setup()
         target.obj:remove()
       end
       fx_disintegrate(r, target.x, target.y)
-      a:sound(SND .. "sentrylaserdisin.wav")
-      -- The target is gone: acquire the next one with its own beep and delay.
+      wa.sound.play(a, SND .. "sentrylaserdisin.wav")
       s.tid, s.had_target = nil, false
     end
     ray_actor(r, a)
@@ -248,10 +213,11 @@ function weapon.setup()
 
   local sentry = turret.new({
     kind = "sentry_laser", weapon = "px.sentry_laser",
+    tazer = "stun", -- the Tazer's arc stuns it (PxSentryLaser::Stun)
     muzzle_out = MUZZLE_OUT,
     sensor_px = 300, ammo = 4, shot_frames = 6, activate = 20, beep_frames = 20,
     rot_active = 5.0, aim_tolerance = 5.0, health = 35,
-    art = { base = ART .. "turret_base.png", mask = ART .. "turret_mask.png", gun = ART .. "turret_body.png", barrel = ART .. "turret_barrel.png", light = ART .. "turret_light.png" },
+    art = { base = ART .. "turret_base.png", mask = ART .. "turret_mask.png", gun = ART .. "turret_head.png", turns = 256, gun_size = 36, barrel = ART .. "turret_barrel.png", light = ART .. "turret_light.png" },
     sounds = {
       place = SND .. "sentrylaserplace.wav", beep = SND .. "sentrylaserbeep.wav",
       servo_start = SND .. "sentrylaserstart.wav", servo_loop = SND .. "sentrylaserloop.wav",
@@ -262,7 +228,6 @@ function weapon.setup()
     fire = fire,
   })
 
-  -- A mine the beam has armed stays armed: once per turret, not per shot.
   local place = sentry.place
   sentry.place = function(fire_ev)
     local body, s = place(fire_ev)

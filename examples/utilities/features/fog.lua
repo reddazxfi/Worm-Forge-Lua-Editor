@@ -1,4 +1,5 @@
--- Selected profile options are the fog scheme; unselected, nothing runs.
+-- Fog of war: select this add-on in a profile to play with fog.
+
 local KEYS = {
   "circle_radius",
   "cone_width",
@@ -13,11 +14,16 @@ local KEYS = {
   "proj_cone_length",
   "proj_cone_width",
   "proj_shadow_cast",
+  "proj_ownership",
   "explosion_circle",
+  "explosion_ownership",
+  "explosion_shadow_cast",
   "crate_circle",
+  "crate_shadow_cast",
   "spectator_mode",
   "placement_vision",
-  "fog_floor"
+  "fog_floor",
+  "hide_enemy_hud"
 }
 
 return function(ctx)
@@ -25,4 +31,10 @@ return function(ctx)
   for _, key in ipairs(KEYS) do scheme[key] = ctx.option(key) end
   wa.fog.set(scheme)
   wa.fog.enable(true)
+  local camera = ctx.option("camera_follow")
+  if camera == "all but enemies" then
+    wa.camera.follow("owned")
+  elseif camera == "only my side" then
+    wa.camera.follow("owned", { public = false })
+  end
 end

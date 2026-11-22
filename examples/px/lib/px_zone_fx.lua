@@ -1,8 +1,6 @@
--- Visuals from weapon_zones, p_animation and pxparticles in the supplied
--- 28.09.2026 PX build. These particles are Lua drawing data, with a private
--- random stream: they neither consume WA's RNG nor create collision bodies.
--- Sprite Packs/Misc exports use palette index 0 for transparency. mcrate0
--- actually contains 61 frames (utils_pyroman's NUM_FRAMES table says 64).
+-- The zones' visuals, from PX's art and particles.
+
+local on_missile = require("lib/on_missile")
 local zone = require("lib/px_zone")
 local M = { ROOT = "sprites/zone_fx/", FADE = 150 }
 M.HEAL, M.DAMAGE, M.AIM_DAMAGE, M.GLOW = M.ROOT .. "mcrate0.png",
@@ -20,8 +18,6 @@ local function colour(alpha, value)
   return (math.floor(alpha) << 24) | (v << 16) | (v << 8) | v
 end
 
--- CAnimation's speed is a normalized phase increment, speed / 1000 per
--- game frame, not frames per second. Its backwards flag plays out and back.
 function M.frame(timer, speed, frames)
   local phase = (timer * speed / 1000) % 2
   if phase > 1 then phase = 2 - phase end
@@ -54,21 +50,17 @@ end
 local function emit(sheet, x, y, aim, glow, owner)
   if y >= wa.world.water() or #particles >= LIMIT then return end
   if not driver then
-    -- Worm-message and missile callbacks do not inherit a spawn owner. Start
-    -- the updater before adding any particles: a rejected spawn must not leave
-    -- frozen quads that accumulate until LIMIT blocks later shots.
     if not owner then return end
     driver = wa.actors.spawn({ sprite = false, x = x, y = y, owner = owner,
-      gravity = false, collide = false,
       on = function(a)
         step()
-        if #particles == 0 then driver = nil; a:despawn() end
+        if #particles == 0 then driver = nil; a:remove() end
       end })
   end
   local speed, heading = -3 - random() * 4, random() * 2 * math.pi
   local damaging_aim = aim and sheet == M.AIM_DAMAGE
   particles[#particles + 1] = {
-    sheet = sheet, x = x, y = y, age = 0,
+    sheet = sheet, x = x, y = y, age = 0, aim = aim,
     vx = glow and 0 or speed * wa.math.cos(heading),
     vy = glow and 0 or speed * wa.math.sin(heading),
     angle = random() * 2.31,
@@ -89,8 +81,6 @@ local function flight_owner()
   for _, worm in ipairs(worms) do
     if worm.turn then return worm end
   end
-  -- Missiles may still fly during retreat, after the active-turn flag clears.
-  -- This invisible updater only needs a live parent; it never deals damage.
   return worms[1]
 end
 
@@ -108,21 +98,23 @@ function M.install()
   end)
 end
 
--- utils_pyroman/trail_effects: animated stock sprite each frame, plus the
--- tazer's lightning glow (the same original sheet used by Portal Gun) every
--- other frame. No gameplay RNG is advanced by either effect.
 function M.flight(weapon, healing)
   local count = 0
-  wa.on.missile_frame(function(m)
+  on_missile(function(m)
     if m.weapon ~= weapon or m.phase ~= "post" then return end
     count = count + 1
     local owner = not driver and flight_owner() or nil
     emit(healing and healing() and M.HEAL or M.DAMAGE, m.x, m.y, false, false, owner)
     if count % 2 == 0 then emit(M.GLOW, m.x, m.y, false, true, owner) end
-  end)
+  end, { weapons = { weapon }, phase = "post" })
 end
 
--- health_zone_anim::OverrideDefaultWeapAnims, only while aiming/charging.
+function M.clear_aim()
+  for i = #particles, 1, -1 do
+    if particles[i].aim then table.remove(particles, i) end
+  end
+end
+
 function M.aim(worm, healing)
   local angle = worm.aim * math.pi * -worm.facing
   emit(healing and M.HEAL or M.AIM_DAMAGE,

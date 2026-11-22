@@ -1,18 +1,26 @@
--- Valyrian Fire: record, art and behaviour.
+-- Valyrian Fire: a petrol bomb whose green fire burns hotter and throws further.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     remember_selection = true,
     ends_turn = true,
   },
+  missile = {
+    sprite = 0, -- WA draws no round; the art spec draws it
+    ends_on_contact = {
+      land = true, worms = true, worms_frozen = true, crates = true,
+      donor_cards = true, objects = true, water = true,
+    },
+  },
 }
 
-weapon.missile_sprite = { -- Valyrian Fire: its bottle, spun at PX's 0.35 (WeapSprite speed)
+weapon.missile_sprite = {
     sheet = "sprites/px_hold/valyrian_fire.png", frames = 1,
     spin = true, spin_speed = 0.35,
-    hide = true, -- PX's record has sprite 0; the stock bottle is the throw sheet's
+    hide = true,
+    sink_tint = 0xA0B4FF, -- cooler and darker below the water
   }
 
 function weapon.definition()
@@ -23,7 +31,7 @@ function weapon.definition()
   return require("lib/weapon").merge(weapon.record, {
     wep = "weps/petrol_bomb.wep",
     panel_icon = "sprites/valyrian_fire/icon.png",
-    sprite = "petrolbm",
+    hold_as = "stock.petrol_bomb",
     worm_sprites = PX_POSTURE,
     sprites = { "sprites/px_hold/valyrian_fire.png" },
     params = { gpu_prefix = "sprites/px_hold/" },
@@ -40,27 +48,18 @@ function weapon.definition()
 end
 
 function weapon.setup()
-  -- Highlander: Valyrian Fire (PX weapon_valyrianfire, rafa``2's valyrianfire_s).
   local shared = require("lib/shared")
   local fires = shared.fires
 
-  -- PX's FireFinal: from a worm in the water nothing is thrown and the bottle
-  -- goes back into the team's ammo; otherwise the bottle starts 15 pixels
-  -- further along the aim. WA's own projectile from there, so WA flies, burns
-  -- and explodes it as its Petrol Bomb.
   local THROW_OUT = 15
 
   fires.valyrian_fire = function(fire)
     local w = fire.worm
     if w.y >= wa.world.water() then
-      -- Set, as the pack always writes ammo; infinite (-1) stays infinite.
       local n = w:ammo("px.valyrian_fire")
       if n >= 0 then w:ammo("px.valyrian_fire", { set = n + 1 }) end
       return
     end
-    -- Along the aim, which is the throw's direction. Not PX's cos and sin of
-    -- the aim angle: the start is simulation, and only sqrt is exact on
-    -- every machine.
     local x, y = fire.x, fire.y
     local speed = math.sqrt(fire.vx * fire.vx + fire.vy * fire.vy)
     if speed > 0 then
@@ -70,18 +69,6 @@ function weapon.setup()
     wa.weapons.launch({ weapon = "px.valyrian_fire", owner = w, x = x, y = y, vx = fire.vx, vy = fire.vy })
   end
 
-  -- PX's ExplodeAt: 51 fires on a 3-pixel ring at the impact, besides WA's own
-  -- explosion (the record starts no fire of its own: its detonation is 0). Each
-  -- with PX's CFireDesc: count 0, duration 6000, no upward power, damage 0,
-  -- owned by the team of the worm whose turn it is. PX's worm handler makes
-  -- their hits 25% more damaging and knocks twice as hard (its M_GUNEXP,
-  -- WA's 0x4B from the fire): the engine scales them as it spawns them. PX
-  -- draws them green, SetColorMod(RGB(75, 225, 75)): `tint`, on the GPU.
-  --
-  -- PX places them at x +- 3 cos(360 - 7.2 i), y - 3 sin(360 - 7.2 i), the sign
-  -- of x alternating. Simulation, so not computed here: the offsets below are
-  -- that formula's, 16.16, worked out once (cos and sin need not agree to the
-  -- bit between machines; integers do).
   local RING_DX = {
       -0.85107421875, -1.7654266357421875, 2.99908447265625, -1.8835601806640625, -0.7073516845703125, 2.7441864013671875, -2.6315155029296875, 0.45758056640625, 2.0747833251953125, -2.981964111328125,
       1.5533905029296875, 1.091949462890625, -2.8819732666015625, 2.41455078125, -0.055816650390625, -2.3466339111328125, 2.910980224609375, -1.195159912109375, -1.4568328857421875, 2.967681884765625,

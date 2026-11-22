@@ -6,6 +6,10 @@
 > **New to WormForge modding?** Start with [MODDING.md](MODDING.md). It explains
 > the bundle / component / profile / `install(ctx)` model step by step, using
 > the same format the loader reads.
+>
+> **Upgrading an API 4 pack?** See
+> [API-5-CHANGES.md](API-5-CHANGES.md) for the 1.0/API 5 migration
+> list: renamed and removed verbs, new fields and the current generated counts.
 
 WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully crafted** code editor designed to **empower** modders to **unlock** the full potential of the WormForge scripting engine. Whether you're a seasoned modder or just getting started, our **cutting-edge** toolkit has you covered. ✨
 
@@ -52,7 +56,7 @@ This is the part that separates a mod that loads from a mod that doesn't.
 **On the desktop**, a check runs in two stages:
 
 1. **The real compiler.** Your Lua is handed to the same Lua 5.4 front end the game engine uses. It parses the chunk and reports exactly what the engine would report — `'end' expected (to close 'function' at line 120)`, `no visible label 'nowhere' for <goto>`, malformed numbers, and so on. It **compiles without executing**, so nothing runs and no `wa.*` call is ever invoked. 🌟
-2. **The semantic pass.** The compiler only knows syntax. It cannot know that `worm:hurt` is a real verb, that `math.random` will desync, or that `obj` is really a worm wearing a WorldHandle costume. That pass catches those.
+2. **The semantic pass.** The compiler only knows syntax. It cannot know that `worm:hit` is a real verb, that `math.random` will desync, or that `obj` is really a worm wearing a WorldHandle costume. That pass catches those.
 
 **If the real compiler can't be reached** — an older `.exe` that predates it, say — stage 1 is skipped and you get the built-in parser alone. The console **always labels which one ran**, so a clean pass from the real compiler never gets confused with a clean pass from the built-in one. Honesty, at scale. ✨
 
@@ -177,6 +181,7 @@ src-tauri\target\release\wormforge-code-editor.exe
 │   ├── services/     # ⚙️ lexer, parser/checker, formatter, luaCompiler, mod folder, config
 │   └── types/        # 🧾 TypeScript types
 ├── examples/         # 🧩 8 curated entry points (modern px/utilities/pooz/bees/ripper)
+├── API-5-CHANGES.md  # 🧭 API 4 → API 5 migration reference
 ├── src-tauri/
 │   ├── src/          # 🦀 Rust: full_moon semantic checker + the compile_lua command
 │   └── capabilities/ # 🔐 Plugin permissions (fs, dialog)
@@ -193,7 +198,7 @@ src-tauri\target\release\wormforge-code-editor.exe
 - **The real compiler requires a current build.** An `.exe` predating the compiler silently falls back to the built-in parser, and the console says so.
 - The undefined-name check is **scope-aware in the Rust checker** (and in autocomplete); the TypeScript fallback used outside the desktop app is a flat file-wide pass.
 - Unknown-method checks only cover a **fixed receiver list** (`a`, `actor`, `worm`, `m`, `missile`, `inv`/`store`/`inventory`, `mine`/`drum`/`oil`/`crate`/`grave`/`obj`/`object`). Receivers narrowed by a `.kind` test are treated as a runtime union and reported as an `info` notice rather than a warning.
-- The API sidebar and autocomplete follow engine **0.9.9** (Lua API 4.0) and may lag behind newer engine versions. Use the **+ Custom Verb** button to cover the gaps, or wait for updates. A registered verb feeds autocomplete **and** both checkers, so the same registration also silences the `wa-namespace-typo` warning. For a namespaced function such as `wa.one.two()`, choose **+ New Class**, enter `wa.one` as the namespace/class and `two` as the member — dots belong in the namespace field, not the member name. Verbs persist to `custom_verbs.cfg`.
+- The API sidebar and autocomplete follow engine **1.0** (Lua API 5.0) and may lag behind newer engine versions. Use the **+ Custom Verb** button to cover the gaps, or wait for updates. A registered verb feeds autocomplete **and** both checkers, so the same registration also silences the `wa-namespace-typo` warning. For a namespaced function such as `wa.one.two()`, choose **+ New Class**, enter `wa.one` as the namespace/class and `two` as the member — dots belong in the namespace field, not the member name. Verbs persist to `custom_verbs.cfg`.
 - Built with heavy AI assistance (vibecoded). Expect rough edges. 🤖
 
 ---

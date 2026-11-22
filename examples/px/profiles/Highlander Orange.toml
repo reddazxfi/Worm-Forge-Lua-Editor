@@ -1,22 +1,129 @@
 # WormForge profile "Highlander Orange": made in the mod loader; safe to edit by hand.
-description = "Project X's Highlander: each worm is dealt one weapon from each of three pools, may use each once a turn, and takes everything a worm it kills carried."
+description = "Highlander: each worm is dealt one weapon from each of three pools and takes what a worm it kills carried."
 features = ["core.utilities", "hl.rules", "px.oil_drums"]
-
-[options."px.3_girder_pack"]
-placement_range = 300
 
 [options."core.utilities"]
 agility = true
 collect_viewer = true
-instant_death = true
+ex_turn_side = true
+fast_aim = true
+instant_death = "settled"
+kill_counter = true
 live_hp = true
 parkour = true
 
+[options."px.3_girder_pack"]
+placement_range = 300
+
 [scheme]
+angle_cheat_glitch = true
+anti_lock_aim = false
+anti_lock_power = false
+aqua_sheep = false
+artillery_mode = false
+auto_place_worms_by_ally = false
 automatic_end_of_turn_retreat = true
+batty_rope = false
+block_roofing = "allow"
+blood = false
+blood_level = 255
+circular_aim = false
+constant_wind = false
+display_total_round_time = false
+donor_cards = false
+dud_mines = false
+editor_marker = 137
+explosions_push_all_objects = "default"
+fall_damage = 1
+fall_damage_is_triggered_by_explosions = false
+floating_weapon_glitch = true
+fractional_round_timer = false
+game_engine_speed = 1.0
+girder_radius_assist = false
+glide_glitch = true
+god_worms = false
+gravity = 0.239990234375
+hazards = 147
+health_crate_energy = 101
+health_crate_weight = 50
+health_crates_cure_poison = "team"
+herd_doubling_glitch = "default"
+hot_seat_delay = 7
+indestructible_land = false
+indian_rope_glitch = "default"
+jet_pack_bungee_glitch = true
+keep_control_after_bumping_head = false
+keep_control_after_skimming = "lose_control"
+loss_of_control_doesn_t_end_turn = false
+manual_worm_placement = false
+maximum_crate_count_on_map_at_once = 5
+maximum_flamelet_count = 200
+maximum_jet_pack_speed = 5.0
+maximum_projectile_speed = 32.0
+maximum_rope_speed = 16.0
+mine_delay = 3
+no_crate_probability = 255
+pause_timer_while_firing = true
+petrol_touch_decay = 30
+petrol_turn_decay = 0.199981689453125
+phased_worms_allied = "off"
+phased_worms_enemy = "off"
+pneumatic_drill_imparts_velocity = "default"
+retreat_time = 0
+rope_knocking = 255
+rope_retreat_time = 5
+rope_roll_drops = "disabled"
+round_time = 60
+rubberworm_air_viscosity = 0.0
+rubberworm_air_viscosity_applies_to_worms = false
+rubberworm_anti_lock_aim = false
+rubberworm_anti_sink = false
+rubberworm_bounciness = 0.0
+rubberworm_crate_rate = 0
+rubberworm_crate_shower = false
+rubberworm_extended_fuses_herds = false
+rubberworm_gravity_strength = 1.0
+rubberworm_gravity_type = "unmodified"
+rubberworm_remember_weapons = false
+rubberworm_wind_influence = 0.0
+rubberworm_wind_influence_applies_to_worms = false
+sheep_heaven = false
+sheep_heaven_effects = 7
+skipwalking = "possible"
+stockpiling = "off"
+sudden_death = "round_end"
+sudden_death_disables_worm_select = true
+sudden_death_worm_damage_per_turn = 5
+super_weapons = true
+team_weapons = false
+terrain_friction = 0.959991455078125
+terrain_overlap_phasing_glitch = "default"
+turn_time = 51
+undetermined_crates = "default"
+undetermined_fuses = "default"
+unrestrict_rope = false
+unrestricted_weapon_use = false
+upgraded_clusters = false
+upgraded_grenade = false
+upgraded_longbow = false
+upgraded_shotgun = false
+utility_crate_weight = 0
+water_rise_rate = 3
+weapon_crate_weight = 50
 weapon_use_doesn_t_end_turn = true
+wind = 100
+wind_bias = 15
+wins = 5
+worm_energy = 200
+worm_select = "sequential"
+worm_selection_doesn_t_end_hot_seat = false
+worm_selection_is_never_cancelled = false
+x_impact_loss_of_control = "lose_control"
 
 [weapon_options."hl.rules"."stock.baseball_bat"]
+pool = "second"
+
+[weapon_options."hl.rules"."stock.blow_torch"]
 pool = "second"
 
 [weapon_options."hl.rules"."stock.dynamite"]
@@ -25,66 +132,117 @@ pool = "offensive"
 [weapon_options."hl.rules"."stock.flame_thrower"]
 pool = "second"
 
+[weapon_options."hl.rules"."stock.ming_vase"]
+pool = "offensive"
+
 [weapon_settings."px.3_girder_pack"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.banana_express"]
 after_use = "continue"
+crate_pct = 1.0753
+crate_type = "weapon"
 
 [weapon_settings."px.blaster_worm"]
 after_use = "continue"
-
-[weapon_settings."px.blowtorch"]
-after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.bowling_ball_strike"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.burning_sheep_launcher"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.burst_rifle"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.chilli_bomb"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.cow_launcher"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.crate_strike"]
 after_use = "continue"
+crate_pct = 1.0753
+crate_type = "weapon"
 
 [weapon_settings."px.double_bazooka"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.electric_grenade"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.electromagnet"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.ferret"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.fire_jump"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.ghost_sheep"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
+
+[weapon_settings."px.gravity_control"]
+crate_pct = 9.0909
+crate_type = "utility"
 
 [weapon_settings."px.gravler"]
-ammo = 0
 after_use = "continue"
+ammo = 0
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.gravler_strike"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
+
+[weapon_settings."px.hang_glider"]
+crate_pct = 18.1818
+crate_type = "utility"
+remembered = true
+
+[weapon_settings."px.helicopter"]
+crate_pct = 18.1818
+crate_type = "utility"
 
 [weapon_settings."px.hellish_hand_grenade"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.hot_air_balloon"]
 ammo = 3
+crate_pct = 0.0
+remembered = true
 
 [weapon_settings."px.hot_air_balloon".each_turn]
 amount = 3
@@ -92,87 +250,155 @@ mode = "replace"
 
 [weapon_settings."px.ice_arrow"]
 after_use = "continue"
+crate_pct = 1.0753
+crate_type = "weapon"
 
 [weapon_settings."px.igniter"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.javelin"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
+
+[weapon_settings."px.jump"]
+crate_pct = 18.1818
+crate_type = "utility"
 
 [weapon_settings."px.kamikaze_rocket"]
-ammo = 1
 after_use = "continue"
+ammo = 1
+crate_pct = 0.0
 
 [weapon_settings."px.laser_gun"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.lightning_strike"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.mortar_strike"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.nuke_rocket"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.old_woman_launcher"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.pigeon_strike"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.pogo_sheep"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
-[weapon_settings."px.priceless_ming_vase"]
-after_use = "continue"
+[weapon_settings."px.portal_gun"]
+crate_pct = 9.0909
+crate_type = "utility"
 
 [weapon_settings."px.real_shotgun"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.reinforcement"]
 after_use = "continue"
+crate_pct = 1.0753
+crate_type = "weapon"
 
 [weapon_settings."px.remote_roller"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.s_m_a_r_t_bomb"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
+
+[weapon_settings."px.sentry_gun"]
+crate_pct = 2.1505
+crate_type = "weapon"
+
+[weapon_settings."px.sentry_laser"]
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.shadow_bolt"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
+
+[weapon_settings."px.skip_go_surrender"]
+crate_pct = 0.0
 
 [weapon_settings."px.sniper_rifle"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.sticky_bomb"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.submarine_attack"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.super_drill"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
-[weapon_settings."px.super_gravedigger"]
-after_use = "continue"
+[weapon_settings."px.super_tele"]
+crate_pct = 9.0909
+crate_type = "utility"
+
+[weapon_settings."px.swim_suit"]
+crate_pct = 18.1818
+crate_type = "utility"
 
 [weapon_settings."px.thumper_nade"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.thumper_nade_strike"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.valyrian_fire"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."px.weapon_crate"]
 after_use = "continue"
 ammo = 1
+crate_pct = 0.0
 
 [weapon_settings."px.wind_changer"]
 after_use = "continue"
 ammo = 1
+crate_pct = 0.0
 
 [weapon_settings."px.wind_changer".each_turn]
 amount = 1
@@ -180,24 +406,52 @@ mode = "replace"
 
 [weapon_settings."px.windy_cluster"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."stock.baseball_bat"]
 after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
-[weapon_settings."stock.dynamite"]
+[weapon_settings."stock.blow_torch"]
 after_use = "continue"
-
-[weapon_settings."stock.fast_walk"]
-ammo = -1
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."stock.crate_shower"]
 ammo = 0
+crate_pct = 0.0
 
 [weapon_settings."stock.crate_spy"]
 ammo = 0
+crate_pct = 0.0
+
+[weapon_settings."stock.dynamite"]
+after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
+
+[weapon_settings."stock.fast_walk"]
+ammo = -1
+auto_use = true
+crate_pct = 0.0
+
+[weapon_settings."stock.flame_thrower"]
+crate_pct = 0.0
+
+[weapon_settings."stock.ming_vase"]
+after_use = "continue"
+crate_pct = 2.1505
+crate_type = "weapon"
 
 [weapon_settings."stock.teleport"]
 ammo = 0
+crate_pct = 0.0
+
+[weapon_settings."utilities.bullet_time"]
+crate_pct = 1.0753
+crate_type = "weapon"
 
 [weapons."px.3_girder_pack"]
 column = 5
@@ -210,10 +464,6 @@ row = "F9"
 [weapons."px.blaster_worm"]
 column = 4
 row = "F1"
-
-[weapons."px.blowtorch"]
-column = 1
-row = "F7"
 
 [weapons."px.bowling_ball_strike"]
 column = 4
@@ -287,6 +537,10 @@ row = "utility"
 column = 2
 row = "F9"
 
+[weapons."px.homing_digger"]
+column = 3
+row = "F2"
+
 [weapons."px.hot_air_balloon"]
 column = 2
 row = "F8"
@@ -343,10 +597,6 @@ row = "F5"
 column = 5
 row = "F8"
 
-[weapons."px.priceless_ming_vase"]
-column = 3
-row = "F10"
-
 [weapons."px.real_shotgun"]
 column = 1
 row = "F3"
@@ -395,10 +645,6 @@ row = "F6"
 column = 2
 row = "F7"
 
-[weapons."px.super_gravedigger"]
-column = 3
-row = "F2"
-
 [weapons."px.super_tele"]
 column = 4
 row = "F8"
@@ -435,6 +681,10 @@ row = "F2"
 column = 3
 row = "F7"
 
+[weapons."stock.blow_torch"]
+column = 1
+row = "F7"
+
 [weapons."stock.crate_shower"]
 column = 9
 row = "utility"
@@ -455,6 +705,14 @@ row = "utility"
 column = 3
 row = "F9"
 
+[weapons."stock.ming_vase"]
+column = 3
+row = "F10"
+
 [weapons."stock.teleport"]
 column = 5
+row = "utility"
+
+[weapons."utilities.bullet_time"]
+column = 6
 row = "utility"

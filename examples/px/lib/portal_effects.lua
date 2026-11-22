@@ -1,6 +1,5 @@
--- PX p_portalgun2 DoTrailEffects/DoSpark/DoFlash and p_portal2
--- DoPortalEffects/DoTeleportationEffects, using the existing GPU draw API.
--- This local random stream drives looks only, never WA's gameplay RNG.
+-- The Portal Gun's effects: trails, sparks, flashes and teleport bursts, from PX.
+
 local Effects = {}
 Effects.__index = Effects
 local TAU = 2 * math.pi
@@ -22,12 +21,11 @@ function Effects:random(lo, hi)
   return lo + (hi-lo) * (s / 0x100000000)
 end
 function Effects:particle(x, y, spec)
-  -- Twelve endpoints emit at most 180 ambient particles at once. Bound
-  -- bursts too, so repeated transport cannot accumulate an unbounded list.
   if #self.particles >= 1024 then return end
   local angle, speed = self:random(0, TAU), self:random(spec.speed[1], spec.speed[2])
   self.particles[#self.particles+1] = {
-    x = x, y = y, vx = wa.math.cos(angle)*speed, vy = wa.math.sin(angle)*speed,
+    x = x, y = y, vx = wa.math.cos(angle)*speed + (spec.vx or 0),
+    vy = wa.math.sin(angle)*speed + (spec.vy or 0),
     age = 0, life = spec.life, sprite = spec.sprite or "lightning_glow.png",
     pixels = spec.pixels or 128, size = spec.size, end_size = spec.end_size or 0.01,
     start = spec.start, finish = spec.finish, alpha = spec.alpha or 255,
@@ -49,7 +47,6 @@ function Effects:transport(p)
   end
 end
 function Effects:impact(x, y, failed)
-  -- PX's ExplodeAt emits 7 + 10 sparks; a rejected portal adds 30.
   for _=1,(failed and 47 or 17) do
     local shift = math.floor(self:random(0,51))
     self:particle(x, y, { sprite="portal_glow.png", pixels=32, life=40,
@@ -69,6 +66,16 @@ function Effects:trail(x, y, colour)
     start=first, finish={0,0,0} })
   self:particle(x, y, { life=40, speed={0,0.8}, size=0.3, end_size=0.35,
     start=last, finish={0,0,0} })
+end
+function Effects:muzzle(x, y, colour, dx, dy)
+  local first, last = palette(colour, math.floor(self:random(0, 51)))
+  local push = self:random(0.4, 1.2)
+  self:particle(x, y, { sprite="portal_glow.png", pixels=32, life=14,
+    speed={0.1,0.5}, vx=dx*push, vy=dy*push, resistance=0.12, gravity=-0.05,
+    randomness=0.2, size=self:random(0.12,0.22), end_size=0.02,
+    start=first, finish=last })
+  self:particle(x, y, { life=2, speed={0,0}, alpha=170,
+    size=self:random(0.16,0.22), end_size=0.14, start=first, finish=last })
 end
 function Effects:tick(gravity)
   for i=#self.particles,1,-1 do

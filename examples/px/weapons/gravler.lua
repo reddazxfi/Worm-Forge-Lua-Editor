@@ -1,7 +1,7 @@
--- Gravler: record, art and behaviour.
+-- Gravler: a mole that digs for a set time, then blows up.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   fires = {
     launch_power_pct = "charged",
@@ -52,10 +52,10 @@ function weapon.definition()
     name = "Gravler",
     panel_icon = "sprites/gravler/gravler_ico.png",
     sprite_overrides = {
-          wsvr = "sprites/gravler/gravlerdive.png",                                -- 245
-          wsvru = "sprites/gravler/gravlerdiga.png",                               -- 246
-          wsvrd = "sprites/gravler/gravlerdigb.png",                               -- 247
-          wsvb = "sprites/gravler/gravlerdigc.png",                                -- 248
+          wsvr = "sprites/gravler/gravlerdive.png", -- 245
+          wsvru = "sprites/gravler/gravlerdiga.png", -- 246
+          wsvrd = "sprites/gravler/gravlerdigb.png", -- 247
+          wsvb = "sprites/gravler/gravlerdigc.png", -- 248
         },
     worm_sprites = {
           weaponlnk = "sprites/gravler/aim.png",
@@ -66,6 +66,11 @@ function weapon.definition()
           wthrowd = "sprites/gravler/drawd.png",
         },
   })
+end
+
+function weapon.configure(ctx, spec)
+  spec.missile.fuse = ctx.option("timer") * 1000
+  spec.missile.explosion.power = ctx.option("blast_power")
 end
 
 return weapon

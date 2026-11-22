@@ -1,19 +1,7 @@
--- Highlander's rules, the hl.rules add-on: each worm is dealt one weapon
--- from each pool, may use each once a turn, and takes everything a worm it
--- kills carried (scheme/pools, scheme/state, scheme/highland_rules), wherever the
--- profile put the weapons. It installs before the weapons (before_weapons),
--- so its hooks run first.
---
--- The pools are the placed weapons' settings for this add-on ("Highlander
--- pool", "Dealt on cavern maps"): a PX weapon suggests its PX pool in
--- mod.toml, and a profile may set any weapon's, a stock one's too.
---
--- What PX gives outside the deal -- the Hot Air Balloons refilled to 3 and
--- the Wind Changer to 1 each turn, one Weapon Crate a round -- is weapon data
--- in the Highlander profile, which the loader shows and a player may change.
+-- Highlander rules: each worm gets one weapon per pool and takes a killed worm's hand.
+
 local shared = require("lib/shared")
 
--- ctx.placed is in slot order, the same on every peer: the pools keep it.
 local function pools_from(placed)
   local out = {
     offensive = {}, second = {}, movement = {},

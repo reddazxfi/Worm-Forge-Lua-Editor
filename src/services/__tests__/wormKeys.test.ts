@@ -62,15 +62,12 @@ describe('wormKeys matches the engine', () => {
     expect(polled.size).toBeGreaterThan(8);
 
     // The VK codes behind the keys we claim, so this fails if the engine re-maps.
-    // `sprint` is here on purpose: it is the legacy alias, and it is still polled
-    // through `shift`'s bit.
     const VK = {
       left: [0x25, 0x41],
       right: [0x27, 0x44],
       up: [0x26],
       down: [0x28, 0x53],
       jump: [0x57],
-      sprint: [0x10],
       shift: [0x10],
       q: [0x51],
       space: [0x20],
@@ -112,7 +109,7 @@ describe('wormKeys matches the engine', () => {
     expect(documented.length, 'the engine bit-layout comment no longer parses').toBeGreaterThan(8);
 
     // The engine's spelling -> ours. W is the physical key behind `jump`.
-    const FIELD_OF: Record<string, string> = { w: 'jump', shift: 'shift', sprint: 'sprint' };
+    const FIELD_OF: Record<string, string> = { w: 'jump', shift: 'shift' };
     const bits: Record<string, number> = {};
     for (const d of documented) {
       const raw = d[2].toLowerCase();
@@ -168,22 +165,11 @@ describe('wormKeys matches the engine', () => {
     expect(Number(shift![1]), 'digit moved out of bits 8..11').toBe(8);
   });
 
-  it('sprint is declared an ALIAS of shift, not an independent bit', () => {
-    // API 4 sets `shift` and `sprint` from the same bit 32 (spawn.rs: "The old
-    // name of `shift`... it goes with the next api_version"). Publishing both as
-    // independent rows with the same bit would break any "bits are unique"
-    // invariant; dropping either would hide a field the engine really returns.
-    // So the alias is data, and this asserts the alias is coherent.
-    const aliases = WORM_KEYS.filter((k) => k.aliasOf);
-    expect(aliases.map((k) => k.field)).toEqual(['sprint']);
-
-    const target = WORM_KEYS.find((k) => k.field === 'shift');
-    const alias = aliases[0];
-    expect(target, 'the `shift` row this alias points at is missing').toBeTruthy();
-    expect(alias.bit).toBe(target!.bit);
-    expect(alias.keys).toEqual(target!.keys);
+  it('publishes no legacy key aliases', () => {
+    // 1.0 removed `keys().sprint`: `shift` reads bit 32 and nothing else does.
+    expect(WORM_KEYS.filter((k) => k.aliasOf)).toEqual([]);
+    expect(WORM_KEYS.map((k) => k.field)).not.toContain('sprint');
     expect(WORM_KEY_BINDINGS.map((k) => k.field)).toContain('shift');
-    expect(WORM_KEY_BINDINGS.map((k) => k.field)).not.toContain('sprint');
   });
 
   it('exactly one field is numeric, and it is digit', () => {
@@ -201,10 +187,10 @@ describe('wormKeys matches the engine', () => {
     const bits = WORM_KEY_BINDINGS.map((k) => k.bit);
     expect(new Set(bits).size).toBe(bits.length);
     expect(bits.every((b) => b !== null && b > 0)).toBe(true);
-    // 16 fields total, minus `digit` (a value in bits 8..11, not a flag) and minus
-    // `sprint` (an alias). The count is asserted so a row cannot be added without
-    // someone deciding whether it owns a bit.
-    expect(WORM_KEYS.length).toBe(16);
+    // 15 fields total, minus `digit` (a value in bits 8..11, not a flag). The
+    // count is asserted so a row cannot be added without someone deciding
+    // whether it owns a bit.
+    expect(WORM_KEYS.length).toBe(15);
     expect(WORM_KEY_BINDINGS.length).toBe(14);
   });
 });

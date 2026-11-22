@@ -1,8 +1,5 @@
 -- PX p_portal2 CPortal::TeleportObject, worm and other-object rules.
--- Indexed by entry/exit surface: 1 down, 2 down-left, 3 left,
--- 4 up-left, 5 up, 6 up-right, 7 right, 8 down-right (outward normals).
--- Keep the two sets separate: PX deliberately treats worms differently.
--- Speeds inside these rules are pixels/frame. The public boundary also uses pixels/frame.
+
 local rules = { worm = {}, object = {} }
 rules.worm[1] = {
   [1] = function(vx, vy, face)

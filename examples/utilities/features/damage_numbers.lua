@@ -1,8 +1,6 @@
 -- Floating damage and heal numbers, Worms Reloaded type shyt.
--- This script only reads DMG Done and draws it on screen.
 
 local GLYPH_H = 12
--- 1 point -> 0.70, 80+ -> 1.20.
 local MIN_SCALE = 0.80
 local MAX_SCALE = 1.22
 local MAX_SCALE_DAMAGE = 80
@@ -19,19 +17,16 @@ local HEAL_SIDE_VX = 0.18
 local RED_AT = 40
 local START_ABOVE = 18
 local START_SIDE = 6
--- alternate: flip per worm; random: local LCG below.
 local SIDE_MODES = { alternate = true, facing = true, random = true }
 
 local ORANGE = { 255, 160, 32 }
 local RED = { 255, 48, 16 }
 local HEAL = { 80, 255, 112 }
 
--- Cropped widths; every glyph is GLYPH_H tall.
 local WIDTH = {
   [0] = 11, [1] = 10, [2] = 11, [3] = 12, [4] = 12,
   [5] = 11, [6] = 12, [7] = 11, [8] = 11, [9] = 12,
 }
--- 6px glyph + 1 blank column; a 6x12 image loads as two 6x6 frames.
 local BANG_WIDTH = 7
 
 local SPRITE = {
@@ -96,7 +91,6 @@ local function text_glyphs(amount, kind, art)
   return glyphs
 end
 
--- wa.draw.quad copies its table, so one spec can be reused.
 local QUAD = {
   points = { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } },
   sprite = "", color = 0xFFFFFFFF, blend = "alpha", depth = wa.depth.FRONT,
@@ -178,7 +172,6 @@ return function(cfg)
   local spawned = false
   local rng = 0x9E3779B9
 
-  -- Local LCG: a cosmetic roll must not advance WA's shared RNG.
   local function next_rng()
     rng = (rng * 1103515245 + 12345) % 0x80000000
     return rng
@@ -186,7 +179,6 @@ return function(cfg)
 
   local function side_for(worm, damage)
     local facing = (worm.facing and worm.facing < 0) and -1 or 1
-    -- Heals don't use up an alternate turn or a random draw.
     if not damage or side_mode == "facing" then
       return facing
     end
@@ -216,7 +208,6 @@ return function(cfg)
     }
   end
 
-  -- Diff at frame finish; a 1-point drop is held so Live HP's pulse nets out.
   local function observe()
     local frame = wa.world.frame()
     if not frame then return end
@@ -228,11 +219,9 @@ return function(cfg)
         local held = pending_one[worm.id]
         if held then
           if diff == 1 then
-            -- Pulse healed it back.
             pending_one[worm.id] = nil
             diff = 0
           else
-            -- Real hit after all.
             add_popup("damage", 1, held, frame)
             pending_one[worm.id] = nil
           end
@@ -250,7 +239,6 @@ return function(cfg)
           add_popup("heal", diff, worm, frame)
         end
       end
-      -- A revive starts fresh, so it isn't printed as one big heal.
       last_hp[worm.id] = hp > 0 and hp or nil
     end
   end
@@ -259,8 +247,7 @@ return function(cfg)
     if spawned then return end
     spawned = true
     wa.actors.spawn({
-      sprite = false, x = 0, y = 0, gravity = false, collide = false,
-      owner = worm,
+      sprite = false, x = 0, y = 0, owner = worm,
       on = observe,
     })
   end, { msgs = { wa.msg.FRAME_FINISH } })

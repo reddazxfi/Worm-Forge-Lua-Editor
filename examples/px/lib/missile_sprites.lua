@@ -1,38 +1,19 @@
--- Highlander: PX's missile sprites. Split from rules.lua by tools/split_highlander.py.
+-- Highlander: PX's missile sprites.
+
 local shared = require("lib/shared")
 local HOLD_DEPTH = shared.HOLD_DEPTH
 local frame_of = shared.frame_of
 local next_phase = shared.next_phase
 
 -- ------------------------------------ PX's missile sprites, at run time
--- Shared with later sections; the rest of this section is local to it.
 local flying, current_worm
 do
---
--- For some weapons PX draws the missile itself (p_sprite_builder,
--- WeapSprite) and leaves WA's sprite 0: a sprite that follows the missile,
--- turned to its flight, mirrored when it flies left, and, if `animate`,
--- stepped through its sheet as a hold is. Here it is a GPU actor per
--- missile, placed from wa.on.missile_frame after WA has moved the missile.
--- It reads m.weapon (the missile's slot); on an engine without it nothing
--- matches and nothing is drawn. With `hide`, WA draws nothing for the
--- missile (m.sprite = 0), as PX's sprite 0 does; its record keeps its
--- sprite, which a thrown weapon's worm posture is picked by.
---
--- How it turns follows the record's animation type (the entry's +0x64,
--- PX's launchdata.anim.type): 2, WAT_TrackMovement, faces its flight
--- (WeapSprite type 2, as a bazooka shell); 1, WAT_Rotation, spins with its
--- speed (type 3, as a grenade), which `spin` asks for.
 
--- Slot -> the weapon's WeapSpriteParams, as its PX script states them.
 local PX_WEAP_SPRITES = shared.missile_sprites
 
 flying = {} -- missile id -> { actor, phase, seen }
--- Missiles of a `first_sprite` weapon that showed it when first seen:
--- missile id -> true. Hidden, their sprite reads 0 from then on.
 local matched = {}
 
--- The actor goes when its missile stops reporting: WA has freed it.
 local function follow_missile(id)
   return function(a)
     local f = flying[id]
@@ -44,12 +25,10 @@ local function follow_missile(id)
       flying[id] = nil
       matched[id] = nil
     end
-    a:despawn()
+    a:remove()
   end
 end
 
--- The worm whose turn it is: WeapSprite's owner (GetCurrentWorm()). A
--- missile frame gives no spawn owner of its own.
 function current_worm()
   for _, w in ipairs(wa.worms.all()) do
     if w.turn then
@@ -58,14 +37,6 @@ function current_worm()
   end
 end
 
--- A missile can outlive the turn it was fired in: a Chilli's five burst
--- after a blast that hurt the thrower, which ends WA's turn. With no worm
--- holding the turn, the last turn's worm owns the sprite, or it would not
--- be drawn at all while WA still flies the missile. That worm may have
--- died since, and WA frees a dead worm: it is kept by id and looked up
--- among the living, and if it is gone any living worm owns the sprite.
--- Left undrawn instead, the missile would show WA's own sprite, which
--- another weapon may have taken over.
 local last_turn_id
 wa.on.turn_start(function(event)
   last_turn_id = event.worm and event.worm.id
@@ -83,17 +54,24 @@ local function sprite_owner()
   return any
 end
 
-wa.on.missile_frame(function(m)
-  local p = shared.owns(m.weapon) and PX_WEAP_SPRITES[m.weapon]
-  if p and p.first_sprite and not matched[m.id] then
+-- A weapon's missile_sprite is one spec, or a list of them told apart by
+-- first_sprite: the WA sprite a missile draws on its first frame.
+local function spec_for(m)
+  local specs = shared.owns(m.weapon) and PX_WEAP_SPRITES[m.weapon]
+  if not specs then return nil end
+  if matched[m.id] then return matched[m.id] end
+  if specs.sheet then specs = { specs } end
+  for _, p in ipairs(specs) do
+    if not p.first_sprite then return p end
     if m.phase == "pre" and m.sprite == p.first_sprite then
-      matched[m.id] = true
-    else
-      p = nil
+      matched[m.id] = p
+      return p
     end
   end
-  -- WA's sprite is hidden only where PX's is drawn in its place: with no
-  -- owner for ours, WA's stays.
+end
+
+wa.on.missile_frame(function(m)
+  local p = spec_for(m)
   if p and p.hide and m.phase == "pre" and (flying[m.id] or sprite_owner()) then
     m.sprite = 0
   end
@@ -109,33 +87,35 @@ wa.on.missile_frame(function(m)
     end
     f = { phase = 0, rot = 0 }
     f.actor = wa.actors.spawn({
-      sprite = p.sheet, x = m.x, y = m.y, gravity = false, collide = false,
-      owner = owner, on = follow_missile(m.id),
+      sprite = p.sheet, x = m.x, y = m.y, owner = owner, on = follow_missile(m.id),
     })
     flying[m.id] = f
   end
   f.seen = true
   local a = f.actor
   a.x, a.y, a.vx, a.vy = m.x, m.y, 0, 0
-  a.facing = m.vx < 0 and -1 or 1
+  a.facing = (m.vx < 0 and not p.upright) and -1 or 1
   if p.animate then
     f.phase = next_phase(f.phase, p.anim_speed)
     a:frame(frame_of(f.phase, p.frames))
   end
   local rot
-  if p.spin then
-    -- WeapSprite type 3: speed * (vx * 0.15 + |vy| * 0.01, towards vx) a
-    -- frame, in pixels a frame and radians; WeapSprite's speed is 0.5
-    -- unless the weapon's script sets it.
+  if p.upright then
+    rot = 0
+  elseif p.spin then
     local vx, vy = m.vx, m.vy
     local sign = vx > 0 and 1 or vx < 0 and -1 or 0
     f.rot = f.rot + (p.spin_speed or 0.5) * (vx * 0.15 + math.abs(vy * 0.01) * sign)
     rot = f.rot
   else
-    -- WeapSprite::CalculateAngle, rotation 0.
     rot = -wa.math.atan(m.vx, m.vy) - math.pi
   end
-  a:gfx({ angle = math.deg(rot) % 360, depth = HOLD_DEPTH })
+  local sunk = p.sink_tint ~= nil and m.y >= wa.world.water()
+  if sunk ~= (f.sunk or false) then
+    f.sunk = sunk
+    a:gfx({ tint = sunk and p.sink_tint or 0xFFFFFF })
+  end
+  a:gfx({ angle = math.deg(rot) % 360, depth = HOLD_DEPTH, scale = p.scale })
 end)
 end
 

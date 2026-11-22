@@ -1,7 +1,7 @@
--- Igniter: record, art and behaviour.
+-- Igniter: a gun whose bullet bursts into fire where it hits.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   fires = {
     subtype = 3,
@@ -34,7 +34,7 @@ weapon.record = {
     },
     fire = {
       burn_time_ms = 1000,
-      decay_mode = "on_hit",
+      decay_mode = "at_turn_start",
       spread_delay_ms = 150,
       spread_generations = 75,
     },
@@ -64,8 +64,6 @@ function weapon.definition()
         },
     params = { gpu_prefix = "sprites/" },
     hold = { -- Igniter (igniter_anim)
-        -- Up through the shot too: it has no firing poses of its own, so WA
-        -- fires it in the aim posture, empty-handed without the hold. Not PX's.
         keep_while_firing = true,
         sheet = "sprites/px_hold/igniter.png", hand_type = 2, hand_radius = -6.0,
         hand_rotation = 1.0, hand_radial_rotation = 0.9, hand_scale = 0.8,

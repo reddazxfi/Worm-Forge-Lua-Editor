@@ -1,7 +1,7 @@
--- Mortar Strike: record, art and behaviour.
+-- Mortar Strike: an air strike that drops mortar shells.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   missile = {
     burst = "clusters",
@@ -84,10 +84,10 @@ function weapon.definition()
     copy_from = "stock.air_strike",
     name = "Mortar Strike",
     panel_icon = "sprites/mortar_strike/ico_mortarst.png",
-    cluster = { sprite = "sprites/mortar_strike/cluster.png" },
+    cluster_sprite = "sprites/mortar_strike/cluster.png",
     sprite_overrides = {
-          wsvclnk = "sprites/mortar_strike/trail.png",                             -- 466
-          wsvc = "sprites/mortar_strike/cluster_trail.png",                        -- 260
+          wsvclnk = "sprites/mortar_strike/trail.png", -- 466
+          wsvc = "sprites/mortar_strike/cluster_trail.png", -- 260
         },
   })
 end

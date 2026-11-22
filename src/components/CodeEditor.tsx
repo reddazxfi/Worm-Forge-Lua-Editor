@@ -1174,7 +1174,7 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
     // is a false promise:
     //   .kind         -> 9 kind_name() strings (a union, not a class)
     //   .state        -> 26 READABLE: what worm.state actually returns
-    //   .state_label  -> 28 WORM_STATES: the DEBUG label table, log-only
+    //   .state_label  -> 32 WORM_STATES: the DEBUG label table, log-only
     //   :set_state(   -> 6 SETTABLE: anything else is a hard engine error
     // `state_label` deliberately offers the full 28 while `state` offers 26 --
     // the two are different engine tables and must not be merged.
@@ -1222,9 +1222,7 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
       } else if (strMember === 'set_state') {
         candidates = SETTABLE_WORM_STATES.map((s) => ({
           value: s.name,
-          description: s.alias
-            ? 'Legacy alias for tumbling -- accepted, but prefer "tumbling".'
-            : `Settable state (0x${s.id.toString(16).toUpperCase()}).`,
+          description: `Settable state (0x${s.id.toString(16).toUpperCase()}).`,
         }));
         enumLabel = 'worm:set_state (accepted states -- anything else is a hard error)';
       }

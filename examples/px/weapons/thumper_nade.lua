@@ -1,7 +1,7 @@
--- Thumper Nade: record, art and behaviour.
+-- Thumper Nade: a heavy grenade that bounces twice, then bursts into clusters with a hard push.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   fires = {
     method = 3,
@@ -103,10 +103,10 @@ function weapon.definition()
     name = "Thumper Nade",
     panel_icon = "sprites/thumper_nade/thumpern_ico.png",
     sprite = "sprites/thumper_nade/flight.png",
-    cluster = { sprite = "sprites/thumper_nade/cluster.png" },
+    cluster_sprite = "sprites/thumper_nade/cluster.png",
     sprite_overrides = {
-          wsvg = "sprites/thumper_nade/trail.png",                                -- 251
-          wsvgu = "sprites/thumper_nade/cluster_trail.png",                       -- 252
+          wsvg = "sprites/thumper_nade/trail.png", -- 251
+          wsvgu = "sprites/thumper_nade/cluster_trail.png", -- 252
         },
     worm_sprites = {
           weaponlnk = "sprites/thumper_nade/aim.png",

@@ -8,7 +8,7 @@
 #
 # A component in no panel slot registers nothing, so removing the weapon from a
 # profile leaves the match working.
-description = "reddaz's Keeper Bee (Project X): a bee launcher, and a map seeded with rogue bees on the first turn."
+description = "The Keeper Bee, and a map seeded with rogue bees."
 features = ["spawn.bees.swarm"]
 
 [weapons]
@@ -21,4 +21,4 @@ crate = 0
 
 [options."spawn.bees.swarm"]
 spawn_map_bees = true
-bee_amount = 22
+bee_amount = 4

@@ -1,7 +1,7 @@
--- 3 Girder Pack: record, art and behaviour.
+-- 3 Girder Pack: places three girders in one go.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     remember_selection = true,

@@ -1,7 +1,7 @@
--- Super Gravedigger: record, art and behaviour.
+-- Super Gravedigger: a banana bomb whose bits skip along the ground before blowing up.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     remember_selection = false,
@@ -75,7 +75,7 @@ function weapon.definition()
     name = "Super Gravedigger",
     panel_icon = "sprites/super_gravedigger/sgrave_ico.png",
     sprite = "sprites/super_gravedigger/flight.png",
-    cluster = { sprite = "sprites/super_gravedigger/cluster.png" },
+    cluster_sprite = "sprites/super_gravedigger/cluster.png",
     worm_sprites = {
           weaponlnk = "sprites/super_gravedigger/aim.png",
           weaponlnku = "sprites/super_gravedigger/aimu.png",

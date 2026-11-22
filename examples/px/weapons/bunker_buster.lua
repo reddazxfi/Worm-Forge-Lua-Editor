@@ -1,9 +1,5 @@
--- Bunker Buster / Super Bunker Buster -- the component's entry point.
---
--- Both components in mod.toml point at this file; the module reads `ctx.id` to
--- tell them apart. `require` runs where `wa` does not exist yet, so the module
--- is pure data at load and does its `wa` work inside install (the same rule
--- lib/px_trail.lua follows).
+-- Bunker Buster / Super Bunker Buster: the component's entry point.
+
 local bunker = require("lib/px_bunker")
 
 return {

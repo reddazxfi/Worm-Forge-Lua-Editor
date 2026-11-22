@@ -1,13 +1,14 @@
--- A presentation-only inventory acquisition viewer. No actors or physics.
+-- A presentation-only inventory acquisition viewer.
+
 local CONFIG = {
-  debug = true,          -- targeted grant/preview/visibility diagnostics in wkLua.log
-  size = 24,             -- bounding square, world pixels; aspect preserved
-  rise = 48,             -- world pixels over one lifetime
-  amplitude = 6,         -- horizontal sine amplitude, world pixels
-  spacing = 28,          -- centres in a simultaneous grant's grid
+  debug = false,
+  size = 24, -- bounding square, world pixels; aspect preserved
+  rise = 48, -- world pixels over one lifetime
+  amplitude = 6, -- horizontal sine amplitude, world pixels
+  spacing = 28, -- centres in a simultaneous grant's grid
   columns = 4,
-  lifetime = 2,          -- simulation seconds, paused with the game
-  fade = 1.5,            -- final seconds fade linearly; lifetime - fade is opaque
+  lifetime = 2, -- simulation seconds, paused with the game
+  fade = 1.5,
 }
 local FPS, TAU = 50, 2 * math.pi
 local popups = {}
@@ -79,7 +80,6 @@ wa.on.draw(function()
         local u = age / (CONFIG.lifetime * FPS)
         local x = p.x + CONFIG.amplitude * (math.sin(TAU * u + p.phase) - math.sin(p.phase))
         local y = p.y - CONFIG.rise * u
-        -- Opaque until the final fade seconds, then linearly to zero.
         local remaining = CONFIG.lifetime - age / FPS
         local alpha = CONFIG.fade > 0
           and math.floor(255 * math.min(1, remaining / CONFIG.fade) + 0.5) or 255

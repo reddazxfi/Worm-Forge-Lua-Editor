@@ -1,7 +1,7 @@
--- Super Tele: record, art and behaviour.
+-- Super Tele: a teleport that also works into solid land, cutting room to arrive.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     remember_selection = true,
@@ -29,13 +29,7 @@ function weapon.setup()
   local shared = require("lib/shared")
   local fires = shared.fires
 
-  -- --------------------------------------------------------------- Super Tele
   do
-  -- PX's FireFinal arms the teleport, the next M_FRAME starts its pose and
-  -- sound, and M_FRAME moves the worm 50 frames after that. Keep the click
-  -- from WA's fire context: the live pointer
-  -- may have moved by the time the worm arrives. Mask 4 is approximated by
-  -- three overlapping round cuts, centred where PX places them.
   fires.teleports = {} -- worm id -> frozen target and elapsed frames
 
   local function super_tele_arrive(worm, x, y)
@@ -45,20 +39,12 @@ function weapon.setup()
     end
   end
 
-  -- WA's sound slots and the priority its teleport plays them at.
   local TELE_SOUND_PRIORITY = 3
   local SOUND_TELEPORT, SOUND_COMMUNICATOR, SOUND_WORM_POP = 67, 68, 54
-  -- WA's manual placement plays Communicator at the click and WormPop when
-  -- the worm appears, this many frames later.
   local PLACEMENT_POP_FRAMES = 21
 
-  -- During manual placement WA keeps unplaced worms at (960, -10000).
   local function unplaced(worm) return worm.y == -10000 end
 
-  -- WA's own teleport places a worm at the click, with no wind-up. Super
-  -- Tele's record is a click weapon, which winds up first: for an unplaced
-  -- worm the wind-up is skipped, so the click places it at once. On the fire
-  -- message, before WA starts the wind-up; at the frame's end as a fallback.
   local function skip_placement_windup(worm)
     if worm.weapon == "px.super_tele" and unplaced(worm) and worm.windup == nil then
       worm.windup = 0
@@ -70,11 +56,6 @@ function weapon.setup()
     if worm.hp <= 0 then return end
     local y = ev.y
     if wa.world.cavern() and y < 19 then y = 19 end
-    local previous = fires.teleports[worm.id]
-    if previous and previous.marker then previous.marker:despawn() end
-    -- Waiting 50 frames there makes an unplaced worm fall and take damage
-    -- before the arrival, so it is placed now. It sounds like WA's own
-    -- placement.
     if unplaced(worm) then
       super_tele_arrive(worm, ev.x, y)
       worm:teleport_pose()
@@ -82,14 +63,7 @@ function weapon.setup()
       fires.teleports[worm.id] = { placed = true, frames = 0 }
       return
     end
-    -- FireWeapon clears WA's planted X for click-only weapons. Keep a fixed
-    -- stock planted-X marker at the saved target until the worm arrives instead;
-    -- the engine plays it once, as WA plays its own.
-    local marker = wa.actors.spawn({
-      owner = worm, x = ev.x, y = y, sprite = "markerr",
-      gravity = false, collide = false, drown = false,
-    })
-    fires.teleports[worm.id] = { x = ev.x, y = y, frames = 0, pending = true, marker = marker }
+    fires.teleports[worm.id] = { x = ev.x, y = y, frames = 0, pending = true }
     wa.sound.play(worm, SOUND_COMMUNICATOR, TELE_SOUND_PRIORITY) -- PX's M_SETTARGET confirmation
   end
 
@@ -109,21 +83,17 @@ function weapon.setup()
       return
     end
     if worm.hp <= 0 then
-      tele.marker:despawn()
       fires.teleports[worm.id] = nil
       return
     end
     if tele.pending then
       tele.pending = false
-      -- WA's teleport setup clears its activity flag. Do this after the
-      -- Lua-handled FireWeapon return restores that flag, as PX's M_FRAME does.
       worm:teleport_pose()
       wa.sound.play(worm, SOUND_TELEPORT, TELE_SOUND_PRIORITY) -- PX's teleport start
       return
     end
     tele.frames = tele.frames + 1
     if tele.frames < 50 then return end
-    tele.marker:despawn()
     fires.teleports[worm.id] = nil
     super_tele_arrive(worm, tele.x, tele.y)
   end, { msgs = { wa.msg.FRAME_FINISH, wa.msg.FIRE_WEAPON } })

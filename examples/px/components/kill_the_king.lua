@@ -1,68 +1,59 @@
--- ============================================================================
--- WormForge WA 3.8.1 Port: KTK (Kill The King) Control Logic
--- Transpiled and hardened from Project X 3.6.31.0 CKtkControl
---
--- Security & Sandbox Compliance (sandbox.rs):
---  - INLINED CONFIG: No require("config") because require/dofile are nil in sandbox.
---  - STABLE FRAME GATE: Evaluates once per frame via worm.id <= lastWormId dispatch boundary.
---  - STRICT TEAM INDICES: 1-based team numbers (1: Red, 2: Blue, etc.) strictly compared.
---  - NO INSTANT LOSS: Safe solid pixel detection with fail-safe guard (disables if 0 pixels).
---  - SOUND CLAIMS: wa.sound.play safely called with worm handle (not numeric id) when claimed.
---  - WINNER TRACKING: Eliminates losing team via w:hurt(w.hp) in deterministic lockstep.
--- ============================================================================
+-- Kill the King: the attackers must destroy the defenders' king before the timer runs out.
 
--- IN-Game Replay breakst the mod, revives worms for some reason.
+return function(ctx)
+  local function option(key, fallback)
+    if ctx and ctx.option then
+      local value = ctx.option(key)
+      if value ~= nil then return value end
+    end
+    return fallback
+  end
 
--- Inline configuration table (sandbox-compliant: do NOT use require/dofile)
-return function()
+  local TEAM = { red = 1, blue = 2, green = 3, yellow = 4, purple = 5, cyan = 6 }
+
+  local KING_BOX_SIZE = 10
+  local CHECK_INTERVAL_FRAMES = 5
+
   local CONFIG = {
-    -- King Count: 1 or 2
-    kingsCount = 1,
+    kingsCount = option("kings", "one") == "two" and 2 or 1,
 
-    -- Time for attack in milliseconds (300,000 ms = 5 minutes)
-    timeForAttackMs = 300000,
+    timeForAttackMs = (option("attack_time_seconds", 300) or 300) * 1000,
 
-    -- "AttackOnly" (decreases only on attacker turns)
-    -- "DefendAndCompensate" (defenders turn adds +5ms per tick back to timer)
-    timerType = "AttackOnly",
+    timerType = option("timer_mode", "attack_only") == "defend_and_compensate"
+      and "DefendAndCompensate" or "AttackOnly",
 
-    -- Timer HUD caption
     timerCaption = "Remaining attack time:",
 
-    -- Teams (1-based indices in WA: 1=Red, 2=Blue, 3=Green, 4=Yellow, 5=Purple, 6=Cyan)
-    attackersTeam = 1, -- Red Team (Attackers)
-    defendersTeam = 2, -- Blue Team (Defenders)
+    attackersTeam = TEAM[option("attackers_team", "red")] or 1,
+    defendersTeam = TEAM[option("defenders_team", "blue")] or 2,
 
-    -- Percentage of King solid pixels that must be destroyed to trigger King loss
     destructionPercentage = 75,
 
-    -- Optimization: sample king bounding box every N frames (5 frames = 100ms)
-    checkIntervalFrames = 5,
-
-    -- King 1 Configuration (Pixel coordinates on the map)
     king1 = {
       name = "Blue King",
-      x1 = 106,
-      y1 = 829,
-      width = 10,
-      height = 10,
-      destructionPercentage = 70,
+      x1 = option("king1_x", 106) or 106,
+      y1 = option("king1_y", 829) or 829,
+      width = KING_BOX_SIZE,
+      height = KING_BOX_SIZE,
+      destructionPercentage = option("king1_destroy_percent", 70) or 70,
     },
 
-    -- King 2 Configuration (Used when kingsCount >= 2)
     king2 = {
       name = "Red King",
-      x1 = 1420,
-      y1 = 300,
-      width = 10,
-      height = 10,
-      destructionPercentage = 70,
+      x1 = option("king2_x", 1420) or 1420,
+      y1 = option("king2_y", 300) or 300,
+      width = KING_BOX_SIZE,
+      height = KING_BOX_SIZE,
+      destructionPercentage = option("king2_destroy_percent", 70) or 70,
     },
+
+    defenderGainMs = option("defender_gain_ms", 5) or 5,
+    showTimer = option("show_timer", true),
+    showKingHp = option("show_king_hp", true),
   }
 
   local MS_PER_FRAME = 20 -- 50 fps lockstep (1000ms / 50 = 20ms per frame)
 
-  -- State Variables (Pure functions of simulation frames)
   local initialized = false
   local matchOver = false
   local winningTeam = nil
@@ -72,17 +63,95 @@ return function()
   local timerType = CONFIG.timerType or "AttackOnly"
   local attackersTeam = CONFIG.attackersTeam or 1
   local defendersTeam = CONFIG.defendersTeam or 2
+  local defenderGainMs = CONFIG.defenderGainMs or 5
 
   local kings = {}
   local kingsCount = CONFIG.kingsCount or 1
 
-  -- Dispatch ordering tracking for once-per-frame gate
   local lastWormId = 999999
   local frameCheckCounter = 0
 
-  -- ----------------------------------------------------------------------------
-  -- Helper: Initialize King solid pixel area on round start
-  -- ----------------------------------------------------------------------------
+  local CLEAN_EDGE_FRACTION = 0.25 + 0.05
+  local CLEAN_KINDS = { mine = true, oil = true, crate = true }
+  local cleanerDone = false
+
+  local function cleanable(obj)
+    return obj and CLEAN_KINDS[obj.kind] == true
+  end
+
+  local function collect_edge_objects(size, x0, x1)
+    local out, seen = {}, {}
+    local function add(obj)
+      if not cleanable(obj) then return end
+      local key = obj.id
+      if seen[key] then return end
+      seen[key] = true
+      local x = obj.x
+      if x and x >= x0 and x < x1 then
+        out[#out + 1] = obj
+      end
+    end
+
+    if wa.world.electrical_nearby then
+      local step = 1000
+      for cx = x0, x1, step do
+        for cy = 0, size.h, step do
+          for _, obj in ipairs(wa.world.electrical_nearby(cx, cy, step, false)) do
+            add(obj)
+          end
+        end
+      end
+    else
+      for _, group in ipairs({ wa.mines, wa.crates, wa.oil }) do
+        for _, obj in ipairs(group.all()) do add(obj) end
+      end
+    end
+    return out
+  end
+
+  local function discard_edge_object(obj, size)
+    if obj.remove then
+      local ok, removed = pcall(obj.remove, obj)
+      if ok and removed then return true end
+    end
+    local out_x = obj.x < size.w / 2 and -16 or (size.w + 16)
+    return obj:warp{ x = out_x, y = obj.y }
+  end
+
+  local function clean_edge_slices()
+    local size = wa.world.size()
+    if not size or size.w <= 0 or size.h <= 0 then return false end
+
+    local edge = math.floor(size.w * CLEAN_EDGE_FRACTION)
+    if edge < 1 then edge = 1 end
+
+    local cleaned = 0
+    for _, zone in ipairs({ { 0, edge }, { size.w - edge, size.w } }) do
+      for _, obj in ipairs(collect_edge_objects(size, zone[1], zone[2])) do
+        local ok, removed = pcall(discard_edge_object, obj, size)
+        if ok and removed then
+          cleaned = cleaned + 1
+        end
+      end
+    end
+
+    if cleaned > 0 then
+      wa.log(string.format("[KTK] Object cleaner cleared %d edge object(s)", cleaned))
+    end
+    return true
+  end
+
+  local function run_cleaner()
+    if cleanerDone then return end
+    local ok, result = pcall(clean_edge_slices)
+    if not ok then
+      cleanerDone = true
+      wa.log("[KTK WARNING] Object cleaner failed: " .. tostring(result))
+    elseif result then
+      cleanerDone = true
+    end
+  end
+
   local function init_king(cfg, id)
     if not cfg then return nil end
 
@@ -92,19 +161,14 @@ return function()
     local x2 = cfg.x1 + cfg.width
     local y2 = cfg.y1 + cfg.height
 
-    -- Scan rectangle for initial solid terrain pixels
-    for x = x1, x2 do
-      for y = y1, y2 do
+    for x = x1, x2 - 1 do
+      for y = y1, y2 - 1 do
         if wa.land.solid(x, y) then
           totalSolid = totalSolid + 1
         end
       end
     end
 
-    -- Safe Guard against empty bounding boxes (e.g. map mismatch or bad coordinates):
-    -- In PX, DrawKing painted terrain. If WormForge runs on an arbitrary map with 0 solid pixels,
-    -- DO NOT fallback to width*height (which would cause an instant loss on first sample).
-    -- Instead, log warning and disable win check for this king.
     local active = true
     if totalSolid == 0 then
       wa.log(string.format("[KTK WARNING] King %d box (%d,%d) has 0 solid pixels! Win check disabled to prevent instant loss.", id, x1, y1))
@@ -133,17 +197,14 @@ return function()
     }
   end
 
-  -- ----------------------------------------------------------------------------
-  -- Helper: Check remaining solid terrain pixels for an active King
-  -- ----------------------------------------------------------------------------
   local function check_king_damage(king)
     if not king or not king.active or king.destroyed then
       return false
     end
 
     local count = 0
-    for x = king.x1, king.x2 do
-      for y = king.y1, king.y2 do
+    for x = king.x1, king.x2 - 1 do
+      for y = king.y1, king.y2 - 1 do
         if wa.land.solid(x, y) then
           count = count + 1
         end
@@ -163,10 +224,6 @@ return function()
     return false
   end
 
-  -- ----------------------------------------------------------------------------
-  -- WIN CONDITION: For-loop setting opposing team worms HP to 0
-  -- Red Team victory enforcement across all clients in deterministic lockstep
-  -- ----------------------------------------------------------------------------
   local function eliminate_team(losingTeamIndex, winnerIndex, reason)
     if matchOver then return end
     matchOver = true
@@ -175,20 +232,19 @@ return function()
 
     wa.log(string.format("[KTK] Win Condition Triggered: %s. Eliminating Team %d (Team %d Wins)", reason, losingTeamIndex, winnerIndex))
 
-    -- Iterate through all worms; set the losing team's HP to 0
-    -- In WormForge, w:hurt(w.hp) issues standard MSG_HIT (0x4B), immediately
-    -- eliminating the worm through WA's deterministic damage pipeline.
+    if wa.teams then
+      wa.teams.surrender(losingTeamIndex)
+      return
+    end
+    -- DLLs before wa.teams: no surrender, so the team's worms die.
     local worms = wa.worms.all()
     for _, w in ipairs(worms) do
       if w.team == losingTeamIndex and w.hp > 0 then
-        w:hurt(w.hp)
+        w:hit(w.hp)
       end
     end
   end
 
-  -- ----------------------------------------------------------------------------
-  -- Format milliseconds to MM:SS
-  -- ----------------------------------------------------------------------------
   local function format_time(ms)
     if ms < 0 then ms = 0 end
     local totalSeconds = math.floor(ms / 1000)
@@ -197,15 +253,9 @@ return function()
     return string.format("%02d:%02d", minutes, seconds)
   end
 
-  -- ----------------------------------------------------------------------------
-  -- Main Lockstep Simulation Hook (FRAME_FINISH)
-  -- ----------------------------------------------------------------------------
-  wa.on.worm_message(function(worm, msg)
-    if msg ~= wa.msg.FRAME_FINISH then
-      return
-    end
+  wa.on.worm_message(function(worm)
+    run_cleaner()
 
-    -- One-time match initialization
     if not initialized then
       initialized = true
       kings[1] = init_king(CONFIG.king1, 1)
@@ -218,14 +268,9 @@ return function()
       return
     end
 
-    -- ONCE-PER-FRAME GATE:
-    -- worm_message fires for EVERY worm each frame.
-    -- Worm dispatch order is deterministic and monotonic. When current worm.id <= lastWormId,
-    -- we have crossed into a new simulation frame.
     local isNewFrame = (worm.id <= lastWormId)
     lastWormId = worm.id
 
-    -- Timer update only runs if this worm is the currently active turn worm
     if worm.turn then
       local curTeam = worm.team -- strictly 1-based team index
 
@@ -234,63 +279,59 @@ return function()
 
         if timerMs <= 0 then
           timerMs = 0
-          -- Attackers ran out of time -> Defenders (Red) Win!
           eliminate_team(attackersTeam, defendersTeam, "Attack Timer Expired")
           return
         end
       elseif timerType == "DefendAndCompensate" and curTeam == defendersTeam then
-        timerMs = timerMs + 5
+        timerMs = timerMs + defenderGainMs
       end
     end
 
-    -- Frame-boundary logic: King damage check
     if isNewFrame then
       frameCheckCounter = frameCheckCounter + 1
-      if frameCheckCounter >= CONFIG.checkIntervalFrames then
+      if frameCheckCounter >= CHECK_INTERVAL_FRAMES then
         frameCheckCounter = 0
 
         for i = 1, kingsCount do
           local king = kings[i]
           if check_king_damage(king) then
-            -- King destroyed -> Defenders lose, Attackers (Red) Win!
             eliminate_team(defendersTeam, attackersTeam, string.format("%s Destroyed", king.name))
             return
           end
         end
       end
     end
-  end)
+  end, { msgs = { wa.msg.FRAME_FINISH } })
 
-  -- ----------------------------------------------------------------------------
-  -- Presentation HUD Overlay (wa.on.hud)
-  -- ----------------------------------------------------------------------------
   wa.on.hud(function()
     if not initialized then return end
 
-    -- Draw Attack Timer
-    local timerStr = string.format("%s %s", CONFIG.timerCaption or "Remaining attack time:", format_time(timerMs))
-    wa.hud.line(timerStr, 14, 40)
+    if CONFIG.showTimer then
+      local timerStr = string.format("%s %s", CONFIG.timerCaption or "Remaining attack time:", format_time(timerMs))
+      wa.hud.line(timerStr)
+    end
 
-    -- Draw King HP status
-    for i = 1, kingsCount do
-      local king = kings[i]
-      if king then
-        local statusStr
-        if not king.active then
-          statusStr = string.format("%s: [No solid terrain pixels found - Disabled]", king.name)
-        elseif king.destroyed then
-          statusStr = string.format("%s: DESTROYED (0%%)", king.name)
-        else
-          local healthPercent = math.max(0, 100 - king.currentPercentDestroyed)
-          statusStr = string.format("%s HP: %d%%", king.name, healthPercent)
+    if CONFIG.showKingHp then
+      for i = 1, kingsCount do
+        local king = kings[i]
+        if king then
+          local statusStr
+          if not king.active then
+            statusStr = string.format("%s: [No solid terrain pixels found - Disabled]", king.name)
+          elseif king.destroyed then
+            statusStr = string.format("%s: DESTROYED (0%%)", king.name)
+          else
+            local healthPercent = math.max(0, 100 - king.currentPercentDestroyed)
+            statusStr = string.format("%s HP: %d%%", king.name, healthPercent)
+          end
+          wa.hud.line(statusStr)
         end
-        wa.hud.line(statusStr, 14, 80 + (i - 1) * 16)
       end
     end
 
     if matchOver and winningTeam then
       local teamName = (winningTeam == 1) and "RED TEAM" or ("TEAM " .. winningTeam)
-      wa.hud.line(string.format("=== %s WINS! (%s) ===", teamName, winReason), 14, 120)
+      wa.hud.line(string.format("=== %s WINS! (%s) ===", teamName, winReason))
     end
   end)
 end

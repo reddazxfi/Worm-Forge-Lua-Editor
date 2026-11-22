@@ -1,12 +1,7 @@
--- PX's sprite builder: draw a missile from a follower actor, and share PX's
--- worm aim/pick posture and hands. Each bundle carries its own copy; `wa` is
--- touched only inside `sb.flight`.
+-- PX's sprite builder: missiles drawn by a follower actor, and PX's aim posture and hands.
 
 local M = {}
 
--- ---------------------------------------------------------------------------
--- PX animation types (red_sprite_builder.txt:17-24).
--- ---------------------------------------------------------------------------
 local ANIM_TYPE = {
   track = 2,
   rotation = 3,
@@ -17,7 +12,6 @@ local ANIM_TYPE = {
 }
 local ANIM_SPEED = { slow = 0.5, medium = 0.8, fast = 1.35 }
 
--- The worm whose turn it is -- PX's GetCurrentWorm().
 local function current_worm()
   for _, w in ipairs(wa.worms.all()) do
     if w.turn then return w end
@@ -26,11 +20,6 @@ end
 
 local function sign(n) return n > 0 and 1 or (n < 0 and -1 or 0) end
 
--- ---------------------------------------------------------------------------
--- Cyclical animation frame (PX SetCustomAnim, red_sprite_builder.txt:51-57,
--- :83-85): phase += anim_speed * 30 / 1000 per frame, wraps at 0.99.
--- Returns frame index in [0, num_frames) and the updated phase.
--- ---------------------------------------------------------------------------
 function M.cyclical_frame(phase, anim_speed, num_frames)
   if not phase then phase = 0.0 end
   local spd = (anim_speed or 1.0) * 30 / 1000
@@ -40,24 +29,18 @@ function M.cyclical_frame(phase, anim_speed, num_frames)
   return frame, phase
 end
 
--- Angle a round should point along its flight (PX :73, track type).
 function M.track_angle(vx, vy)
   return -wa.math.atan(vx, vy) - math.pi
 end
 
--- Speed-based rotation turn (PX :77, rotation type).
 function M.rotation_turn(prev_rot, vx, vy, spin)
   return (prev_rot or 0) + (spin or 1.0) * 0.5 * (vx * 0.15 + math.abs(vy) * 0.01 * sign(vx))
 end
 
--- Steady spin turn (PX :75, slow/medium/fast types).
 function M.spin_turn(prev_rot, vx, anim_speed)
   return (prev_rot or 0) + (anim_speed or 0.5) * 0.5 * sign(vx)
 end
 
--- ---------------------------------------------------------------------------
--- Missile flight drawing.
--- ---------------------------------------------------------------------------
 function M.flight(ctx, opts)
   if not opts or not opts.weapon or not opts.sheet then
     wa.log("px_sprite_builder.flight: weapon and sheet are required")
@@ -86,7 +69,7 @@ function M.flight(ctx, opts)
       follow[id] = nil
       spin_ang[id] = nil
       cycl_phase[id] = nil
-      b:despawn()
+      b:remove()
     end
   end
 
@@ -100,7 +83,6 @@ function M.flight(ctx, opts)
     if not f then
       f = { actor = wa.actors.spawn({
         sprite = opts.sheet, x = m.x, y = m.y,
-        gravity = false, collide = false,
         owner = owner or current_worm(), on = gone(m.id),
       }) }
       follow[m.id] = f
@@ -139,11 +121,6 @@ function M.flight(ctx, opts)
   end)
 end
 
--- ---------------------------------------------------------------------------
--- Shared worm posture and hands: one weapon PNG and two lines per weapon.
--- The engine draws the weapon-less worm (`worm_sprites`) and the hold; these
--- tables are PX's `CWormAnimParams` and hand art. See README.md.
--- ---------------------------------------------------------------------------
 M.PX_POSTURE = {
   weaponlnk = "sprites/px_hold/aim", weaponlnku = "sprites/px_hold/aimu",
   weaponlnkd = "sprites/px_hold/aimd",
@@ -151,7 +128,6 @@ M.PX_POSTURE = {
   wthrowd = "sprites/px_hold/drawd",
 }
 
--- PX's three hands: 1 lower, 2 middle, 3 upper.
 M.PX_HANDS = {
   "sprites/px_hold/hand_rad_lower", "sprites/px_hold/hand_rad",
   "sprites/px_hold/hand_rad_upper",

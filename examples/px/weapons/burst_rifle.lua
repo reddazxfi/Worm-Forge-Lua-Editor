@@ -1,7 +1,7 @@
--- Burst Rifle: record, art and behaviour.
+-- Burst Rifle: a minigun that fires in bursts.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   gun = {
     bullets = 10,

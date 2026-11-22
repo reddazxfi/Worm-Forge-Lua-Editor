@@ -41,11 +41,9 @@ export interface WormKeyBinding {
    * Set when this row is a second name for another row's bit rather than a bit of
    * its own.
    *
-   * API 4 renamed `shift` to `shift` and kept `sprint` reading the SAME bit 32, so
-   * both fields are set from `m & 32` (spawn.rs L814-817: "The old name of
-   * `shift`, kept so packs written for it still work; it goes with the next
-   * api_version."). Two rows, one bit -- which is why this is data and not two
-   * independent entries pretending to be independent.
+   * API 4 kept `sprint` as a second name for bit 32; 1.0 removes it, so no row
+   * uses this today. It stays so a future alias is data, not two independent
+   * entries pretending to be independent.
    */
   aliasOf?: string;
   /** Anything a pack author gets wrong about this one. */
@@ -77,18 +75,7 @@ export const WORM_KEYS: WormKeyBinding[] = [
     action: 'Sprint',
     bit: 32,
     keys: ['Shift'],
-    note: 'The current name for bit 32. The old `sprint` still reads the same bit.',
-  },
-  {
-    field: 'sprint',
-    action: 'Sprint (legacy name)',
-    bit: 32,
-    keys: ['Shift'],
-    aliasOf: 'shift',
-    note:
-      'Kept so packs written against the pre-0.9.1 name still work. The engine ' +
-      'sets it from the same bit as `shift` and the source says it "goes with the ' +
-      'next api_version" -- so write `shift` in new code.',
+    note: 'The name for bit 32. The old `sprint` is gone in 1.0.',
   },
   { field: 'q', action: 'Custom weapon / hotkey', bit: 64, keys: ['Q'] },
   {
@@ -201,9 +188,7 @@ const EVENT_KEY_TO_FIELD: Record<string, string> = {
   ShiftRight: 'shift',
   KeyQ: 'q',
   Space: 'space',
-  // API 4 added these six fields. Shift maps to the CURRENT name (`shift`);
-  // `sprint` is the pre-0.9.1 spelling kept in WORM_KEYS for the packs that still
-  // read it, so the live tester highlights the row a new pack should write.
+  // API 4 added these six fields. Shift maps to `shift`; 1.0 removed `sprint`.
   ControlLeft: 'ctrl',
   ControlRight: 'ctrl',
   NumpadAdd: 'plus_key',

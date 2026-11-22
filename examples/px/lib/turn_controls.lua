@@ -1,4 +1,5 @@
--- Shared digit input and event dispatch. Weapons provide their own actions.
+-- Shared digit input and event dispatch.
+
 local controls = {}
 local actions, order = {}, {}
 local installed, last_digit

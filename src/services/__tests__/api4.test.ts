@@ -89,10 +89,19 @@ describe('Lua API 4 surface (WormForge 0.9.1/0.9.5)', () => {
     ]);
 
     const missing: string[] = [];
+    // Verbs the 1.0/API 5 review removed. The 0.9.4 release list still names
+    // them, so they would read as gaps forever; the engine now errors on them.
+    const removedInApi5 = new Set([
+      'wa.actors.kind',
+      'wa.weapons.register',
+      'wa.on.gravity_before',
+      'wa.on.gravity_after',
+    ]);
     for (const section of doc.sections) {
       for (const verb of section.verbs) {
         for (const key of [verb.key, ...(verb.aliases ?? [])]) {
           if (!key.startsWith('wa.')) continue; // worm:/a:/object:/data.* live elsewhere
+          if (removedInApi5.has(key)) continue;
           if (!known.has(key)) missing.push(`${key} (${section.id})`);
         }
       }
@@ -379,18 +388,40 @@ describe('method definitions are not invocations (mirrors checks.rs call-only ch
 describe('class member updates (0.9.1)', () => {
   const cls = (name: string) => BUILTIN_CLASSES.find((c) => c.name === name)!;
 
-  it('LuaActor lost a:dig and gained a:cut / a:collision_ignore', () => {
+  it('LuaActor lost a:dig, a:cut, a:spawn, a:sound, a:despawn, a:gravity and the one-field drawing setters', () => {
     const names = cls('LuaActor').members.map((m) => m.name);
     expect(names).not.toContain('dig');
-    expect(names).toContain('cut');
+    expect(names).not.toContain('cut');
+    expect(names).not.toContain('spawn');
+    expect(names).not.toContain('sound');
+    expect(names).not.toContain('despawn');
+    expect(
+      cls('LuaActor').members.some((m) => m.name === 'gravity' && m.kind === 'method')
+    ).toBe(false); // now a variable, not a:gravity()
+    expect(names).not.toContain('angle');
+    expect(names).not.toContain('scale');
+    expect(names).not.toContain('tint');
+    expect(names).not.toContain('blend');
+    expect(names).toContain('remove');
     expect(names).toContain('collision_ignore');
+    expect(names).toContain('gfx');
+    const variables = new Set(
+      cls('LuaActor').members.filter((m) => m.kind === 'variable').map((m) => m.name)
+    );
+    expect(variables.has('gravity')).toBe(true);
+    expect(variables.has('visible')).toBe(true);
+    expect(variables.has('camera')).toBe(true);
   });
 
-  it('WormEntity gained teleport_pose and kept warp/air_fire', () => {
+  it('WormEntity gained hit and teleport_pose; air_fire, drop and hurt are gone', () => {
     const names = cls('WormEntity').members.map((m) => m.name);
     expect(names).toContain('teleport_pose');
     expect(names).toContain('warp');
-    expect(names).toContain('air_fire');
+    expect(names).toContain('hit');
+    expect(names).toContain('release');
+    expect(names).not.toContain('hurt');
+    expect(names).not.toContain('air_fire');
+    expect(names).not.toContain('drop');
   });
 
   it('WorldHandle kept warp/fits/remove (the verb list has them)', () => {
@@ -510,20 +541,23 @@ describe('wa.audit is named, not called a typo (mirrors checks.rs)', () => {
 });
 
 describe('spec keys (API 4)', () => {
-  it('has exactly the 62 keys the checker test pins', () => {
-    // checks.rs: spec_key_data_survived_the_move_into_the_generator asserts 62.
+  it('has exactly the 64 keys the checker test pins', () => {
+    // checks.rs: spec_key_data_survived_the_move_into_the_generator asserts the
+    // same number. 1.0 drops `actor`, `airborne`, `cluster` and
+    // `mole_dig_rotation`, and adds `slot`, `hold_as`, `cluster_sprite`,
+    // `cluster_homing_sprite`, `cluster_homing` and `armageddon`.
     // If this fails, the two lists drifted -- fix src/data/specKeys.ts and keep
     // both numbers in step.
-    expect(WEAPON_SPEC_KEYS.length).toBe(62);
+    expect(WEAPON_SPEC_KEYS.length).toBe(64);
   });
 
   it.each([
     'fires', 'handling', 'missile', 'clusters', 'gun', 'strike', 'jet_pack', 'raw',
-    'panel_icons', 'hold', 'available_in_caves',
+    'slot', 'panel_icons', 'hold', 'available_in_caves',
     // 0.9.9 additions: overlay projectile, homing click, sheep sheets, and the
     // record groups the older list stopped short of.
     'projectile', 'click', 'sheep_sprites', 'utility', 'parachute', 'sheep',
-    'fire_punch', 'drill', 'arrow', 'baseball_bat', 'flame_thrower',
+    'fire_punch', 'drill', 'arrow', 'baseball_bat', 'flame_thrower', 'armageddon',
   ])(
     'accepts the API 4 claim key %s without a spec-key-typo',
     (key) => {
@@ -532,7 +566,7 @@ describe('spec keys (API 4)', () => {
     }
   );
 
-  it.each(['copy_from', 'fires', 'missile', 'clusters', 'sprite', 'cluster', 'params', 'sprites'])(
+  it.each(['copy_from', 'fires', 'missile', 'clusters', 'sprite', 'cluster_sprite', 'params', 'sprites'])(
     'accepts the projectile subkey %s',
     (key) => {
       const src = `wa.weapons.replace({ weapon = "stock.minigun", projectile = { ${key} = {} } })`;
@@ -604,7 +638,7 @@ describe('receiver resolution: wa.X.all() beats the name', () => {
   it('does not leak the loop binding past the loop body', () => {
     const src = [
       'for _, w in ipairs(wa.worms.all()) do',
-      '  w:hurt(10)',
+      '  w:hit(10)',
       'end',
       'local function setup(w)',
       '  w:input({ aim = 45 })',
@@ -619,11 +653,11 @@ describe('receiver resolution: wa.X.all() beats the name', () => {
     const src = [
       'for _, v in ipairs(wa.missiles.all()) do',
       '  for _, v in ipairs(wa.worms.all()) do',
-      '    v:hurt(10)',
+      '    v:hit(10)',
       '  end',
       'end',
     ].join('\n');
-    // Innermost wins, so this is a worm, and `hurt` is a worm method.
+    // Innermost wins, so this is a worm, and `hit` is a worm method.
     expect(rulesOf(src)).toEqual([]);
   });
 

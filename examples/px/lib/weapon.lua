@@ -1,10 +1,10 @@
--- Shared claim mechanics. Settings and callbacks belong to each weapon module.
+-- Shared claim mechanics.
+
 local shared = require("lib/shared")
 local owned = {}
 shared.owns = function(id) return id ~= nil and owned[id] == true end
 local weapon = {}
 
--- Always return fresh nested tables: configuration must not mutate defaults.
 function weapon.merge(base, overrides)
   local out = {}
   for k, v in pairs(base or {}) do

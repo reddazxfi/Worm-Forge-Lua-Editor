@@ -69,6 +69,10 @@ const HANDLE_CLASSES = new Set([
   'LightHandle',
   'MagneticField',
   'WindowHandle',
+  'HudTrayEntry',
+  'TrailHandle',
+  'RippleHandle',
+  'AmbientHandle',
 ]);
 
 lines.push('/// (class name, method names) for the handle classes the checker resolves.');
@@ -181,7 +185,7 @@ for (const s of SETTABLE_WORM_STATES) lines.push(`    (${rustStr(s.name)}, ${s.i
 lines.push('];');
 lines.push('');
 
-lines.push('/// Keys accepted inside a `wa.weapons.replace({...})` / `register({...})` spec table.');
+lines.push('/// Keys accepted inside a `wa.weapons.replace({...})` spec table.');
 lines.push('///');
 lines.push('/// GENERATED from src/data/specKeys.ts. That list errs toward INCLUSION: a real');
 lines.push('/// key missing here produces a false positive, never an error.');

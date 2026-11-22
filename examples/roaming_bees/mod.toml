@@ -6,9 +6,9 @@
 # See README.md.
 id = "spawn.bees"
 name = "Keeper Bee"
-version = "1.0.2"
+version = "1.2.1"
 author = "reddaz"
-api_version = 4
+api_version = 5
 format_version = 2
 mod_icon = "mod_icon.png"
 
@@ -16,7 +16,7 @@ mod_icon = "mod_icon.png"
 id = "spawn.bees.keeper"
 type = "weapon"
 name = "Keeper Bee"
-description = "Fires a bee that spins out of the muzzle, then hunts the first worm that moves. It stings on contact and bursts."
+description = "Fires a bee that hunts the worm whose turn it is, stings it, lifts it and bursts."
 entry = "weapons/keeper_bee.lua"
 icon = "sprites/beeico.png"
 credits = "Keeper Bee by reddaz (Project X port)"
@@ -26,7 +26,7 @@ default_position = { row = "F1", column = 1 }
 id = "spawn.bees.swarm"
 type = "feature"
 name = "Map bee swarm"
-description = "Seeds the map with rogue bees on the first turn. Each slice of the map gets one bee, on ground the worms can stand on."
+description = "Seeds the map with rogue bees on the first turn, one per slice."
 entry = "features/bee_swarm.lua"
 credits = "bee AI by reddaz (Project X port)"
 authors = ["reddaz"]
@@ -36,12 +36,12 @@ key = "spawn_map_bees"
 type = "bool"
 default = true
 label = "Bees on the map"
-description = "Seed the map with bees when the first turn starts. Off: the swarm stays out of the match."
+description = "Seed the map with bees when the first turn starts."
 
 [[components.options]]
 key = "bee_amount"
 type = "int"
-default = 22
+default = 4
 min = 1
 max = 60
 label = "Map bees"

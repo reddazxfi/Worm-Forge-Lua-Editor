@@ -1,9 +1,10 @@
--- Chilli Bomb: record, art and behaviour.
+-- Chilli Bomb: a super banana that bursts into five chillis, each bursting into fire.
+
 local holds = require("wf-lib/holds")
 local weapon = {}
 
-local children = {} -- Missile IDs: these explode without launching more children.
-local pending = {} -- Parent explosion positions, processed after the blast.
+local children = {}
+local pending = {}
 local shooter
 
 local function on_explode(ev)
@@ -16,17 +17,17 @@ local function on_explode(ev)
   pending[#pending + 1] = { x = ev.x, y = ev.y }
 end
 
--- Thrown parent only. Its explosion launches the five CHILDREN below in Lua.
 weapon.definition = {
   copy_from = "stock.super_banana",
   name = "Chilli Bomb",
   panel_icon = "sprites/chilli_bomb/chilli_ico.png",
-  sprite = "banana",
+  hold_as = "stock.super_banana",
   on_explode = on_explode,
   handling = {
     retreat = 3000,
   },
   missile = {
+    sprite = 0, -- WA draws no round; the art spec draws it
     alarm_worms = true,
     bounce = {
       hits = {
@@ -61,8 +62,6 @@ weapon.definition = {
   },
 }
 
--- Scripted children are missiles of this weapon, not native cluster bits.
--- They inherit the parent's flight physics, then use these stage settings.
 local CHILDREN = {
   count = 5,
   missile = {
@@ -75,33 +74,19 @@ local CHILDREN = {
       spread_delay_ms = 30,
       burn_time_ms = 1500,
       spread_generations = 10,
-      decay_mode = "resting",
+      decay_mode = "instant",
     },
     sprite = 0, -- Only the chilli's custom art is drawn.
   },
 }
 
-weapon.missile_sprite = { -- Chilli Bomb (chilli_bomb_anim) and the five it bursts into
+weapon.missile_sprite = {
   sheet = "sprites/px_hold/chilli_bomb.png", frames = 1,
   spin = true, -- its record's WAT_Rotation
-  -- WA's own sprite 0, as PX's record has it: nothing under the chilli.
   hide = true,
 }
 
 function weapon.setup()
-  --
-  -- PX's pyro_grenades_script (PyroMan), on WA's super banana. When a Chilli
-  -- Bomb explodes, five more Chillis burst out of it, straight up with a
-  -- random spread (PX's ShotClustlets): real WA missiles of the same slot,
-  -- each with damage 30, an 8 s fuse, no countdown, the fire key setting it
-  -- off, and a burst of fire where it ends. The five do not burst again: a
-  -- missile PX's script makes has no weapon of its own (weap), so its
-  -- ExplodeAt skips the Chilli's branch.
-  --
-  -- Not ported: PX's particle trail and the sparks while aiming
-  -- (pxparticles), and the smoke trail's power of 20 on the five. PX also
-  -- writes the five's changes into the weapon's own launch data, so every
-  -- later Chilli Bomb flies with them; the port changes the five only.
 
   children, pending, shooter = {}, {}, nil
 
@@ -109,11 +94,9 @@ function weapon.setup()
     if msg == wa.msg.FIRE_WEAPON and worm.weapon == "px.chilli_bomb" then
       shooter = worm
     elseif msg == wa.msg.FRAME_FINISH and #pending > 0 then
-      -- After the blast, as the Double Bazooka's second shell.
       local owner = shooter or worm
       for _, p in ipairs(pending) do
         for _ = 1, CHILDREN.count do
-          -- RandomFloat(3, -3), then RandomFloat(-7, -10).
           local vx = wa.random(-196608, 196608) / 65536
           local vy = wa.random(-655360, -458752) / 65536
           local id = wa.weapons.launch({

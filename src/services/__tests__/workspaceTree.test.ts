@@ -173,7 +173,7 @@ describe('buildWorkspaceModel: entrypoints are declarations, not guesses', () =>
 
   it('treats a v1 top-level entry as the entrypoint', () => {
     const model = buildWorkspaceModel({
-      'mod.toml': 'id = "old.pack"\napi_version = 4\nentry = "weapons.lua"\n',
+      'mod.toml': 'id = "old.pack"\napi_version = 5\nentry = "weapons.lua"\n',
       'weapons.lua': 'return 1',
       'z_scratch.lua': 'return 2',
     });

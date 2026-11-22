@@ -1,0 +1,221 @@
+# Random Race by 0rang3, September 2026 PX build: PX records for the panel, its WSC for the rest.
+description = "Random Race by 0rang3: each round of turns, every team races with the same movement weapon, chosen at random. God worms, indestructible land, no crates. Play it with one worm per team."
+features = ["core.utilities", "random_race.rules"]
+
+[crates]
+health = 0
+utility = 0
+weapon = 0
+
+[options."core.utilities"]
+changing_wind = true
+ex_turn_side = true
+fast_aim = true
+rope_counter = true
+
+[options."px.helicopter"]
+fuel = 0
+
+[scheme]
+angle_cheat_glitch = true
+anti_lock_aim = false
+anti_lock_power = false
+aqua_sheep = false
+artillery_mode = false
+auto_place_worms_by_ally = false
+automatic_end_of_turn_retreat = false
+batty_rope = false
+block_roofing = "allow"
+blood = false
+blood_level = 255
+circular_aim = false
+constant_wind = false
+display_total_round_time = false
+donor_cards = false
+dud_mines = false
+editor_marker = 0
+explosions_push_all_objects = "default"
+fall_damage = 0
+fall_damage_is_triggered_by_explosions = false
+floating_weapon_glitch = true
+fractional_round_timer = false
+game_engine_speed = 1.0
+girder_radius_assist = false
+glide_glitch = true
+god_worms = true
+gravity = 0.239990234375
+hazards = 0
+health_crate_energy = 25
+health_crate_weight = 0
+health_crates_cure_poison = "team"
+herd_doubling_glitch = "default"
+hot_seat_delay = 10
+indestructible_land = true
+indian_rope_glitch = "default"
+jet_pack_bungee_glitch = true
+keep_control_after_bumping_head = false
+keep_control_after_skimming = "lose_control"
+loss_of_control_doesn_t_end_turn = false
+manual_worm_placement = false
+maximum_crate_count_on_map_at_once = 5
+maximum_flamelet_count = 200
+maximum_jet_pack_speed = 5.0
+maximum_projectile_speed = 32.0
+maximum_rope_speed = 16.0
+mine_delay = 1
+no_crate_probability = 255
+pause_timer_while_firing = true
+petrol_touch_decay = 30
+petrol_turn_decay = 0.199981689453125
+phased_worms_allied = "worms"
+phased_worms_enemy = "worms"
+pneumatic_drill_imparts_velocity = "default"
+retreat_time = 0
+rope_knocking = 255
+rope_retreat_time = 0
+rope_roll_drops = "disabled"
+round_time = 45
+rubberworm_air_viscosity = 0.0
+rubberworm_air_viscosity_applies_to_worms = false
+rubberworm_anti_lock_aim = false
+rubberworm_anti_sink = true
+rubberworm_bounciness = 0.0
+rubberworm_crate_rate = 0
+rubberworm_crate_shower = false
+rubberworm_extended_fuses_herds = false
+rubberworm_gravity_strength = 1.0
+rubberworm_gravity_type = "unmodified"
+rubberworm_remember_weapons = true
+rubberworm_wind_influence = 0.0
+rubberworm_wind_influence_applies_to_worms = false
+sheep_heaven = false
+sheep_heaven_effects = 7
+skipwalking = "possible"
+stockpiling = "off"
+sudden_death = "nothing"
+sudden_death_disables_worm_select = true
+sudden_death_worm_damage_per_turn = 5
+super_weapons = false
+team_weapons = false
+terrain_friction = 0.959991455078125
+terrain_overlap_phasing_glitch = "default"
+turn_time = 30
+undetermined_crates = "default"
+undetermined_fuses = "default"
+unrestrict_rope = false
+unrestricted_weapon_use = false
+upgraded_clusters = false
+upgraded_grenade = false
+upgraded_longbow = false
+upgraded_shotgun = false
+utility_crate_weight = 0
+water_rise_rate = 0
+weapon_crate_weight = 0
+weapon_use_doesn_t_end_turn = false
+wind = 100
+wind_bias = 15
+wins = 1
+worm_energy = 200
+worm_select = "sequential"
+worm_selection_doesn_t_end_hot_seat = false
+worm_selection_is_never_cancelled = false
+x_impact_loss_of_control = "lose_control"
+
+[weapon_settings."px.anti_fall_damage"]
+ammo = -1
+auto_use = true
+crate_pct = 0.0
+
+[weapon_settings."px.helicopter"]
+after_use = "continue"
+ammo = -1
+crate_pct = 0.0
+
+[weapon_settings."px.jump"]
+after_use = "continue"
+ammo = -1
+crate_pct = 0.0
+
+[weapon_settings."px.portal_gun"]
+after_use = "continue"
+ammo = -1
+crate_pct = 0.0
+
+[weapon_settings."px.skip_go_surrender"]
+crate_pct = 0.0
+
+[weapon_settings."px.swim_suit"]
+ammo = 0
+crate_pct = 0.0
+
+[weapon_settings."px.wings"]
+after_use = "continue"
+ammo = -1
+crate_pct = 0.0
+
+[weapon_settings."stock.fast_walk"]
+ammo = -1
+auto_use = true
+crate_pct = 0.0
+
+[weapon_settings."stock.low_gravity"]
+after_use = "continue"
+ammo = -1
+crate_pct = 0.0
+
+[weapon_settings."stock.ninja_rope"]
+after_use = "continue"
+ammo = -1
+rope_angle = 90
+rope_length = 462
+shots = -1
+crate_pct = 0.0
+
+[weapon_settings."stock.parachute"]
+after_use = "continue"
+ammo = -1
+crate_pct = 0.0
+
+[weapons."px.anti_fall_damage"]
+column = 4
+row = "utility"
+
+[weapons."px.helicopter"]
+column = 1
+row = "utility"
+
+[weapons."px.jump"]
+column = 1
+row = "F2"
+
+[weapons."px.portal_gun"]
+column = 1
+row = "F3"
+
+[weapons."px.skip_go_surrender"]
+column = 1
+row = "F12"
+
+[weapons."px.swim_suit"]
+column = 5
+row = "utility"
+
+[weapons."px.wings"]
+column = 1
+row = "F4"
+
+[weapons."stock.fast_walk"]
+column = 3
+row = "utility"
+
+[weapons."stock.low_gravity"]
+column = 2
+row = "utility"
+
+[weapons."stock.ninja_rope"]
+column = 1
+row = "F8"
+
+[weapons."stock.parachute"]
+column = 3
+row = "F8"

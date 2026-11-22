@@ -1,7 +1,7 @@
--- Ferret: record, art and behaviour.
+-- Ferret: a ferret that walks the land's outline and explodes on a worm, a drum or the water.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     remember_selection = true,
@@ -17,13 +17,16 @@ function weapon.definition()
   return require("lib/weapon").merge(weapon.record, {
     wep = "weps/salvation_army.wep",
     panel_icon = "sprites/ferret/icon.png",
-    worm_sprites = PX_POSTURE,
+    worm_sprites = {
+      weaponlnk = sdk.PX_LEVEL.weaponlnk, weaponlnku = sdk.PX_LEVEL.weaponlnku,
+      weaponlnkd = sdk.PX_LEVEL.weaponlnkd,
+      wthrow = PX_POSTURE.wthrow, wthrowu = PX_POSTURE.wthrowu, wthrowd = PX_POSTURE.wthrowd,
+    },
     sprites = { "sprites/ferret/walk.png" },
     sounds = { "sounds/ferret/walk.wav" },
     params = { gpu_prefix = "sprites/ferret/" },
     on_fire = function(fire) fires.ferret(fire) end,
-    hold = { -- Ferret (ferret_s's WormSprite): held still, not at the
-        -- aim's angle (dont_rotate_with_angle), and thrown.
+    hold = {
         thrown = true,
         sheet = "sprites/ferret/hold.png", hand_type = 2, hand_radius = -8.0,
         hand_rotation = 0.0, hand_radial_rotation = -0.13, hand_scale = 1.0,
@@ -35,48 +38,31 @@ function weapon.definition()
 end
 
 function weapon.setup()
-  -- Highlander: Ferret (PX weapon_ferrets: ferret_s.txt, rafa``2's CFerret).
   local shared = require("lib/shared")
   local fires = shared.fires
 
-  -- Thrown, a Ferret falls until the land is 3 pixels under it, then follows
-  -- the terrain's outline and never falls off it: PX's square contour tracing,
-  -- 3-pixel steps, up to 12 traced a frame and 2 walked. It explodes on a worm
-  -- (the turn's worm is spared for its first 60 frames), on an oil drum, at the
-  -- water, or when its trace finds no land 4 steps running. It flicks mines
-  -- and Bowling Balls up (PX's ball is a mine) and walks on. At most 10 walk:
-  -- a new one makes the oldest vanish. PX's IsMoving says no, so WA doesn't
-  -- wait for a Ferret, and Ferrets walk on through later turns.
-  local STEP = 3           -- frt_maxdist
-  local MAX_FAILS = 4         -- frt_maxfails
-  local MAX_OPS = 12          -- frt_maxoper
-  local GRACE = 60            -- frt_framesdam
-  local TURN_EVERY = 6        -- frt_pixrotat: steps between turns of the sprite
-  local MAX_ALIVE = 10        -- frt_maxfrtalw
-  -- Not PX's: a Ferret goes off by itself 15 seconds after it was placed,
-  -- if nothing set it off before (750 of WA's 50 frames a second).
+  local STEP = 3 -- frt_maxdist
+  local MAX_FAILS = 4 -- frt_maxfails
+  local MAX_OPS = 12 -- frt_maxoper
+  local GRACE = 60 -- frt_framesdam
+  local TURN_EVERY = 6 -- frt_pixrotat: steps between turns of the sprite
+  local MAX_ALIVE = 10 -- frt_maxfrtalw
   local FUSE = 15 * 50
-  -- It touches the land with WA's missile shape, the Skunk's (shape =
-  -- "missile", a:fits). PX draws its 64-pixel frame centred with the feet 16
-  -- below the centre: the body is drawn this far from the traced point, away
-  -- from the land, so the feet meet it.
   local LIFT = 13
-  -- What it runs into is its body: 8 pixels about the body's centre.
-  local BODY = 8
-  local SCALE = 0.95          -- frt_sprscale
-  local DEPTH = wa.depth.OBJECTS       -- in front of the terrain, as the Bowling Ball
+  local WORM_REACH_X, WORM_REACH_UP, WORM_REACH_DOWN = 8, 12, 9
+  local MINE_REACH_X, MINE_REACH_Y = 7, 5
+  local PROBE = 3
+  local SCALE = 0.95 -- frt_sprscale
+  local DEPTH = wa.depth.OBJECTS -- in front of the terrain, as the Bowling Ball
   local WALK = "sprites/ferret/walk.png"
   local FRAMES = 10
   local SOUND = "sounds/ferret/walk.wav"
-  -- The scheme record's explosion (ExplodeAt): damage 100, blast 50.
-  local BOOM = { damage = 100, id = 50 }
-  -- A worm it runs into is thrown first (SpX = TurnSide, SpY = -5), a mine or a
-  -- ball flicked (SpX = TurnSide, SpY = -7).
+  local BOOM = { damage = 50, id = 100, below = false }
+  local BIAS = 100
+  local DROP = BIAS * BOOM.damage // 200
   local WORM_UP, MINE_UP = -5, -7
 
   local UP, RIGHT, DOWN, LEFT = 1, 2, 4, 8
-  -- frt_moveto: from where it looks, a turn left or right is a step and a new
-  -- direction to look in.
   local MOVES = {
     [DOWN] = { [LEFT] = { 1, 0, RIGHT }, [RIGHT] = { -1, 0, LEFT } },
     [UP] = { [LEFT] = { -1, 0, LEFT }, [RIGHT] = { 1, 0, RIGHT } },
@@ -85,10 +71,6 @@ function weapon.setup()
   }
 
   local alive = {} -- the Ferrets walking, oldest first
-  -- WA places a Ferret at its worm, where its circle overlaps the ground:
-  -- traced from inside the land, it would turn on the spot for ever. It rises
-  -- until its circle is clear of the land, at most this far, and walks from
-  -- the surface.
   local MAX_RISE = 64
 
   local function land_at(f, x, y)
@@ -107,9 +89,6 @@ function weapon.setup()
     f.ax, f.ay, f.looking = f.ax + m[1] * STEP, f.ay + m[2] * STEP, m[3]
   end
 
-  -- frt_square_tracing: from the last outline point, turn towards the land
-  -- while there is land, away from it while there is none, adding each new
-  -- land point to the outline to walk.
   local function trace(f)
     f.ax, f.ay = f.px, f.py
     f.looking = f.looking_bk
@@ -138,35 +117,42 @@ function weapon.setup()
     end
   end
 
-  -- Its body's centre, LIFT from the traced point along the land's normal.
   local function body(f, x, y)
     return x + (f.ux * LIFT), y + (f.uy * LIFT)
   end
 
-  -- frt_checkinteract, at a point of its way: what its body touches.
-  local function interact(f, x, y)
-    x, y = body(f, x, y)
-    local _, obj = wa.world.collides({ x = x, y = y, radius = BODY, with = { "worms", "mines", "oil" } })
-    if obj then
-      if obj.kind == "worm" then
-        local current = shared.current_worm()
-        if f.grace > 0 and current and current.id == obj.id then return end
-        obj.vx, obj.vy = f.side, WORM_UP
-        f.boom, f.walking, f.tracing, f.why = true, false, false, "a worm"
-      elseif obj.kind == "oil" then
-        f.boom, f.walking, f.tracing, f.why = true, false, false, "an oil drum"
-      elseif obj.kind == "mine" then
-        obj.vx, obj.vy = f.side, MINE_UP
+  local function touching(x, y)
+    local near = { near = { x, y, WORM_REACH_UP + 1 } }
+    for _, w in ipairs(wa.worms.all(near)) do
+      local dx, dy = (x - w.x), (y - w.y)
+      if w.hp > 0 and math.abs(dx) < WORM_REACH_X and dy > -WORM_REACH_UP and dy < WORM_REACH_DOWN then
+        return w, "worm"
       end
     end
+    for _, m in ipairs(wa.mines.all(near)) do
+      if math.abs(x - m.x) < MINE_REACH_X and math.abs(y - m.y) < MINE_REACH_Y then return m, "mine" end
+    end
+    local _, obj = wa.world.collides({ x = x, y = y, radius = PROBE, with = { "oil" } })
+    if obj then return obj, "oil" end
+  end
+
+  local function interact(f, x, y)
+    local obj, kind = touching(x, y)
+    if kind == "worm" then
+      local current = shared.current_worm()
+      if f.grace > 0 and current and current.id == obj.id then return end
+      obj.vx, obj.vy = f.side, WORM_UP
+      f.boom, f.walking, f.tracing, f.why = true, false, false, "a worm"
+    elseif kind == "oil" then
+      f.boom, f.walking, f.tracing, f.why = true, false, false, "an oil drum"
+    elseif kind == "mine" then
+      obj.vx, obj.vy = f.side, MINE_UP
+    end
     if shared.kick_bowling_balls then
-      shared.kick_bowling_balls(x, y, BODY, f.side, MINE_UP)
+      shared.kick_bowling_balls(x, y, PROBE, f.side, MINE_UP)
     end
   end
 
-  -- frt_calc_rotation: every few steps, the Ferret turns to the way walked
-  -- since its last turn, its up the land's normal (from the steps, one square
-  -- root: the same on every machine; the angle is only drawn).
   local function turn(f, x, y)
     f.steps = f.steps + 1
     if f.steps % TURN_EVERY ~= 0 then return end
@@ -179,9 +165,7 @@ function weapon.setup()
     f.rx, f.ry = x, y
   end
 
-  -- frt_perform_trace: one step along the outline; at its end, trace on.
   local function walk(f)
-    if f.boom then return false end
     local p = f.outline[f.next]
     if not p then
       f.walking, f.tracing = false, true
@@ -197,8 +181,6 @@ function weapon.setup()
     return true
   end
 
-  -- Before it lands, it falls (or flies as thrown), a pixel at a time, and
-  -- stops where its shape would touch the land.
   local function fly(f)
     f.vy = f.vy + wa.world.gravity()
     local n = math.min(64, math.max(math.abs(f.vx), math.abs(f.vy)) // 1 + 1)
@@ -212,8 +194,6 @@ function weapon.setup()
     end
   end
 
-  -- frt_firstcollision: land 3 pixels under it plants it, and its outline
-  -- starts there.
   local function try_plant(f, a)
     local x, y = f.x, f.y + STEP
     if land_at(f, x, y) then
@@ -235,8 +215,9 @@ function weapon.setup()
       f.why or "?", f.x // 1, f.y // 1, f.age))
     f.dead = true
     forget(f)
+    a.x, a.y = f.x, f.y + DROP
     a:explode(BOOM)
-    if a.id ~= 0 then a:despawn() end
+    if a.id ~= 0 then a:remove() end
   end
 
   local function frame(f, a)
@@ -244,7 +225,7 @@ function weapon.setup()
     f.age = f.age + 1
     if f.gone then
       f.dead = true
-      a:despawn()
+      a:remove()
       return
     end
     if not f.planted then
@@ -259,10 +240,6 @@ function weapon.setup()
     end
     if f.tracing then trace(f) end
     if f.walking and walk(f) then walk(f) end
-    if f.boom then
-      explode(f, a)
-      return
-    end
     f.grace = f.grace - 1
     local bx, by = f.x, f.y
     if f.planted then bx, by = body(f, f.x, f.y) end
@@ -273,7 +250,6 @@ function weapon.setup()
 
   fires.ferret = function(fire)
     local worm = fire.worm
-    -- PX lets at most 10 walk: the oldest goes, without a bang.
     while #alive >= MAX_ALIVE do
       local oldest = table.remove(alive, 1)
       oldest.gone = true
@@ -287,8 +263,8 @@ function weapon.setup()
     }
     alive[#alive + 1] = f
     local a = wa.actors.spawn({
-      sprite = WALK, x = f.x, y = f.y, gravity = false, collide = false, owner = worm,
-      shape = "missile", on = function(actor) frame(f, actor) end,
+      sprite = WALK, x = f.x, y = f.y, owner = worm,
+      body = { shape = "missile", layer = "missile" }, on = function(actor) frame(f, actor) end,
     })
     f.a = a
     rise_clear(f)

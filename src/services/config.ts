@@ -354,6 +354,9 @@ export function parseIniConfig(iniText: string): Partial<EditorConfig> {
     } else if (cleanKey === 'sidebar_width') {
       const n = parseInt(val, 10);
       if (!isNaN(n) && n >= 200 && n <= 700) result.sidebarWidth = n;
+    } else if (cleanKey === 'tree_height_percent') {
+      const n = parseInt(val, 10);
+      if (!isNaN(n) && n >= 10 && n <= 90) result.treeHeightPercent = n;
     } else if (cleanKey === 'console_height') {
       const n = parseInt(val, 10);
       if (!isNaN(n) && n >= 80 && n <= 600) result.consoleHeight = n;

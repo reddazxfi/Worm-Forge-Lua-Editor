@@ -1,7 +1,7 @@
--- Hot Air Balloon: record, art and behaviour.
+-- Hot Air Balloon: a balloon that carries the worm up and with the wind; Space pops it.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   fires = {
     subtype = 12,
@@ -20,57 +20,33 @@ function weapon.definition()
     name = "Hot Air Balloon",
     panel_icon = "sprites/balloon/balloon_icon.png",
     sprites = { "sprites/balloon/balloon.png", "sprites/balloon/basket.png" },
-    -- A pack WAV plays only once an entry registers it.
         sounds = {
           "sounds/balloon/inflate1.wav", "sounds/balloon/inflate2.wav", "sounds/balloon/inflate3.wav",
           "sounds/balloon/pop1.wav", "sounds/balloon/pop2.wav", "sounds/balloon/pop3.wav",
           "sounds/balloon/pop4.wav",
         },
-    params = { gpu_prefix = "sprites/balloon/" },
+    params = {
+      gpu_prefix = "sprites/balloon/",
+      worm_art = { "sprites/balloon/basket.png" },
+    },
   })
 end
 
-weapon.requires = { "weapons/helicopter" }
-
 function weapon.setup()
   local shared = require("lib/shared")
+  local own_time = require("wf-lib/own_time")
+  local parachute = require("lib/parachute")
+  parachute.setup()
+  shared.balloons = shared.balloons or {}
   local balloons = shared.balloons
 
-  -- --------------------------------------------------------- Hot Air Balloon
   do
-    --
-    -- PX's balloon_s (r2_balloon by rafa''2, modified by 0rang3). PX flies it on
-    -- WA's parachute with the worm's gravity turned upside down; here the pack
-    -- flies it (worm:take) with WA's own parachute physics, upside down. WA 3.8.1,
-    -- per frame (0x4FCB30): the speed gains gravity times the worm's gravity
-    -- factor and, unless the worm is against land beside it, the wind times its
-    -- wind factor; then both speeds are damped. Its parachute (SetState 0x7D at
-    -- 0x50EBE2 and 0x50EC57) damps them to 0.8 and takes the wind factor from the
-    -- weapon record's +0x38 in percent: the patched bungee's fire_method, 100.
-    -- So it rises at up to four times gravity and drifts with four times the
-    -- wind. The arrow keys push it as they push WA's parachute (0x513EB0, run
-    -- before that step): half of gravity a frame each way held (through the
-    -- worm's +0x44 push, divided by its mass, 1.0), opposite keys cancelling. It pops -- the worm given back to WA, falling -- on touching land,
-    -- in water, on the jump key (which closes WA's parachute), and when the
-    -- turn ends. The worm's body is hidden behind the balloon, drawn in its
-    -- team's colour, and the worm in its basket, as PX's RenderWorm override.
-    --
-    -- It still opens as WA's parachute (the patched bungee, by hand or
-    -- automatically); the pack takes the worm on the first frame of it.
 
-    local BALLOON_DAMP = 0.79998779296875       -- WA's parachute damping, 0.8
-    local BALLOON_WIND = 100          -- the patched bungee's fire_method, in percent
-    local BALLOON_DEPTH = wa.depth.FRONT + 1     -- behind the basket, in front of worms
+    local BALLOON_DAMP = 0.79998779296875 -- WA's parachute damping, 0.8
+    local BALLOON_WIND = 100 -- the patched bungee's fire_method, in percent
+    local BALLOON_DEPTH = wa.depth.FRONT + 1 -- behind the basket, in front of worms
     local BASKET_DEPTH = wa.depth.FRONT
-    -- PX's GetTeamColorRGB, by WA's colour index (worm.alliance, 0 red .. 5 cyan).
-    -- PX adds it to its dark grey balloon (SetColorMod mode 8); the GPU tint
-    -- multiplies, so the pack's balloon art is PX's lightened to white, and the
-    -- team colour shows at full strength.
     local TEAM_RGB = { 0xFF8080, 0x0096FF, 0x00D000, 0xFFFF40, 0xE800E8, 0x50FFFF }
-
-    -- Also records the weapon equipped before WA changes the visible slot while
-    -- opening a parachute, for both the balloon and glider handlers.
-    -- worm id -> { active, x, y, vx, vy, ticks, equipped_weapon, balloon, basket }
 
     local function balloon_of(worm)
       local b = balloons[worm.id]
@@ -85,17 +61,8 @@ function weapon.setup()
       wa.sound.play(worm, "sounds/balloon/" .. name .. wa.random(1, n) .. ".wav")
     end
 
-
-    -- How many frames after popping against land the worm is watched: WA may
-    -- stand it up there, in mid-air under a ceiling.
     local BALLOON_UNSTAND = 3
 
-    -- StopBalloon: a pop, and the worm back to WA, falling with its speed.
-    -- Against land it keeps no upward speed, and for a few frames, if WA has
-    -- stood it up, it is released again, falling: PX's balloon does the same
-    -- (WS_IDLE -> WS_SLIDING) when WA's parachute closes against the land.
-    -- `why` goes to the log with each pop, so a report of a balloon that
-    -- would not pop can be traced to what ended it.
     local function balloon_stop(worm, b, why, against_land)
       if not b.active then
         return
@@ -105,8 +72,8 @@ function weapon.setup()
         worm.id, b.ticks, why, wa.world.turn_clock()
       ))
       b.active, b.ticks = false, 0
-      if b.balloon then b.balloon:despawn(); b.balloon = nil end
-      if b.basket then b.basket:despawn(); b.basket = nil end
+      if b.balloon then b.balloon:remove(); b.balloon = nil end
+      if b.basket then b.basket:remove(); b.basket = nil end
       worm.body_visible = true
       balloon_sound(worm, "pop", 4)
       local vy = against_land and math.max(b.vy, 0) or b.vy
@@ -117,21 +84,21 @@ function weapon.setup()
     end
 
     local function balloon_draw(worm, b)
-      -- DrawBalloonWorm: the balloon above, in the team's colour, and the worm
-      -- in its basket, whose art faces left.
       local f = worm.facing
       local function art(sheet)
-        return wa.actors.spawn({
-          sprite = sheet, x = b.x, y = b.y, gravity = false,
-          collide = false, owner = worm, visibility = worm, on = function() end,
+        local a = wa.actors.spawn({
+          sprite = sheet, x = b.x, y = b.y, owner = worm, visibility = worm, on = function() end,
         })
+        a:gfx({ follow = worm })
+        return a
       end
       b.balloon = b.balloon or art("sprites/balloon/balloon.png")
-      b.basket = b.basket or art("sprites/balloon/basket.png")
+      if not b.basket then
+        b.basket = art("sprites/balloon/basket.png")
+        b.basket:gfx({ glow_of = worm })
+      end
       local x = b.x + 6 * f
       b.balloon.x, b.balloon.y, b.balloon.vx, b.balloon.vy = x, b.y - 43, 0, 0
-      -- Manifest ping-pong expands the 16/17 source frames to 30/32.
-      -- Walk those sequences over PX's original 200/80-tick periods.
       b.balloon:frame((b.ticks % 200) * 30 // 200)
       b.balloon:gfx({ tint = 0xFF000000 | (TEAM_RGB[(worm.alliance or 0) + 1] or 0xFFFFFF),
         depth = BALLOON_DEPTH })
@@ -145,15 +112,12 @@ function weapon.setup()
     local function balloon_frame(worm)
       local b = balloon_of(worm)
       local state = worm.state
-      -- WA may change the selected slot to Parachute (or none) as Bungee fires.
-      -- The weapon equipped before that transition identifies the auto trigger;
-      -- an unrelated parachute opening must not become a Hot Air Balloon.
       local equipped = b.equipped_weapon
-      if not b.active and state == "parachuting" and not b.was_parachuting
-          and equipped == "px.hot_air_balloon" then
+      local fired = parachute.fired(worm, "px.hot_air_balloon")
+      if not b.active and (fired or state == "parachuting" and not b.was_parachuting
+          and equipped == "px.hot_air_balloon") then
         b.active, b.ticks = true, 0
         b.x, b.y, b.vx, b.vy = worm.x, worm.y, worm.vx, worm.vy
-        -- Under the balloon the worm fires what WA lets it fire mid-air.
         worm:take{ turn = "run", fire = true }
         balloon_sound(worm, "inflate", 3)
       end
@@ -170,48 +134,59 @@ function weapon.setup()
       if not b.active then
         return
       end
-      -- The engine let go: the turn ended, or WA knocked the worm flying.
       if not worm.taken then
-        balloon_stop(worm, b, "the engine let go (turn over or knocked flying)")
+        balloon_stop(worm, b, "the engine let go (turn over, knocked flying or teleporting)")
         return
       end
-      local vx, vy = b.vx, b.vy
-      -- The arrow keys, as WA's parachute takes them (0x514AC0, 0x513EB0).
+      if state ~= "parachuting" then
+        balloon_stop(worm, b, "WA closed its parachute (" .. tostring(state) .. ")", true)
+        return
+      end
       local k = worm.keys or {}
       local left, right, up, down = k.left, k.right, k.up, k.down
       if left and right then left, right = false, false end
       if up and down then up, down = false, false end
-      local g = wa.world.gravity()
-      local push = g / 2
-      vx = vx + (right and push or 0) - (left and push or 0)
-      vy = vy + (down and push or 0) - (up and push or 0)
-      -- WA's parachute physics, gravity upside down (0x4FCB30).
-      vy = vy - g * worm.gravity
-      local side = wa.world.wind() >= 0 and 1 or -1
-      if worm:fits(b.x + side, b.y) then
-        vx = vx + wa.world.wind() * (BALLOON_WIND / 100)
+      for i = 1, own_time.frames(worm) do
+        local vx, vy = b.vx, b.vy
+        local g = wa.world.gravity()
+        local push = g / 2
+        vx = vx + (right and push or 0) - (left and push or 0)
+        vy = vy + (down and push or 0) - (up and push or 0)
+        vy = vy - g * worm.gravity
+        local side = wa.world.wind() >= 0 and 1 or -1
+        if worm:fits(b.x + side, b.y) then
+          vx = vx + wa.world.wind() * (BALLOON_WIND / 100)
+        end
+        vx, vy = vx * BALLOON_DAMP, vy * BALLOON_DAMP
+        b.vx, b.vy = vx, vy
+        local x, y = b.x + vx, b.y + vy
+        if not worm:fits(x, y) then
+          if vy > 0 and not worm:fits(b.x, y) then
+            if i > 1 then worm.x, worm.y = b.x, b.y end
+            balloon_stop(worm, b, "landed", true)
+            return
+          end
+          if worm:fits(x, b.y) then
+            y, vy = b.y, 0
+          elseif worm:fits(b.x, y) then
+            x, vx = b.x, 0
+          else
+            x, y, vx, vy = b.x, b.y, 0, 0
+          end
+          b.vx, b.vy = vx, vy
+        end
+        if y >= wa.world.water() then
+          if i > 1 then worm.x, worm.y = b.x, b.y end
+          balloon_stop(worm, b, "reached the water")
+          return
+        end
+        b.x, b.y = x, y
+        b.ticks = b.ticks + 1
       end
-      vx, vy = vx * BALLOON_DAMP, vy * BALLOON_DAMP
-      b.vx, b.vy = vx, vy
-      local x, y = b.x + vx, b.y + vy
-      -- It pops on touching land, as WA's parachute closes there: where WA's
-      -- own test says the worm would touch it, so it never sits inside it.
-      if not worm:fits(x, y) then
-        balloon_stop(worm, b, "touched land", true)
-        return
-      end
-      if y >= wa.world.water() then
-        balloon_stop(worm, b, "reached the water")
-        return
-      end
-      b.x, b.y = x, y
-      worm:carry(x, y)
-      b.ticks = b.ticks + 1
+      worm:carry(b.x, b.y)
       balloon_draw(worm, b)
     end
 
-    -- WA's key messages, named for the log. In flight WA sends jump for Space
-    -- and fire for Enter.
     local BALLOON_KEY_MESSAGES = {
       [wa.msg.JUMP] = "jump", [wa.msg.JUMP_UP] = "backflip",
       [wa.msg.FIRE_WEAPON] = "fire", [wa.msg.RELEASE_WEAPON] = "release",
@@ -232,14 +207,15 @@ function weapon.setup()
           worm.id, key, b.ticks))
       end
       if msg == wa.msg.JUMP then
-        -- The jump key closes WA's parachute: here it pops the balloon.
-        -- In flight WA sends it for Space.
         balloon_stop(worm, b, "jump key (Space in flight)")
+        return "eat"
+      end
+      if msg == wa.msg.FIRE_WEAPON and worm.weapon == "px.super_drill" then
+        wa.sound.play(worm, 120) -- WA's can't-fire
         return "eat"
       end
     end, { msgs = { wa.msg.FRAME_FINISH, wa.msg.JUMP, wa.msg.JUMP_UP, wa.msg.FIRE_WEAPON, wa.msg.RELEASE_WEAPON } })
 
-    -- M_TURNBEGIN: any balloon still up pops.
     wa.on.turn_start(function()
       for _, worm in ipairs(wa.worms.all()) do
         local b = balloons[worm.id]

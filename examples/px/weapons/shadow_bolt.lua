@@ -1,7 +1,7 @@
--- Shadow-Bolt: record, art and behaviour.
+-- Shadow-Bolt: a crossbow that fires a shadow bolt.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   fires = {
     method = 3,
@@ -65,9 +65,7 @@ function weapon.definition()
     sprite_overrides = { [453] = "sprites/shadow_bolt/trail.png" },
     sprites = { "sprites/px_hold/shadow_bolt.png", "sprites/shadow_bolt/bolt.png" },
     params = { gpu_prefix = "sprites/" },
-    hold = { -- Shadow-Bolt (shadow_bolt_script): no hand, the bolt animated
-        -- The crossbow stays up through the shot: it has no firing poses of
-        -- its own, so WA fires it in the aim posture. Not PX's.
+    hold = {
         keep_while_firing = true,
         sheet = "sprites/px_hold/shadow_bolt.png", draw_hand = false, hand_radius = 0.0,
         hand_rotation = 0.0, hand_radial_rotation = 0.0,

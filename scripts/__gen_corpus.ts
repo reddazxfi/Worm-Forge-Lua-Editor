@@ -53,8 +53,12 @@ function assertExamples(): void {
   }
 }
 
-/** Past this, a file is unreadable in the editor pane anyway. */
-const MAX_LINES = 900;
+/**
+ * Sanity cap for a single embedded source file. The modern packs now include
+ * `px/lib/portal_velocity.lua` (about 1200 lines) and `roaming_bees/lib/bee.lua`
+ * (about 1000), so the old 900-line ceiling silently dropped real pack files.
+ */
+const MAX_LINES = 1300;
 
 /** Backtick and ${ must be escaped for a TS template literal. */
 function lit(s: string): string {

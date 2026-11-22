@@ -1,16 +1,13 @@
--- Mine Turret: PyroMan's (Project X's p_turrets library: mineturret.txt). A
--- turret (lib/pyro_turret.lua) that lobs WA's own mines at moving enemies,
--- six a turn: armed at once, a 400 ms fuse, damage 50, trigger radius 48,
--- and WA may roll a dud, as PX's CMineParams have it.
+-- Mine Turret: a turret that lobs armed mines at moving enemies, over the land in their way.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {}
 
 function weapon.definition()
   local fires = require("lib/shared").fires
   return require("lib/weapon").merge(weapon.record, {
-    copy_from = "stock.mine",
+    copy_from = "stock.prod",
     name = "Mine Turret",
     panel_icon = "sprites/pyro_turrets/mine_icon.png",
     is_weapon = true,

@@ -32,7 +32,9 @@ not a replacement for the engine's own `mods/` folder.
 The copied `px`, `utilities` and `roaming_bees` sources keep their real
 `mod.toml` and profiles, but the editor corpus only embeds Lua. Their code still
 references the original asset paths (`sprites/...`, `sounds/...`, `.wep`); copy
-the full pack from the mods tree to run them with art and audio.
+the full pack from the mods tree to run them with art and audio. The 1.0 refresh
+copies every production Lua module from the mods tree; the packs' `test_*.lua`
+files stay in the source packs.
 
 The Ripper Star example is a focused excerpt from `px_fire_seq`: the real
 `weapons/ripper_star.lua`, its three bundle-local libraries, the `effects.sdk`

@@ -1,45 +1,46 @@
--- Draw a held weapon during WA's repeated-fire frames (0x6A/0x6B). The engine
--- draws the aiming and put-away frames; from the second shot of a held burst
--- `h.firing` is false, so this fills those two frames at full size.
--- Presentation only: reads worm state and enqueues a quad.
+-- Draw a held weapon during WA's repeated-fire frames (firing, fired).
 
 local M = {}
 
--- Raw WA states; `worm.state` is nil for some of them.
-local FIRING = {
-  [0x6A] = true, -- firing
-  [0x6B] = true, -- fired
-}
+local FIRING = { firing = true, fired = true }
 
--- `worm_hold::DEPTH`: the engine's one front band (`worm_hold.rs:18`).
+-- the engine's front band for held art
 local DEPTH = 0x10000
+
+local HAND_CELL = 60 -- pixels, the engine's hand cells
 
 local draws = {}
 local hooked = false
 
--- One quad spec, refilled per draw: no table in the render callback.
 local QUAD = { depth = DEPTH, points = { {}, {}, {}, {} } }
 
--- `render::Sprite::emit`'s rotation: angle in radians, clockwise, y down.
+local FLASH_FRAMES = 2 -- game frames a firing sheet shows after a shot
+local shot_at = {} -- worm id -> frame of its last shot
+local drawn_at = {} -- worm id -> frame its firing art was last drawn on
+
+local function firing_now(art, w, now)
+  -- `shots` comes from the weapon: a require here could be another instance.
+  local f = shot_at[w.id]
+  local g = art.shots and art.shots[w.id]
+  if g and (not f or g > f) then f = g end
+  if not f then return false end
+  local seen = drawn_at[w.id]
+  return now - f < FLASH_FRAMES or seen == nil or seen < f -- a skipped draw still flashes
+end
+
+-- Mark a shot for a weapon that fires without fire_seq.
+function M.shot(w)
+  if w and w.id then shot_at[w.id] = wa.world.frame() end
+end
+
+-- Radians, clockwise, y down.
 local function corner(t, cx, cy, cos, sin, lx, ly)
   t.x = cx + lx * cos - ly * sin
   t.y = cy + lx * sin + ly * cos
 end
 
--- Read aim and facing live: the player can adjust them mid-burst.
-local function enqueue(art, w)
-  local pi = math.pi
-  local facing = w.facing < 0 and -1 or 1
-  local aim = w.aim
-
-  local rot = (1.0 - aim) * pi
-  local rot_w = rot + pi * art.weap_radial_rotation
-  local cx = w.x + facing * wa.math.sin(rot_w) * art.weap_radius
-  local cy = w.y - wa.math.cos(rot_w) * art.weap_radius
-  local angle = (pi - pi * aim - pi * (1.0 - art.weap_rotation)) * facing
+local function quad(sheet, cx, cy, angle, half, facing, frame)
   local cos, sin = wa.math.cos(angle), wa.math.sin(angle)
-
-  local half = art.size * 0.5
   local pts = QUAD.points
   if facing < 0 then
     corner(pts[1], cx, cy, cos, sin, half, -half) -- texture top-left on the right
@@ -52,33 +53,72 @@ local function enqueue(art, w)
     corner(pts[3], cx, cy, cos, sin, half, half)
     corner(pts[4], cx, cy, cos, sin, -half, half)
   end
-  QUAD.sprite = art.sheet
+  QUAD.sprite = sheet
+  QUAD.frame = frame or 0
   wa.draw.quad(QUAD)
+end
+
+-- The engine's hold phase, anim_speed * 0.03 per frame, on the world clock.
+local function gun_frame(art)
+  local frames = art.frames or 1
+  if frames <= 1 then return 0 end
+  local now = wa.world.frame() or 0
+  local phase = now * (art.anim_speed or 1) * 0.03
+  return math.floor((phase % 1) * frames) % frames
+end
+
+local function enqueue(art, w)
+  local pi = math.pi
+  local facing = w.facing < 0 and -1 or 1
+  local aim = w.aim
+
+  local rot = (1.0 - aim) * pi
+  local rot_w = rot + pi * art.weap_radial_rotation
+  local cx = w.x + facing * wa.math.sin(rot_w) * art.weap_radius
+  local cy = w.y - wa.math.cos(rot_w) * art.weap_radius
+  local angle = (pi - pi * aim - pi * (1.0 - art.weap_rotation)) * facing
+  quad(art.sheet, cx, cy, angle, art.size * 0.5, facing, gun_frame(art))
+
+  -- The hand goes on after the gun so it covers the grip.
+  if art.hand and art.draw_hand ~= false then
+    local hand_radius = art.hand_radius or 0
+    if hand_radius ~= 0 then
+      local rot_h = rot - pi * (art.hand_radial_rotation or 1)
+      local hx = w.x + facing * wa.math.sin(rot_h) * hand_radius
+      local hy = w.y - wa.math.cos(rot_h) * hand_radius
+      local hand_angle = (rot + pi * (art.hand_rotation or 1)) * facing
+      local size = (art.hand_size or HAND_CELL) * (art.hand_scale or 1)
+      quad(art.hand, hx, hy, hand_angle, size * 0.5, facing, 0)
+    end
+  end
 end
 
 local function hook()
   hooked = true
   wa.on.draw(function()
-    for i = 1, #draws do
-      local art = draws[i]
-      for _, w in ipairs(wa.worms.all()) do
-        -- `draw_holds` skips dead, hidden and body-hidden worms
-        -- (`worm_hold.rs:309-315`); `visible`/`body_visible` are the same two
-        -- hide flags (`crates/lua-host/src/actor.rs:1523-1541`).
-        local st = w.state_id
-        if w.hp and w.hp > 0 and w.visible and w.body_visible
-            and w.weapon == art.weapon and st and FIRING[st] then
-          enqueue(art, w)
+    local now = wa.world.frame() or 0
+    local worms = wa.worms.all()
+    for j = 1, #worms do
+      local w = worms[j]
+      local st = w.state
+      if st and FIRING[st] and w.hp and w.hp > 0 and w.visible and w.body_visible then
+        local weapon = w.weapon
+        if weapon ~= nil then
+          -- A `flash` entry is PX's OnFiringAnim(isFiring) sheet.
+          for i = 1, #draws do
+            local art = draws[i]
+            if art.weapon == weapon and (not art.flash or firing_now(art, w, now)) then
+              enqueue(art, w)
+            end
+          end
+          drawn_at[w.id] = now
         end
       end
     end
   end)
 end
 
--- `art` is the same table the weapon also passes as `spec.hold`: `weapon` (the
--- id WA's `worm.weapon` reports), `sheet`, `size` (the cell, 90 for PX's gun
--- cells), and the engine's `weap_radius`/`weap_rotation`/`weap_radial_rotation`.
--- The engine ignores the two presentation-only keys (`weapon`, `size`).
+-- `art` is the weapon's `spec.hold` table; README.md lists the extra keys.
 function M.add(art)
   if type(art) ~= "table" or not art.sheet or not art.weapon then
     wa.log("px_hold_art: a hold needs a sheet and a weapon id")

@@ -1,15 +1,13 @@
--- Submarine Attack: record, art and behaviour.
+-- Submarine Attack: a submarine rises under the click and fires twenty missiles up.
+
 local weapon = {}
 
--- Native record settings. Edit this weapon here; imported records are review drafts.
 weapon.record = {
   handling = {
     ends_turn = true,
   },
 }
 
--- PX draws the team's aiming cursor upside down and 20 pixels lower while
--- the weapon is selected (CDDQueue::AddSprite on sprites 32..37).
 weapon.defaults = {
   cursor = { flip = true, dy = 20 },
 }
@@ -25,23 +23,12 @@ function weapon.definition()
     panel_icon = "sprites/submarine_attack/icon.png",
     sprites = { SHEET },
     sounds = { SUB_SOUND, BOMB_SOUND },
-    -- Click-only dispatch keeps the strike's cursor, its arrow keys'
-    -- direction and its turn handling.
     on_select = { cursor = true },
     on_click = function(ev) shared.submarine_click(ev) end,
   })
 end
 
 function weapon.setup()
-  -- Highlander: Submarine Attack (PX weapon_substrike: substrike_s.txt, by
-  -- rafa``2, on PX's PxAirstrike: pxairstrike/airstrikebase.txt).
-  --
-  -- A submarine rises out of the deep under the click and, after 120 frames,
-  -- fires twenty missiles up out of the water at it, one every three frames.
-  -- PX builds it on its airstrike: an invisible plane flies across the map at
-  -- the water line, 10 pixels a frame, and the bombs fall due as it passes the
-  -- click; the strike is over when the plane leaves the map. So is the
-  -- submarine, which fades out from 70 frames into the attack.
   local shared = require("lib/shared")
 
   local NUM_BOMBS = 20
@@ -53,15 +40,9 @@ function weapon.setup()
   local BEFORE_ATTACK, AFTER_ATTACK = 120, 70
   local SIZE = 104
   local FRAMES = 6
-  -- PX's z 2.0: in front of the water, which the submarine rises through.
   local DEPTH = 0x20000
-  -- SetColorMod(ARGB(255 - fade, 60, 60, 220), 6): modulation x2 under alpha.
-  -- A quad modulates once, so the colour is doubled here (blue tops out).
   local TINT = 0x7878FF
 
-  -- CSubMissile: PX's own missile, WA's air-strike missile with these values.
-  -- Fired as WA's Bazooka, whose missile WA builds as PX's CMissile does; the
-  -- Submarine Attack's own record is a strike, which builds none.
   local BOMB = {
     sprite = "airmisl", -- 60
     trail = { sprite = "hexhaust", power = 10, speed = 125 }, -- 131
@@ -74,7 +55,6 @@ function weapon.setup()
     countdown = 0,
     explode_on_space = false,
     flight_sound = 0, -- substrikem.wav instead
-    -- explosion.flags 2+4+8+16+32+64+2048+4096+131072+4194304
     ends_on_contact = {
       land = true, worms = true, worms_frozen = true, crates = true,
       donor_cards = true, objects = true, water = true,
@@ -88,12 +68,8 @@ function weapon.setup()
     return 0
   end
 
-  -- PxAirstrike's constructor: where the invisible plane starts, and how many
-  -- bomb slots it is from the first bomb (bombs fall while 0 < drop <= 20).
   local function plane_start(s, water, width)
     local x = s.tx
-    -- Its speed compensation, by how far under the plane (the water) the
-    -- click is; always 0 for a click above the water.
     local below = math.max(0, s.ty - water) // 1
     x = x - 3.0 * BOMB_VX * math.sqrt(below)
     local drop = NUM_BOMBS // 2
@@ -105,17 +81,28 @@ function weapon.setup()
     s.plane_x, s.drop, s.counter = x, drop, 0
   end
 
-  -- SubStrike::DropBomb.
+  local MAX_BACK = 250
+  local APEX_MARGIN = 0.75 -- reach the click by 3/4 of the arc's height
+  local function aim(s, water)
+    local h = math.max(0, (water - 2) - s.ty)
+    local g = wa.world.gravity() * BOMB.gravity_pct / 100
+    local vy = -BOMB_VY
+    if 2 * g * h > APEX_MARGIN * vy * vy then vy = math.sqrt(2 * g * h / APEX_MARGIN) end
+    local t = 2 * h / (vy + math.sqrt(math.max(0, vy * vy - 2 * g * h)))
+    local vx, back = BOMB_VX, BOMB_VX * t
+    if back > MAX_BACK then vx, back = MAX_BACK / t, MAX_BACK end
+    s.bomb_vx, s.bomb_vy, s.back = vx, -vy, back
+  end
+
   local function drop_bomb(s, a)
-    local x = s.tx - 15 * s.dir + sign(wa.random(-10, 10)) * wa.random(0, 15)
+    local x = s.tx - s.back * s.dir + sign(wa.random(-10, 10)) * wa.random(0, 15)
     wa.weapons.launch({
       weapon = "stock.bazooka", owner = s.owner, x = x, y = wa.world.water() - 2,
-      vx = BOMB_VX * s.dir, vy = BOMB_VY, missile = BOMB,
+      vx = s.bomb_vx * s.dir, vy = s.bomb_vy, missile = BOMB,
     })
     wa.sound.play(a, BOMB_SOUND)
   end
 
-  -- PxAirstrike::Message, M_FRAME. False once the plane has left the map.
   local function plane_frame(s, a)
     s.counter = s.counter + 1
     if s.counter >= FRAMES_BETWEEN then
@@ -129,14 +116,12 @@ function weapon.setup()
       or (s.dir < 0 and s.plane_x < -APPEAR_X))
   end
 
-  -- SubStrike::Message, M_FRAME, and the submarine's rise from its
-  -- M_DRAWQUEUE (PX moves it there, from the frame count alone).
   local function sub_frame(s, a)
     s.tick = s.tick + 1
     if s.before <= 0 then
       if not plane_frame(s, a) then
         subs[s.id] = nil
-        a:despawn()
+        a:remove()
         return
       end
       s.after = s.after - 1
@@ -151,17 +136,15 @@ function weapon.setup()
 
   shared.submarine_click = function(ev)
     local water = wa.world.water()
-    -- From the left unless the strike's x speed, which WA's arrow keys set,
-    -- is negative (PxAirstrike: Direction = Desc->SpX).
     local dir = (ev.vx or 0) < 0 and -1 or 1
     local s = { tx = ev.x, ty = ev.y, dir = dir, owner = ev.worm, water = water,
       tick = 0, before = BEFORE_ATTACK, after = AFTER_ATTACK, fade = 0 }
-    s.x0, s.y0 = ev.x - 125 * dir, water + 220
+    aim(s, water)
+    s.x0, s.y0 = ev.x - (110 + s.back) * dir, water + 220
     s.x, s.y = s.x0, s.y0
     plane_start(s, water, wa.world.size().w)
     local a = wa.actors.spawn({
-      sprite = false, gravity = false, collide = false,
-      owner = ev.worm, x = ev.x, y = ev.y, on = function(a) sub_frame(s, a) end,
+      sprite = false, owner = ev.worm, x = ev.x, y = ev.y, on = function(a) sub_frame(s, a) end,
     })
     s.id = a.id
     subs[s.id] = s
@@ -169,9 +152,6 @@ function weapon.setup()
   end
 
   local CORNERS = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } }
-  -- AddSpriteEx(2.0, x, y, sprite, tick * 0.025, 0.75 * pi/4 * dir, 1.0):
-  -- the sheet mirrored for a strike from the right (+0x40000), tilted toward
-  -- where it is going, its 6 frames once every 40 frames.
   local ROT = math.pi / 4 * 0.75
   if wa.on.draw and wa.draw.quad then
     wa.on.draw(function()

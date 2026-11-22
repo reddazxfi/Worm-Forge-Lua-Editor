@@ -168,10 +168,11 @@ const GROUP_NOTES: Record<string, string> = {
   arrow: 'The arrow record: damage.',
   baseball_bat: 'The Baseball Bat record: damage and knockback scale.',
   flame_thrower: 'The Flame Thrower record: flames, spread generations and burn.',
+  armageddon: "Armageddon's meteors: a missile body four bytes early, applied only when fires.subtype = 24.",
 };
 
 /**
- * The group names `record_table::GROUPS` accepts (record_table.rs:11). All 16
+ * The group names `record_table::GROUPS` accepts (record_table.rs:11). All 17
  * are writable through `wa.weapons.replace`; the older list stopped at
  * `jet_pack`, which made every special group a false `spec-key-typo`.
  */
@@ -192,6 +193,7 @@ export const RECORD_GROUPS = [
   'arrow',
   'baseball_bat',
   'flame_thrower',
+  'armageddon',
 ] as const;
 
 function noteFor(group: string, relative: string): string | undefined {
@@ -199,6 +201,7 @@ function noteFor(group: string, relative: string): string | undefined {
   // body, at a different offset.
   const normalized = relative
     .replace(/^bit\./, '')
+    .replace(/^meteor\./, '')
     .replace(/^homing\.(sprite|animation|trail\.sprite|trail\.power|trail\.speed)$/, '$1');
   return RECORD_NOTES[relative] ?? RECORD_NOTES[normalized];
 }
@@ -309,7 +312,7 @@ const WEAPON_CLAIM_FIELDS: TableField[] = [
   { name: 'name', kind: 'string', description: 'Display name shown on the panel.' },
   { name: 'copy_from', kind: 'string', type: 'weapon id', description: 'Start from another record: a placed weapon or stock.<name>. Mutually exclusive with `wep`.' },
   { name: 'wep', kind: 'string', type: 'pack path', description: 'A Project X .wep file to take the firing from. Its weapon name is the default. Mutually exclusive with `copy_from`.' },
-  { name: 'actor', kind: 'string', description: 'An actor type this weapon spawns, instead of a straight missile.' },
+  { name: 'hold_as', kind: 'string', type: 'stock weapon id', description: "The stock weapon whose held pose the worm takes (stock.<name>), for a record whose missile sprite hides its round. Worked out from that weapon's record at match start; a special weapon has no pose to lend." },
   { name: 'panel_icon', kind: 'sprite', description: "The weapon's panel icon: a .png path or a stock icon name." },
   { name: 'icon', kind: 'sprite', description: 'Alias of `panel_icon`.' },
   { name: 'panel_icons', kind: 'table', type: 'stock icon names', description: 'Extra panel icons for the variant slots.' },
@@ -356,7 +359,15 @@ const WEAPON_CLAIM_FIELDS: TableField[] = [
       { name: 'colours', kind: 'table', description: 'The six team colours, red to cyan, the overlay is multiplied by.' },
     ],
   },
-  { name: 'mole_dig_rotation', kind: 'table', description: 'Sprite replacements for the mole strike: moledive, moledig1, moledig2, moledig3, mole.' },
+  { name: 'cluster_sprite', kind: 'sprite', description: 'Pack sheet for the cluster bits, in a replace/overlay weapon. WA draws it, so it takes a WA sprite slot.' },
+  { name: 'cluster_homing_sprite', kind: 'sprite', description: 'Pack sheet a homing cluster bit draws while it homes (its render timer). WA draws it, so it takes a WA sprite slot.' },
+  {
+    name: 'cluster_homing',
+    kind: 'enum',
+    type: '"stock.homing_missile" | "stock.homing_pigeon" | "stock.magic_bullet"',
+    values: [['stock.homing_missile', 'stock.homing_missile'], ['stock.homing_pigeon', 'stock.homing_pigeon'], ['stock.magic_bullet', 'stock.magic_bullet']],
+    description: "Makes the bits home as that weapon does: its homing block, as WA's own record setup writes it, copied onto the bits before the record's fields adjust it. The S.M.A.R.T Bomb's bits home as the Magic Bullet and keep only their own trail.",
+  },
   { name: 'sprite_overrides', kind: 'table', description: 'Sprite sheet replacements keyed by stock sprite name.' },
   {
     name: 'hold',
@@ -364,6 +375,7 @@ const WEAPON_CLAIM_FIELDS: TableField[] = [
     description: 'Held-weapon art and its geometry.',
     children: [
       { name: 'sheet', kind: 'sprite', required: true, description: 'Hold sprite sheet.' },
+      { name: 'sheets', kind: 'table', type: 'pack paths', description: 'Extra hold sheets packed with the weapon.' },
       { name: 'hand', kind: 'sprite', description: 'Hand sprite.' },
       { name: 'flash', kind: 'table', type: '{ sheet, out, side, scale, frames }', description: 'Muzzle flash.' },
       { name: 'static', kind: 'table', type: '{ weap, hand }', description: 'Fixed hold angles instead of the animated ones.' },
@@ -371,12 +383,28 @@ const WEAPON_CLAIM_FIELDS: TableField[] = [
       { name: 'anim_speed', kind: 'number', description: 'Hold animation speed. Default 1.' },
       { name: 'hand_scale', kind: 'number', description: 'Hand scale. Default 1.' },
       { name: 'hand_rotation', kind: 'number', description: 'Hand rotation. Default 1.' },
+      { name: 'hand_radius', kind: 'number', description: 'Hand orbit radius. Default 1.' },
+      { name: 'hand_radial_rotation', kind: 'number', description: 'Hand rotation as it orbits. Default 1.' },
       { name: 'weap_scale', kind: 'number', description: 'Weapon scale. Default 1.' },
       { name: 'weap_rotation', kind: 'number', description: 'Weapon rotation. Default 1.' },
+      { name: 'weap_radius', kind: 'number', description: 'Weapon orbit radius. Default 1.' },
+      { name: 'weap_radial_rotation', kind: 'number', description: 'Weapon rotation as it orbits. Default 1.' },
+      { name: 'keep_while_firing', kind: 'bool', description: 'Keep the held art while the weapon fires.' },
+      { name: 'thrown', kind: 'bool', description: 'The weapon is thrown, not held.' },
+      { name: 'put_away', kind: 'bool', description: 'Draw the put-away pose.' },
     ],
   },
-  { name: 'on_click', kind: 'function', type: 'function | { spawn = ... }', description: 'Click handler. A table with `spawn` spawns an actor instead of running Lua.' },
-  { name: 'params', kind: 'table', description: 'Legacy flat params. Most keys are gone in Lua API 4 (damage, bounce_pct, ...); name the record fields instead.' },
+  { name: 'on_click', kind: 'function', type: 'function | { on = function }', description: 'Click handler. It is a function (or { on = function }); spawn whatever the weapon needs from it with wa.actors.spawn. A declarative `spawn = ...` is an error in 1.0.' },
+  { name: 'params', kind: 'table', description: 'Flat drawing params. These are the keys still read in 1.0; the old damage/bounce_pct fields are record fields now.', children: [
+    { name: 'layer', kind: 'int', description: 'Draw layer.' },
+    { name: 'depth', kind: 'int', description: 'Draw depth.' },
+    { name: 'depth_prefix', kind: 'string', description: 'Depth prefix.' },
+    { name: 'gpu_prefix', kind: 'string', description: 'Prefix for GPU sheet names.' },
+    { name: 'truecolor_prefix', kind: 'string', description: 'Prefix for true-colour sheet names.' },
+    { name: 'reserve_prefix', kind: 'string', description: 'Prefix for reserved sprite names.' },
+    { name: 'worm_art', kind: 'table', type: 'pack paths', description: 'Sprites drawn in the worm\'s place.' },
+    { name: 'worm_sprites_animate', kind: 'bool', description: 'Animate the worm-pose sheets.' },
+  ] },
   {
     name: 'projectile',
     kind: 'table',
@@ -388,8 +416,8 @@ const WEAPON_CLAIM_FIELDS: TableField[] = [
       { name: 'missile', kind: 'table', description: 'The overlay missile body.', children: recordTree('missile') },
       { name: 'clusters', kind: 'table', description: 'The overlay cluster fan.', children: recordTree('clusters') },
       { name: 'sprite', kind: 'sprite', description: 'Pack-relative flight sprite sheet.' },
-      { name: 'cluster', kind: 'sprite', description: 'Pack-relative cluster sprite sheet.' },
-      { name: 'params', kind: 'table', description: 'Legacy flat drawing params (sprite_columns, truecolor, ...).' },
+      { name: 'cluster_sprite', kind: 'sprite', description: 'Pack-relative cluster sprite sheet. WA draws it, so it takes a WA sprite slot.' },
+      { name: 'params', kind: 'table', description: 'Legacy flat drawing params (sprite_columns, layer, depth, ...).' },
       { name: 'sprites', kind: 'table', type: 'pack paths', description: 'Extra sheets the overlay installs.' },
     ],
   },
@@ -453,13 +481,13 @@ const LAUNCH: TableDoc = {
 const WEAPON_SPEC: TableDoc = {
   tableDoc: true,
   id: 'wa.weapons.replace',
-  title: 'Weapon spec (replace / register)',
+  title: 'Weapon spec (replace)',
   summary:
-    'The table `wa.weapons.replace` rewrites a placed weapon with, and `wa.weapons.register` builds a new one from. Claim keys sit at the top; the record groups hold the weapon data.',
-  usedBy: ['wa.weapons.replace', 'wa.weapons.register'],
+    'The table `wa.weapons.replace` rewrites a placed weapon with. Claim keys sit at the top; the record groups hold the weapon data.',
+  usedBy: ['wa.weapons.replace'],
   source: 'crates/lua-host/src/api.rs `table_to_claim()` + crates/weapons/src/record.rs',
   note:
-    '`wa.weapons.replace` names no slot: it claims the weapon its component installs for. `wa.weapons.register` takes the same table and additionally needs `based_on` (the stock slot it occupies).',
+    '`wa.weapons.replace` names no slot: it claims the weapon its component installs for. A bundle\'s weapon always uses replace; the old `wa.weapons.register` form is gone in 1.0.',
   example: `wa.weapons.replace({
   copy_from = "bazooka",
   name = "Heavy Bazooka",
@@ -488,34 +516,36 @@ const SPAWN: TableDoc = {
   id: 'wa.actors.spawn',
   title: 'Actor spawn',
   summary:
-    "Spawns a native LuaActor. The same spec table is reused by `cluster`, `on_explode` and an actor's own `on_fire` child spawns.",
-  usedBy: ['wa.actors.spawn', 'cluster', 'on_explode'],
+    "Spawns a native LuaActor. An actor has only what its spawn names: no gravity, collision, looping, drowning or persisting otherwise, with a brain or without. A weapon's on_fire, on_click, on_explode, on_place and on_proximity functions spawn their actors with it, and a child actor is another wa.actors.spawn with owner = the parent.",
+  usedBy: ['wa.actors.spawn'],
   source: 'crates/lua-host/src/spawn.rs `parse_spawn()` + `runtime_spawn()`',
+  note: 'Gone in 1.0 and an error when present: kind, from, on_explode, collide, collide_terrain, collide_worms, as_object, shape (top level), solid, mask, mask_worms, mask_land, mask_weapons, mask_actors, mask_rope. Collision is `body` alone.',
   example: `local a = wa.actors.spawn({
   sprite = "sprites/blade.png",
   x = 100,
   y = 200,
   origin = "center",
-  gravity = false,
+  gravity = 1,
   owner = worm,
+  body = { shape = "worm", hits = { land = true }, hit_by = "all" },
 })`,
   fields: [
-    { name: 'x', kind: 'number', type: 'px', description: 'Spawn X. Inherited from the parent actor for a nested spawn.' },
+    { name: 'x', kind: 'number', type: 'px', description: 'Spawn X.' },
     { name: 'y', kind: 'number', type: 'px', description: 'Spawn Y.' },
     { name: 'vx', kind: 'number', type: 'px/frame', description: 'Initial horizontal speed. Default 0.' },
     { name: 'vy', kind: 'number', type: 'px/frame', description: 'Initial vertical speed. Default 0.' },
-    { name: 'owner', kind: 'handle', type: 'worm or actor handle', description: 'The worm or actor that owns it. Defaults to the inherited owner, then the spawning worm.' },
+    { name: 'owner', kind: 'handle', type: 'worm or actor handle', description: 'The worm or actor that owns it. Left out, the simulation callback\'s own worm or actor; a callback with neither must name one. owner = "none" asks for an actor of no team.' },
     { name: 'sprite', kind: 'sprite', type: 'name | false | true', description: 'Sprite sheet. false makes it invisible; true keeps the inherited sheet.' },
+    { name: 'visibility', kind: 'handle', type: 'worm', description: 'Draw the actor only where that worm is visible, for art tied to a worm.' },
     { name: 'frame', kind: 'int', description: 'Starting animation frame.' },
-    { name: 'from', kind: 'enum', type: '"sky" | "cursor" | "owner"', values: [['sky', 'sky'], ['cursor', 'cursor'], ['owner', 'owner']], description: 'Where it appears. Default "sky"; a nested spawn defaults to the cursor.' },
     { name: 'origin', kind: 'enum', type: '"center" | "bottom"', values: [['center', 'center'], ['bottom', 'bottom']], description: 'What the sprite position means. Default "center".' },
-    { name: 'shape', kind: 'enum', type: '"worm" | "missile"', values: [['worm', 'worm'], ['missile', 'missile']], description: 'Legacy collision shape, accepted only without `body`. Default "worm".' },
     {
       name: 'body',
       kind: 'table',
-      description: 'Collision body: outline, outgoing movement, incoming attackers and push response, independently. Replaces the legacy collide/mask/shape options.',
+      description: 'Collision body: outline, outgoing movement, incoming attackers, push response, collision layer and stamped mask, independently. Without a body nothing collides with the actor or hits it.',
       children: [
-        { name: 'shape', kind: 'enum', type: '"worm" | "missile" | "sprite" | pack path', values: [['worm', 'worm'], ['missile', 'missile'], ['sprite', 'sprite']], description: 'Outline. Default "worm". A bare image path uses no sprite slot and works with sprite = false.' },
+        { name: 'physics', kind: 'enum', type: '"mine"', values: [['mine', 'mine']], description: 'WA\'s mine physics instead of a plain body. It defaults gravity to 1 and persist to true.' },
+        { name: 'shape', kind: 'enum', type: '"worm" | "missile" | "sprite" | pack path', values: [['worm', 'worm'], ['missile', 'missile'], ['sprite', 'sprite']], description: 'Outline. Default "worm", or "missile" with physics = "mine". A bare image path uses no sprite slot and works with sprite = false.' },
         { name: 'hits', kind: 'table', description: 'Outgoing movement layers: land, worms, mines, crates, objects, missiles. Defaults to {}.', children: [
           { name: 'land', kind: 'bool' },
           { name: 'worms', kind: 'bool' },
@@ -526,28 +556,20 @@ const SPAWN: TableDoc = {
         ] },
         { name: 'hit_by', kind: 'any', type: 'string | table', description: '"all" or { worms, missiles, arrows, mines, actors, bullets, melee, fire, dragon_ball, blasts }. Defaults to "all".' },
         { name: 'pushed_by', kind: 'table', description: 'How hard what runs into it pushes it, each 0..1: worms, missiles, arrows, mines, actors. One left out keeps WA\'s whole push.' },
+        { name: 'layer', kind: 'enum', type: '"object" | "missile"', values: [['object', 'object'], ['missile', 'missile']], description: 'WA\'s collision layer: "object" (the oil-drum layer, 17: fires hit it, guns and worms treat it as an object) or "missile" (15). Default "object".' },
+        { name: 'mask', kind: 'any', type: 'true | table', description: 'Stamps the actor\'s opaque outline into WA\'s collision grid each frame. true for all of it, or { worms, land, weapons, actors, rope }. Default false.' },
       ],
     },
-    { name: 'screen', kind: 'enum', type: '"fill" | "front" | "world"', values: [['fill', 'fill'], ['front', 'front'], ['world', 'world']], description: 'Screen-space drawing. Default "world"; `true` means "front".' },
     { name: 'visible', kind: 'bool', description: 'Default true.' },
-    { name: 'gravity', kind: 'bool', description: 'Apply gravity. Defaults to on for an automatic, visible actor.' },
+    { name: 'gravity', kind: 'number', type: 'factor', description: 'A factor, 1 normal and 0 none, as worm.gravity and object.gravity take it. Default 0: the spawn has no gravity unless it asks.' },
     { name: 'magnetic', kind: 'number', type: '0..1000', description: 'Automatic magnetic response multiplier. Default 0 (opted out); fields are summed in creation order and applied before movement.' },
-    { name: 'loop', kind: 'bool', description: 'Loop the animation. Defaults to on for an automatic, visible actor.' },
-    { name: 'collide', kind: 'bool', description: 'Umbrella for the three collide flags.' },
-    { name: 'collide_terrain', kind: 'bool', description: 'Default: the `collide` value.' },
-    { name: 'collide_worms', kind: 'bool', description: 'Default: the `collide` value.' },
+    { name: 'loop', kind: 'bool', description: 'Loop the animation. Default false.' },
     { name: 'damage_terrain', kind: 'bool', description: 'Its explosion damages terrain. Defaults to on when `explode` is set.' },
     { name: 'damage_worms', kind: 'bool', description: 'Its explosion damages worms. Defaults to on when `explode` is set.' },
-    { name: 'persist', kind: 'bool', description: 'Survives its explosion. Defaults on for an automatic, visible actor with `explode`.' },
-    { name: 'drown', kind: 'bool', description: 'Drowns in water. Defaults to on for an automatic, visible actor.' },
-    { name: 'as_object', kind: 'bool', description: 'Register as a world object rather than a plain actor. Default false.' },
-    { name: 'mask', kind: 'bool', description: 'Use a collision mask. Default false; the mask_* flags default to it.' },
-    { name: 'mask_worms', kind: 'bool', description: 'Default: the `mask` value.' },
-    { name: 'mask_land', kind: 'bool', description: 'Default: the `mask` value.' },
-    { name: 'mask_weapons', kind: 'bool', description: 'Default: the `mask` value.' },
-    { name: 'mask_actors', kind: 'bool', description: 'Default: the `mask` value.' },
+    { name: 'persist', kind: 'bool', description: 'Survives its explosion. Default false.' },
+    { name: 'drown', kind: 'bool', description: 'Drowns in water. Default false.' },
     { name: 'cursor', kind: 'bool', description: 'Follow the cursor. Default false.' },
-    { name: 'on', kind: 'function', type: 'function | { frame, land, hit, contact, bump }', description: 'The brain. A function is its frame callback; a table may name frame, land, hit, contact and bump separately.' },
+    { name: 'on', kind: 'function', type: 'function | { frame, land, hit, touched, contact }', description: 'The brain. A function is its frame callback; a table may name frame, land, hit, touched and contact separately. `touched` is something that ran into the actor; `contact` is the actor\'s own movement running into something. A spawn\'s defaults do not switch anything on whether `on` is given.' },
     {
       name: 'explode',
       kind: 'table',
@@ -559,31 +581,6 @@ const SPAWN: TableDoc = {
         { name: 'below', kind: 'bool', description: 'Place the blast slightly below. Default true.' },
         { name: 'now', kind: 'bool', description: 'Explode immediately. Default false.' },
       ],
-    },
-    {
-      name: 'cluster',
-      kind: 'table',
-      type: 'bool | table',
-      description: 'Burst into cluster bits where it ends. `true` uses a bouquet default; a table may name the fields itself.',
-      children: [
-        { name: 'count', kind: 'int', description: 'Bits to release. Clamped to 1..16.' },
-        { name: 'spread', kind: 'int', type: 'degrees', description: 'Fan spread. 45 when a named cluster leaves it 0.' },
-        { name: 'power', kind: 'number', type: 'px/frame', description: 'Ejection impulse.' },
-        { name: 'bounce', kind: 'number', type: 'bool | percent', description: 'Bounciness; `true` is 100%.' },
-        { name: 'bounces', kind: 'int', description: 'Bounces before it stops.' },
-        { name: 'fuse', kind: 'int', type: 'ms', description: 'Fuse time. `fuse_ms` is accepted as the same field.' },
-        { name: 'proximity', kind: 'int', type: 'px', description: 'Proximity trigger radius.' },
-        { name: 'homing', kind: 'enum', type: 'bool | "off" | "aim" | "worm"', values: [['off', 'off'], ['aim', 'aim'], ['worm', 'worm']], description: 'Cluster homing mode; `lock` is accepted as a name for aim.' },
-        { name: 'impact', kind: 'bool', description: 'Burst on impact.' },
-        { name: 'trail', kind: 'sprite', type: 'sprite name | bool', description: 'Trail sprite. `true` uses the stock smoke trail.' },
-        { name: 'sprite', kind: 'sprite', description: 'Bit sprite.' },
-      ],
-    },
-    {
-      name: 'on_explode',
-      kind: 'table',
-      type: 'actor spawn table',
-      description: 'A nested actor spawned where it explodes. The inner `spawn` table, when present, is the spawn spec.',
     },
   ],
 };
@@ -601,7 +598,7 @@ const LIGHT_SPEC: TableDoc = {
   fields: [
     { name: 'kind', kind: 'enum', type: '"worm" | "animal" | "projectile" | "crate" | string', values: [['worm', 'worm'], ['animal', 'animal'], ['projectile', 'projectile'], ['crate', 'crate']], description: "A preset. A visible world actor starts with its profile's projectile light; an invisible, cursor or screen-space actor starts with none." },
     { name: 'mode', kind: 'enum', type: '"light" | "dark" | "shadow"', values: [['light', 'light'], ['dark', 'dark'], ['shadow', 'shadow']], description: 'light (default) shows; dark shades what its cast sees; shadow shades what is hidden from it within reach. Darkness wins over light.' },
-    { name: 'circle', kind: 'table', description: 'The lit circle. Omitted geometry comes from the light kind.' },
+    { name: 'circle', kind: 'int', type: '0..700 px', description: 'The lit circle radius. Omitted geometry comes from the light kind.' },
     { name: 'cone', kind: 'table', description: 'The cone of a directional light. Omitted geometry comes from the kind.', children: [
       { name: 'length', kind: 'number', description: 'Cone length.' },
       { name: 'width', kind: 'number', description: 'Cone width.' },
@@ -615,6 +612,7 @@ const LIGHT_SPEC: TableDoc = {
     { name: 'reach', kind: 'int', type: '0..700 px', description: 'How far the cast reaches. circle (no more than reach) is how far the darkness spreads inside it.' },
     { name: 'without_fog', kind: 'bool', description: 'Dark and shadow only: drawn in a match without fog too.' },
     { name: 'into_terrain', kind: 'table', type: '{ depth, falloff }', description: 'Dark only: the darkness goes into the terrain its cast reaches, depth px at full, then fading over falloff more (0..32 each).' },
+    { name: 'fill', kind: 'table', type: 'true | { flow = px }', description: 'Fill the whole circle, or flow out to at most twice the reach, instead of a hard edge.' },
     // Free-light extras (wa.fog.light).
     { name: 'x', kind: 'number', type: 'px', description: 'Free light only: X.' },
     { name: 'y', kind: 'number', type: 'px', description: 'Free light only: Y.' },
@@ -719,9 +717,9 @@ window:close()`,
       kind: 'enum',
       type: 'screen anchor',
       values: [
-        ['top_left', 'top_left'], ['top_center', 'top_center'], ['top_right', 'top_right'],
-        ['center_left', 'center_left'], ['center', 'center'], ['center_right', 'center_right'],
-        ['bottom_left', 'bottom_left'], ['bottom_center', 'bottom_center'], ['bottom_right', 'bottom_right'],
+        ['top_left', 'top_left'], ['top', 'top'], ['top_right', 'top_right'],
+        ['left', 'left'], ['center', 'center'], ['right', 'right'],
+        ['bottom_left', 'bottom_left'], ['bottom', 'bottom'], ['bottom_right', 'bottom_right'],
       ],
       description: "The box's and the screen's point that x, y offset it from.",
     },
