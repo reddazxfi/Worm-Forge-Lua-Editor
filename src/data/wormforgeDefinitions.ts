@@ -73,7 +73,7 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.draw',
     type: 'table',
-    description: 'Direct3D 9 GPU world-space quad, batched quad, ribbon, trail and weather-layer drawing inside wa.on.draw.',
+    description: 'Direct3D 9 GPU world-space quad, batched quad, brush, ribbon, trail and weather-layer drawing inside wa.on.draw.',
     scope: 'global',
     example: 'wa.draw.quad({ points = { ... }, blend = "add" })',
   },
@@ -1076,7 +1076,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     name: 'wa.on.draw',
     parameters: [{ name: 'callback', type: 'function', description: 'function() called once per rendered frame after simulation' }],
     returnType: 'void',
-    description: 'Runs once per Present to draw world-space GPU quads (wa.draw.quad, wa.draw.quads), ribbons (wa.draw.ribbon) and trails (wa.draw.trail). wa.random is forbidden inside this callback.',
+    description: 'Runs once per Present to draw world-space GPU quads (wa.draw.quad, wa.draw.quads), brushes (wa.draw.brush), ribbons (wa.draw.ribbon) and trails (wa.draw.trail). wa.random is forbidden inside this callback.',
     example: 'wa.on.draw(function()\n  wa.draw.quad({ points = { ... }, blend = "add" })\nend)',
   },
   {
@@ -1491,6 +1491,15 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'wa.draw.quads({ quads = quad_numbers, sprite = "spark" })',
   },
   {
+    name: 'wa.draw.brush',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ sprite = "name", frame = 0, blend = "alpha"|"add", depth = int, color = 0xAARRGGBB | colors = { c1, c2, c3, c4 }, uv = { u0, v0, u1, v1 } } -- sprite is required; visibility goes to brush:box' },
+    ],
+    returnType: 'BrushHandle',
+    description: 'A sheet made ready to draw once, at setup or in a hook, so drawing many boxes or quads allocates nothing: a wa.draw.quad call makes six tables every rendered frame. sprite is required; blend is alpha or add; depth places it as wa.draw.quad does; color is one 0xAARRGGBB for all four corners, or colors four of them; uv shows part of the frame, each 0..1. The sheet is looked up at the first draw and kept; a pack path is read as the pack that made the brush. wa.draw.quad and wa.draw.quads are unchanged; a brush is optional.',
+    example: 'local b = wa.draw.brush({ sprite = "sprites/Glow.png", blend = "add" })\nwa.on.draw(function()\n  b:box(x, y, 8, 6, angle)\nend)',
+  },
+  {
     name: 'wa.draw.trail',
     parameters: [
       { name: 'spec', type: 'table', description: '{ sprite, frame, width, glow, glow_width, color, max = 12, shed = 2, floor = 0.1, blend, depth, visibility = worm }' },
@@ -1809,6 +1818,16 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'finish', kind: 'method', parameters: [], returnType: 'void', description: 'Stops feeding the trail; it then sheds its oldest point every shed game frames.', example: 't:finish()' },
       { name: 'remove', kind: 'method', parameters: [], returnType: 'void', description: 'Removes the trail at once.', example: 't:remove()' },
       { name: 'points', kind: 'property', returnType: 'table', description: 'The trail\'s live points, oldest first.' },
+    ],
+  },
+  {
+    name: 'BrushHandle',
+    description: 'A sheet made ready to draw, returned by wa.draw.brush (WormForge 1.0).',
+    syntaxExample: 'local b = wa.draw.brush({ sprite = "sprites/Glow.png" })\nwa.on.draw(function()\n  b:box(100, 200, 8, 6)\nend)',
+    members: [
+      { name: 'box', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'Centre X in px' }, { name: 'y', type: 'number', description: 'Centre Y in px' }, { name: 'w', type: 'number', description: 'Width in px' }, { name: 'h', type: 'number', description: 'Height in px' }, { name: 'angle', type: 'number', optional: true, description: 'Radians about the centre; positive turns clockwise on screen. Default 0.' }, { name: 'frame', type: 'int', optional: true, description: 'Replaces the brush frame for this box.' }, { name: 'color', type: 'int', optional: true, description: '0xAARRGGBB; replaces the brush colour for this box.' }, { name: 'visibility', type: 'entity', optional: true, description: 'A worm: draw only where that worm is visible.' }], returnType: 'void', description: 'Draws a w x h box centred on (x, y), its corners from the top-left clockwise, turned angle radians about the centre using the brush fields. Inside wa.on.draw only.', example: 'b:box(x, y, 8, 6, angle)' },
+      { name: 'boxes', kind: 'method', parameters: [{ name: 'list', type: 'table', description: 'Flat list: x, y, w, h, angle, frame, color -- seven numbers a box' }, { name: 'count', type: 'int', optional: true, description: 'Boxes to draw; defaults to #list // 7, at most 4096.' }, { name: 'visibility', type: 'entity', optional: true, description: 'A worm: draw only where that worm is visible.' }], returnType: 'void', description: 'Draws count boxes in one call from a flat list of seven numbers each: x, y, w, h, angle, frame, color, every one given. count defaults to #list // 7 and is at most 4096. Inside wa.on.draw only.', example: 'b:boxes(list, #list // 7)' },
+      { name: 'quads', kind: 'method', parameters: [{ name: 'list', type: 'table', description: 'Flat list: x1, y1, x2, y2, x3, y3, x4, y4, frame, color -- ten numbers a quad' }, { name: 'count', type: 'int', optional: true, description: 'Quads to draw; defaults to #list // 10, at most 4096.' }, { name: 'visibility', type: 'entity', optional: true, description: 'A worm: draw only where that worm is visible.' }], returnType: 'void', description: 'Draws free corners from ten numbers each: x1, y1, x2, y2, x3, y3, x4, y4, then frame, color, as wa.draw.quad points. count defaults to #list // 10 and is at most 4096. Inside wa.on.draw only.', example: 'b:quads(list, #list // 10)' },
     ],
   },
   {

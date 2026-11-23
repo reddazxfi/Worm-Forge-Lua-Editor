@@ -37,6 +37,7 @@ export type HandleClassName =
   | 'WindowHandle'
   | 'HudTrayEntry'
   | 'TrailHandle'
+  | 'BrushHandle'
   | 'RippleHandle'
   | 'AmbientHandle';
 
@@ -61,6 +62,7 @@ export const HANDLE_ALIASES: Record<string, HandleClassName> = {
   WindowHandle: 'WindowHandle',
   HudTrayEntry: 'HudTrayEntry',
   TrailHandle: 'TrailHandle',
+  BrushHandle: 'BrushHandle',
   RippleHandle: 'RippleHandle',
   AmbientHandle: 'AmbientHandle',
 };
@@ -77,6 +79,7 @@ export const ALL_HANDLE_CLASSES: HandleClassName[] = [
   'WindowHandle',
   'HudTrayEntry',
   'TrailHandle',
+  'BrushHandle',
   'RippleHandle',
   'AmbientHandle',
 ];
@@ -201,6 +204,14 @@ export const RECEIVER_REGISTRY: ReceiverRow[] = [
     diagnose: [],
     className: 'TrailHandle',
     rule: 'trail-api',
+  },
+  {
+    // Draw brush (1.0): `local b = wa.draw.brush{...}`.
+    // `brush` names the handle by convention; `b` is too common to diagnose.
+    prefixes: ['brush'],
+    diagnose: ['brush'],
+    className: 'BrushHandle',
+    rule: 'brush-api',
   },
   {
     // Screen ripple (0.9.83): `local r = wa.view.ripple{...}`.

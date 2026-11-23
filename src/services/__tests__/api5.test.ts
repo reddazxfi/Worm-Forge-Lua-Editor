@@ -20,6 +20,10 @@ describe('1.0 verb review: the new surface is real', () => {
     'wa.on.draw(function()\n  wa.draw.tiles({ sprite = "sprites/rain", size = 8, x = 0, y = 0, view = { x = 0, y = 0, w = 100, h = 100 } })\nend)',
     'wa.on.draw(function()\n  wa.draw.flakes({ sprite = "sprites/snow", frames = { 0, 1 }, cell = 24, size = 3, view = { x = 0, y = 0, w = 100, h = 100 } })\nend)',
     'wa.on.draw(function()\n  wa.draw.puffs({ sprite = "sprites/cloud", rows = 3, y = 20, spacing = 120, gap = 40, view = { x = 0, y = 0, w = 100, h = 100 } })\nend)',
+    // A draw brush, created once and drawn from wa.on.draw.
+    'local b = wa.draw.brush({ sprite = "sprites/Glow.png", blend = "add" })\nwa.on.draw(function() b:box(10, 20, 8, 6, 0.5) end)',
+    'local b = wa.draw.brush({ sprite = "sprites/Glow.png" })\nwa.on.draw(function() b:boxes({}, 0) end)',
+    'local b = wa.draw.brush({ sprite = "sprites/Glow.png" })\nwa.on.draw(function() b:quads({}, 0) end)',
     // Screen-space HUD drawing.
     'wa.on.hud(function()\n  local w, h = wa.hud.size()\n  wa.hud.rect({ x = 0, y = 0, w = 120, h = 24 })\n  wa.hud.sprite({ sprite = "sprites/icon", x = 8, y = 8 })\n  wa.hud.text({ text = "Turn 3", x = 8, y = 8 })\nend)',
     // A pack's own panel.
@@ -135,6 +139,13 @@ describe('1.0 verb review: the removed surface is caught', () => {
       (x) => x.rule === 'wa-namespace-typo'
     );
     expect(d?.message).toContain('wa.actors.kind');
+  });
+
+  it('flags a misspelled brush method', () => {
+    const d = parseAndValidate(
+      'local brush = wa.draw.brush({ sprite = "sprites/Glow.png" })\nwa.on.draw(function() brush:boxx(1, 2, 3, 4) end)'
+    ).diagnostics.find((x) => x.rule === 'brush-api');
+    expect(d?.message).toContain('boxx');
   });
 
   it('flags wa.weapons.register (gone in 1.0; use wa.weapons.replace)', () => {

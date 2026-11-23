@@ -4152,6 +4152,7 @@ mod tests {
                 "WindowHandle",
                 "HudTrayEntry",
                 "TrailHandle",
+                "BrushHandle",
                 "RippleHandle",
                 "AmbientHandle",
             ]

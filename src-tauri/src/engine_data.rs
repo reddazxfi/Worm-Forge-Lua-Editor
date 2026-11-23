@@ -142,6 +142,7 @@ pub static WA_FUNCTIONS: &[&str] = &[
     "wa.world.placing",
     "wa.world.worm_selecting",
     "wa.draw.quads",
+    "wa.draw.brush",
     "wa.draw.trail",
     "wa.hud.fps_counter",
     "wa.hud.tray.add",
@@ -237,6 +238,11 @@ pub static HANDLE_CLASSES: &[(&str, &[&str])] = &[
         "push",
         "finish",
         "remove",
+    ]),
+    ("BrushHandle", &[
+        "box",
+        "boxes",
+        "quads",
     ]),
     ("RippleHandle", &[
         "stop",
@@ -438,6 +444,11 @@ pub static HANDLE_ALL_MEMBERS: &[(&str, &[&str])] = &[
         "remove",
         "points",
     ]),
+    ("BrushHandle", &[
+        "box",
+        "boxes",
+        "quads",
+    ]),
     ("RippleHandle", &[
         "stop",
     ]),
@@ -468,6 +479,7 @@ pub static RECEIVERS: &[(&str, &str, &str, &str)] = &[
     ("arrow", "WorldHandle", "world-object-api", ""),
     ("obj", "WorldHandle", "world-object-api", ""),
     ("object", "WorldHandle", "world-object-api", ""),
+    ("brush", "BrushHandle", "brush-api", ""),
 ];
 
 /// `(wa.X.all, handle class)` -- what a `for _, v in <wa.X.all()>` loop binds.

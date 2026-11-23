@@ -641,6 +641,35 @@ const FOG_SETTINGS: TableDoc = {
   ],
 };
 
+const BRUSH_SPEC: TableDoc = {
+  tableDoc: true,
+  id: 'wa.draw.brush',
+  title: 'Draw brush',
+  summary:
+    'A sheet made ready to draw once, so `brush:box`, `brush:boxes` and `brush:quads` allocate nothing.',
+  usedBy: ['wa.draw.brush'],
+  source: 'crates/lua-host/src/brush.rs (wa.draw.brush)',
+  note:
+    'The brush has no `visibility` field: pass it to `brush:box`, `brush:boxes` or `brush:quads`. `sprite` is required. Presentation only, and the drawing methods work only inside `wa.on.draw`. `wa.draw.quad` and `wa.draw.quads` are unchanged; a brush is optional.',
+  example: `local glow = wa.draw.brush({
+  sprite = "sprites/Glow.png",
+  blend = "add",
+})
+
+wa.on.draw(function()
+  glow:box(x, y, 24, 24, angle)
+end)`,
+  fields: [
+    { name: 'sprite', kind: 'sprite', required: true, description: 'The sheet to draw. A pack path belongs to the pack that made the brush.' },
+    { name: 'frame', kind: 'int', description: 'Sheet frame for every draw. Default 0.' },
+    { name: 'blend', kind: 'enum', type: 'blend mode', values: [['alpha', 'alpha'], ['add', 'add']], description: 'Alpha (default) or additive.' },
+    { name: 'depth', kind: 'int', description: 'Draw depth, as in wa.draw.quad. Defaults to the GPU objects band.' },
+    { name: 'color', kind: 'int', type: '0xAARRGGBB', description: 'One colour for all four corners. Default 0xFFFFFFFF.' },
+    { name: 'colors', kind: 'table', type: '{ c1, c2, c3, c4 }', description: 'A colour per corner; replaces color.' },
+    { name: 'uv', kind: 'table', type: '{ u0, v0, u1, v1 }', description: 'The part of the frame to show, each 0..1. Default the whole frame.' },
+  ],
+};
+
 const FIRE_BULLET: TableDoc = {
   tableDoc: true,
   id: 'wa.weapons.fire_bullet',
@@ -740,6 +769,7 @@ export const TABLE_DOCS: TableDoc[] = [
   WEAPON_DATA,
   SPAWN,
   LIGHT_SPEC,
+  BRUSH_SPEC,
   FOG_SETTINGS,
   HUD_WINDOW,
   FIRE_BULLET,

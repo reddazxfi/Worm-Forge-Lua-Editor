@@ -1652,6 +1652,24 @@ end`,
   trail:remove()
 end`,
   },
+  "BrushHandle:box": {
+    source: "WormForge API example",
+    code: `local function draw_ring(brush, x, y)
+  brush:box(x, y, 24, 24, 0, 0, 0x80FFFFFF)
+end`,
+  },
+  "BrushHandle:boxes": {
+    source: "WormForge API example",
+    code: `local function draw_puffs(brush, puffs)
+  brush:boxes(puffs, #puffs // 7)
+end`,
+  },
+  "BrushHandle:quads": {
+    source: "WormForge API example",
+    code: `local function draw_cells(brush, cells)
+  brush:quads(cells, #cells // 10)
+end`,
+  },
   "RippleHandle:stop": {
     source: "WormForge API example",
     code: `local function end_ripple(ripple)

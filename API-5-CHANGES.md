@@ -122,8 +122,24 @@ It draws on the GPU, handles newlines and wrapping, and has a 1023-byte limit.
 `wa.hud.text` has a 255-byte limit and the same newline/wrapping rules.
 
 New HUD/drawing surface in 1.0 includes `wa.hud.size`, `wa.hud.sprite`,
-`wa.hud.rect`, `wa.hud.text`, `wa.draw.tiles`, `wa.draw.flakes` and
-`wa.draw.puffs`. `wa.on.skim(fn)` reports a worm skimming off the water, and
+`wa.hud.rect`, `wa.hud.text`, `wa.draw.brush`, `wa.draw.tiles`,
+`wa.draw.flakes` and `wa.draw.puffs`.
+
+`wa.draw.brush` is optional: `wa.draw.quad` and `wa.draw.quads` are unchanged.
+A brush makes a sheet ready once, then `brush:box`, `brush:boxes` and
+`brush:quads` draw many boxes or quads without allocating tables each rendered
+frame:
+
+```lua
+local glow = wa.draw.brush{ sprite = "sprites/Glow.png", blend = "add" }
+
+wa.on.draw(function()
+  glow:box(x, y, 24, 24, angle)
+  glow:boxes(puffs, #puffs // 7)
+end)
+```
+
+`wa.on.skim(fn)` reports a worm skimming off the water, and
 `wa.on.missile_frame` takes `{ weapons, phase }` to skip missiles it does not
 need.
 

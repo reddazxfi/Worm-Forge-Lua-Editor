@@ -43,6 +43,11 @@ pub const RULES: &[RuleInfo] = &[
         origin: "engine_data.rs",
     },
     RuleInfo {
+        id: "brush-api",
+        summary: "`brush:` calls a method that BrushHandle does not have.",
+        origin: "engine_data.rs",
+    },
+    RuleInfo {
         id: "handle-union",
         summary: "Receiver is a WorldHandle -- a union of mine, drum, oil, crate, grave and worm, told apart only at run time by `.kind`. Advisory: narrow it first.",
         origin: "checks.rs",

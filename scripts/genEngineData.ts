@@ -71,6 +71,7 @@ const HANDLE_CLASSES = new Set([
   'WindowHandle',
   'HudTrayEntry',
   'TrailHandle',
+  'BrushHandle',
   'RippleHandle',
   'AmbientHandle',
 ]);

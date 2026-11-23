@@ -2,7 +2,7 @@
 
 Every `wa` function, handle method, event and data field a pack can use, by area. It replaces the capabilities page.
 
-WormForge 1.0.0 · `api_version = 5` · updated 2026-11-21.
+WormForge 1.0.0 · `api_version = 5` · updated 2026-11-22.
 
 Lua speaks pixels: positions and sizes in pixels, speeds in pixels per frame, with fractions. The engine converts to WA's 16.16 once.
 
@@ -1248,6 +1248,18 @@ Units: px
 Draws many quads of one sprite in one call: nine numbers each in `quads`, `x1, y1, x2, y2, x3, y3, x4, y4, color`, the corners as [`wa.draw.quad`](#wadrawquad)'s points. `count` (at most 4096) defaults to `#quads // 9`, so one list can be refilled each frame. For particles; much cheaper than a `wa.draw.quad` a quad. Since 0.9.83.
 
 Units: px
+
+### `wa.draw.brush`
+
+`local b = wa.draw.brush{ sprite, frame = 0, blend = "alpha"|"add", depth, color = 0xFFFFFFFF | colors = { c1, c2, c3, c4 }, uv = { u0, v0, u1, v1 } }`, then `b:box(x, y, w, h [, angle [, frame [, color [, visibility]]]])`, `b:boxes(list [, count [, visibility]])`, `b:quads(list [, count [, visibility]])`
+
+A sheet made ready to draw once, at setup or in a hook, so drawing many boxes or quads allocates nothing: a `wa.draw.quad` call makes six tables every rendered frame. [`wa.draw.quad`](#wadrawquad) and [`wa.draw.quads`](#wadrawquads) are unchanged; use them for a single quad, colours per corner, or a `uv` cut per call. A brush is optional, for many boxes or quads that share a sheet and fields. `sprite` is required; `blend` is `"alpha"` or `"add"`; `depth` places it as [`wa.draw.quad`](#wadrawquad) does; `color` is one `0xAARRGGBB` for all four corners, or `colors` four of them; `uv` shows part of the frame, each 0..1. The sheet is looked up at the first draw and kept; a pack path is read as the pack that made the brush.
+
+`b:box` draws a `w` x `h` box centred on (x, y), its corners from the top-left clockwise, turned `angle` radians about the centre (a positive angle turns it clockwise on screen, y pointing down), using the brush's fields. `frame` and `color` replace them for this box; `visibility = worm` draws only where that worm is visible. `b:boxes` draws `count` boxes in one call from a flat list of seven numbers each: `x, y, w, h, angle, frame, color`, every one given; `count` defaults to `#list // 7`. `b:quads` draws free corners from ten numbers each: `x1, y1, x2, y2, x3, y3, x4, y4`, then `frame, color`, as [`wa.draw.quad`](#wadrawquad)'s `points`; `count` defaults to `#list // 10`. `count` is at most 4096, and a list can be refilled without clearing what is past `count`.
+
+Only inside `wa.on.draw`. Presentation only: nothing reaches the simulation. An unknown brush field, a number that is not one, a negative frame, a missing sheet or a list entry that is not a number fails, naming the field (in a list, the box or quad).
+
+Units: px · angle radians
 
 ### `wa.draw.ribbon`
 
