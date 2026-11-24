@@ -4460,7 +4460,7 @@ end
     fn spec_key_data_survived_the_move_into_the_generator() {
         assert_eq!(
             SPEC_KEYS.len(),
-            64,
+            65,
             "spec key count changed -- check src/data/specKeys.ts was not truncated"
         );
         for required in [
@@ -4470,6 +4470,7 @@ end
             "patch",
             "on_fire",
             "sprite",
+            "collects_crates",
             "ends_invisibility",
             "available_in_caves",
             // 0.9.9 additions: the overlay projectile, the homing click, the two

@@ -541,14 +541,15 @@ describe('wa.audit is named, not called a typo (mirrors checks.rs)', () => {
 });
 
 describe('spec keys (API 4)', () => {
-  it('has exactly the 64 keys the checker test pins', () => {
+  it('has exactly the 65 keys the checker test pins', () => {
     // checks.rs: spec_key_data_survived_the_move_into_the_generator asserts the
     // same number. 1.0 drops `actor`, `airborne`, `cluster` and
     // `mole_dig_rotation`, and adds `slot`, `hold_as`, `cluster_sprite`,
-    // `cluster_homing_sprite`, `cluster_homing` and `armageddon`.
+    // `cluster_homing_sprite`, `cluster_homing`, `collects_crates` and
+    // `armageddon`.
     // If this fails, the two lists drifted -- fix src/data/specKeys.ts and keep
     // both numbers in step.
-    expect(WEAPON_SPEC_KEYS.length).toBe(64);
+    expect(WEAPON_SPEC_KEYS.length).toBe(65);
   });
 
   it.each([

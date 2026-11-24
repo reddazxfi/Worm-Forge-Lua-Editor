@@ -648,6 +648,7 @@ pub static SPEC_KEYS: &[&str] = &[
     "stock_fire_choice",
     "panel_icons",
     "hold",
+    "collects_crates",
     "ends_invisibility",
     "worm_sprites_toggle",
     "worm_sprites_team_tint",

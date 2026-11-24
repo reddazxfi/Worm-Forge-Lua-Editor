@@ -317,6 +317,7 @@ const WEAPON_CLAIM_FIELDS: TableField[] = [
   { name: 'icon', kind: 'sprite', description: 'Alias of `panel_icon`.' },
   { name: 'panel_icons', kind: 'table', type: 'stock icon names', description: 'Extra panel icons for the variant slots.' },
   { name: 'is_weapon', kind: 'bool', description: 'Default true. False makes it a non-weapon claim.' },
+  { name: 'collects_crates', kind: 'bool', description: "False: its missiles leave crates where they hit them. WA's missiles otherwise pick up any crate they reach for the firing team. Read from weapon data (bundles.rs) and applied by grants.rs." },
   { name: 'ends_invisibility', kind: 'bool', description: "Whether using it ends Invisibility: the team's, and the firing worm's own worm.invisibility. Left out, WA's answer: its record creates a projectile (attacking weapons end it; the rope, Girder, Teleport, Prod, Freeze, Jet Pack and the utilities don't)." },
   { name: 'eat_fire', kind: 'bool', description: 'Default false. The claim consumes the fire key itself.' },
   { name: 'click_finish', kind: 'bool', description: 'Default true. A click finishes the shot immediately.' },

@@ -94,6 +94,10 @@ export const WEAPON_SPEC_KEYS: string[] = [
   'stock_fire_choice',
   'panel_icons',
   'hold',
+  // A weapon's missiles leave crates where they hit them. Read from a
+  // weapon's data in bundles.rs (WEAPON_DATA) and implemented by grants.rs;
+  // WA's missiles otherwise pick up any crate they reach.
+  'collects_crates',
   'ends_invisibility',
   'worm_sprites_toggle',
   'worm_sprites_team_tint',

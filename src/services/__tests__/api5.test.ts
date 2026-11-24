@@ -56,6 +56,7 @@ describe('1.0 verb review: the new surface is real', () => {
     'wa.view.disable_zoom()',
     // A weapon claim's new pose source.
     'wa.weapons.replace({ copy_from = "stock.bazooka", hold_as = "stock.grenade" })',
+    'wa.weapons.replace({ copy_from = "stock.bazooka", collects_crates = false })',
   ];
 
   it.each(silent)('%s is real 1.0 API and produces no finding', (src) => {
