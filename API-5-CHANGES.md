@@ -39,6 +39,7 @@ same API 5 surface.
 | `wa.world.sky` (number) | `wa.world.sky()` (function) |
 | `projectile.cluster` | `projectile.cluster_sprite` |
 | `wa.weapons.retarget{ cluster = ... }` | `wa.weapons.retarget{ cluster_sprite = ... }` |
+| `wa.draw.quads{...}` | `brush:boxes(list)` or `brush:quads(list)` |
 | `object.uid` | `object.id`, or `a.id` on actors |
 
 ## Removed, with no alias
@@ -125,10 +126,10 @@ New HUD/drawing surface in 1.0 includes `wa.hud.size`, `wa.hud.sprite`,
 `wa.hud.rect`, `wa.hud.text`, `wa.draw.brush`, `wa.draw.tiles`,
 `wa.draw.flakes` and `wa.draw.puffs`.
 
-`wa.draw.brush` is optional: `wa.draw.quad` and `wa.draw.quads` are unchanged.
-A brush makes a sheet ready once, then `brush:box`, `brush:boxes` and
-`brush:quads` draw many boxes or quads without allocating tables each rendered
-frame:
+`wa.draw.brush` is the batch path: `wa.draw.quad` is unchanged, and a brush
+replaces `wa.draw.quads`. A brush makes a sheet ready once, then `brush:box`,
+`brush:boxes` and `brush:quads` draw many boxes or quads without allocating
+tables each rendered frame:
 
 ```lua
 local glow = wa.draw.brush{ sprite = "sprites/Glow.png", blend = "add" }

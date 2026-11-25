@@ -36,6 +36,7 @@ export type HandleClassName =
   | 'MagneticField'
   | 'WindowHandle'
   | 'HudTrayEntry'
+  | 'HudUtilityEntry'
   | 'TrailHandle'
   | 'BrushHandle'
   | 'RippleHandle'
@@ -61,6 +62,7 @@ export const HANDLE_ALIASES: Record<string, HandleClassName> = {
   FieldHandle: 'MagneticField',
   WindowHandle: 'WindowHandle',
   HudTrayEntry: 'HudTrayEntry',
+  HudUtilityEntry: 'HudUtilityEntry',
   TrailHandle: 'TrailHandle',
   BrushHandle: 'BrushHandle',
   RippleHandle: 'RippleHandle',
@@ -78,6 +80,7 @@ export const ALL_HANDLE_CLASSES: HandleClassName[] = [
   'MagneticField',
   'WindowHandle',
   'HudTrayEntry',
+  'HudUtilityEntry',
   'TrailHandle',
   'BrushHandle',
   'RippleHandle',
@@ -196,6 +199,14 @@ export const RECEIVER_REGISTRY: ReceiverRow[] = [
     diagnose: [],
     className: 'HudTrayEntry',
     rule: 'hud-tray-api',
+  },
+  {
+    // WA's utility-tray entry (1.0): `local u = wa.hud.utilities.add{...}`.
+    // The trace from the call is the confident path; the local name is not.
+    prefixes: ['utility_entry', 'uentry'],
+    diagnose: [],
+    className: 'HudUtilityEntry',
+    rule: 'hud-utility-api',
   },
   {
     // Persistent draw trail (0.9.62): `local t = wa.draw.trail{...}`.

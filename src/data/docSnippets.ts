@@ -673,6 +673,12 @@ end`,
   burst(ev, owner_for(ev.team))
 end)`,
   },
+  "wa.on.arrow_land": {
+    source: "WormForge API example",
+    code: `wa.on.arrow_land(function(ev)
+  wa.log("arrow at " .. ev.x .. ", " .. ev.y .. ", frame " .. ev.frame)
+end)`,
+  },
   "wa.on.turn_cleanup": {
     source: "WormForgeNew/mods/examples/tools/hello.lua",
     code: `wa.on.turn_cleanup(function(event)
@@ -1629,6 +1635,20 @@ end`,
 end`,
   },
   "HudTrayEntry:is_open": {
+    source: "WormForge API example",
+    code: `local function still_shown(entry)
+  return entry:is_open()
+end`,
+  },
+  "HudUtilityEntry:remove": {
+    source: "WormForge API example",
+    code: `local function clear_utility(entry)
+  if entry:is_open() then
+    entry:remove()
+  end
+end`,
+  },
+  "HudUtilityEntry:is_open": {
     source: "WormForge API example",
     code: `local function still_shown(entry)
   return entry:is_open()

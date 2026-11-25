@@ -24,6 +24,13 @@ describe('1.0 verb review: the new surface is real', () => {
     'local b = wa.draw.brush({ sprite = "sprites/Glow.png", blend = "add" })\nwa.on.draw(function() b:box(10, 20, 8, 6, 0.5) end)',
     'local b = wa.draw.brush({ sprite = "sprites/Glow.png" })\nwa.on.draw(function() b:boxes({}, 0) end)',
     'local b = wa.draw.brush({ sprite = "sprites/Glow.png" })\nwa.on.draw(function() b:quads({}, 0) end)',
+    // WA's utility tray, the arrow fields and the arrow-land event (1.0 RC5).
+    'local u = wa.hud.utilities.add({ weapon = "stock.low_gravity", team = 1 })\nu:remove()',
+    'local function f(worm)\n  local u = wa.hud.utilities.add({ weapon = "stock.low_gravity", worm = worm })\n  return u:is_open()\nend',
+    'wa.on.arrow_land(function(ev)\n  local a, x, frame, weapon = ev.arrow, ev.x, ev.frame, ev.weapon\nend)',
+    'local function f(arrow)\n  arrow.visible = false\n  local frame, weapon = arrow.frame, arrow.weapon\nend',
+    'local e = wa.hud.tray.add({ text = "F4", team = 1, greyed = true })\ne:set({ greyed = false })',
+    'local function f(worm) wa.sound.play(worm, 8, { pitch = 3 }) end',
     // Screen-space HUD drawing.
     'wa.on.hud(function()\n  local w, h = wa.hud.size()\n  wa.hud.rect({ x = 0, y = 0, w = 120, h = 24 })\n  wa.hud.sprite({ sprite = "sprites/icon", x = 8, y = 8 })\n  wa.hud.text({ text = "Turn 3", x = 8, y = 8 })\nend)',
     // A pack's own panel.
@@ -147,6 +154,13 @@ describe('1.0 verb review: the removed surface is caught', () => {
       'local brush = wa.draw.brush({ sprite = "sprites/Glow.png" })\nwa.on.draw(function() brush:boxx(1, 2, 3, 4) end)'
     ).diagnostics.find((x) => x.rule === 'brush-api');
     expect(d?.message).toContain('boxx');
+  });
+
+  it('flags wa.draw.quads (now brush:boxes or brush:quads)', () => {
+    const d = parseAndValidate(
+      'wa.on.draw(function() wa.draw.quads({ quads = {}, sprite = "spark" }) end)'
+    ).diagnostics.find((x) => x.rule === 'wa-namespace-typo');
+    expect(d?.message).toContain('wa.draw.quads');
   });
 
   it('flags wa.weapons.register (gone in 1.0; use wa.weapons.replace)', () => {

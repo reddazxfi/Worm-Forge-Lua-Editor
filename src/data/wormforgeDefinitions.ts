@@ -206,9 +206,16 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.hud.tray',
     type: 'table',
-    description: "The HUD weapon tray: wa.hud.tray.add{ weapon, team, key, to, lit, progress } puts a team's weapon in it.",
+    description: "The HUD weapon tray: wa.hud.tray.add{ weapon | text, team, key, to, lit, progress, greyed } puts a team's weapon, or a few letters, in it.",
     scope: 'global',
     example: 'local entry = wa.hud.tray.add({ weapon = "px.javelin", team = 1 })',
+  },
+  {
+    name: 'wa.hud.utilities',
+    type: 'table',
+    description: "WA's utility tray, the box of icons above the wind bar: wa.hud.utilities.add{ weapon, worm | team } puts a weapon's icon in it.",
+    scope: 'global',
+    example: 'local entry = wa.hud.utilities.add({ weapon = "stock.low_gravity", team = 1 })',
   },
   {
     name: 'wa.fog',
@@ -802,10 +809,10 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     parameters: [
       { name: 'target', type: 'entity', description: 'WormHandle, ActorHandle, or WorldHandle' },
       { name: 'id', type: 'int | string', description: 'Stock sound ID or pack WAV path' },
-      { name: 'flags', type: 'int', optional: true, description: 'Playback flags (default 8)' },
+      { name: 'opts', type: 'int | table', optional: true, description: 'Playback flags (default 8), or { flags, pitch }. pitch is -24..24 semitones and applies to a stock sound only.' },
     ],
     returnType: 'void',
-    description: "Plays a sound at a worm, actor or object. A sound can be a pack WAV path or one line of one of WA's soundbanks: declare it as `soundbank/<Bank>/<Line>` in the component's sounds, then play it by that name. Only the lines a component declares are loaded.",
+    description: "Plays a sound at a worm, actor or object. A sound can be a pack WAV path or one line of one of WA's soundbanks: declare it as `soundbank/<Bank>/<Line>` in the component's sounds, then play it by that name. Only the lines a component declares are loaded. A stock sound can play up to two octaves up or down: pass { pitch = semitones } as the third argument, -24 to 24. A pack WAV refuses a pitch.",
     example: 'wa.sound.play(worm, "soundbank/Kamikaze/Collect")',
   },
   {
@@ -1076,7 +1083,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     name: 'wa.on.draw',
     parameters: [{ name: 'callback', type: 'function', description: 'function() called once per rendered frame after simulation' }],
     returnType: 'void',
-    description: 'Runs once per Present to draw world-space GPU quads (wa.draw.quad, wa.draw.quads), brushes (wa.draw.brush), ribbons (wa.draw.ribbon) and trails (wa.draw.trail). wa.random is forbidden inside this callback.',
+    description: 'Runs once per Present to draw world-space GPU quads (wa.draw.quad), brushes (wa.draw.brush), ribbons (wa.draw.ribbon) and trails (wa.draw.trail). wa.random is forbidden inside this callback.',
     example: 'wa.on.draw(function()\n  wa.draw.quad({ points = { ... }, blend = "add" })\nend)',
   },
   {
@@ -1085,6 +1092,13 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     returnType: 'void',
     description: "When WA is about to blow up an oil drum, in the simulation. ev:replace() stands in for WA's blast, fires and sound, as Project X's COilDrum::Explosion; WA frees the drum either way.",
     example: 'wa.on.oil_explode(function(ev)\n  if ev.team == 3 then ev:replace() end\nend)',
+  },
+  {
+    name: 'wa.on.arrow_land',
+    parameters: [{ name: 'callback', type: 'function', description: 'function(ev) - ev.arrow is the WorldHandle, ev.x and ev.y are px, ev.frame is the frame of sprite 46 WA wrote, and ev.weapon is the weapon id (nil for an arrow wa.arrows.spawn made)' }],
+    returnType: 'void',
+    description: "When WA has just written an arrow into the land, in the simulation, before it frees the arrow. ev.arrow is the planted arrow, so a pack can stamp over the sprite WA wrote.",
+    example: 'wa.on.arrow_land(function(ev)\n  wa.log("arrow at " .. ev.x .. ", " .. ev.y)\nend)',
   },
   {
     name: 'wa.on.contact',
@@ -1482,21 +1496,12 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'if wa.world.worm_selecting() then ... end',
   },
   {
-    name: 'wa.draw.quads',
-    parameters: [
-      { name: 'spec', type: 'table', description: '{ quads, count, sprite, frame, blend, depth, visibility } -- nine numbers per quad: x1, y1, x2, y2, x3, y3, x4, y4, color' },
-    ],
-    returnType: 'void',
-    description: 'Draws many quads of one sprite in one call. count (at most 4096) defaults to #quads // 9, so one list can be refilled each frame. For particles; much cheaper than a wa.draw.quad a quad. Since 0.9.83.',
-    example: 'wa.draw.quads({ quads = quad_numbers, sprite = "spark" })',
-  },
-  {
     name: 'wa.draw.brush',
     parameters: [
       { name: 'spec', type: 'table', description: '{ sprite = "name", frame = 0, blend = "alpha"|"add", depth = int, color = 0xAARRGGBB | colors = { c1, c2, c3, c4 }, uv = { u0, v0, u1, v1 } } -- sprite is required; visibility goes to brush:box' },
     ],
     returnType: 'BrushHandle',
-    description: 'A sheet made ready to draw once, at setup or in a hook, so drawing many boxes or quads allocates nothing: a wa.draw.quad call makes six tables every rendered frame. sprite is required; blend is alpha or add; depth places it as wa.draw.quad does; color is one 0xAARRGGBB for all four corners, or colors four of them; uv shows part of the frame, each 0..1. The sheet is looked up at the first draw and kept; a pack path is read as the pack that made the brush. wa.draw.quad and wa.draw.quads are unchanged; a brush is optional.',
+    description: 'A sheet made ready to draw once, at setup or in a hook, so drawing many boxes or quads allocates nothing: a wa.draw.quad call makes six tables every rendered frame. sprite is required; blend is alpha or add; depth places it as wa.draw.quad does; color is one 0xAARRGGBB for all four corners, or colors four of them; uv shows part of the frame, each 0..1. The sheet is looked up at the first draw and kept; a pack path is read as the pack that made the brush. wa.draw.quad is unchanged. Use a brush for many boxes or quads that share a sheet and fields.',
     example: 'local b = wa.draw.brush({ sprite = "sprites/Glow.png", blend = "add" })\nwa.on.draw(function()\n  b:box(x, y, 8, 6, angle)\nend)',
   },
   {
@@ -1518,11 +1523,20 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.hud.tray.add',
     parameters: [
-      { name: 'spec', type: 'table', description: '{ weapon, team, key, to, lit, progress } -- key up to 8 bytes; to = "coalition" (default) | "active" | "all"; progress 0..1' },
+      { name: 'spec', type: 'table', description: '{ weapon | text, team, key, to, lit, progress, greyed } -- text 1..4 bytes instead of weapon; key up to 8 bytes; to = "coalition" (default) | "active" | "all"; progress 0..1' },
     ],
     returnType: 'HudTrayEntry',
-    description: "Puts a team's weapon in the HUD tray: cells at the top right in the weapon panel's look (icon, the team's ammo and delay), oldest at the right, each sliding in. Adding it again returns the same entry. Dropped once the team has none left, unless lit. At most 32.",
+    description: "Puts a team's weapon, or a few letters, in the HUD tray: cells at the top right in the weapon panel's look (icon, the team's ammo and delay), oldest at the right, each sliding in. text = \"F4\" gives a cell with that text and no ammo check. greyed darkens the cell as a delay does. Adding it again returns the same entry. Dropped once the team has none left, unless lit; a text cell stays until removed. At most 32.",
     example: 'local entry = wa.hud.tray.add({ weapon = "px.javelin", team = 1, key = "JAV" })',
+  },
+  {
+    name: 'wa.hud.utilities.add',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ weapon, worm | team } -- weapon is a placed or stock weapon id; give a worm or a team, not both' },
+    ],
+    returnType: 'HudUtilityEntry',
+    description: "Puts a weapon's icon in WA's utility tray, above the wind bar. A worm's entry shows while that worm has the turn; a team's shows on its turn. Adding the same weapon for the same worm or team returns the same entry. The engine drops a worm's entry when it dies. At most 32 across all packs.",
+    example: 'local entry = wa.hud.utilities.add({ weapon = "stock.low_gravity", team = 1 })',
   },
   {
     name: 'wa.music.set_pitch',
@@ -1701,7 +1715,9 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'fuse', kind: 'property', returnType: 'int', description: 'For mines: remaining fuse countdown in milliseconds' },
       { name: 'damage', kind: 'property', returnType: 'int | nil', description: "For oil drums: WA's damage count; nil for anything else (read only)." },
       { name: 'max_damage', kind: 'property', returnType: 'int | nil', description: "For oil drums: the damage at which the drum goes off (WA's 50); nil for anything else (read only)." },
-      { name: 'visible', kind: 'variable', returnType: 'bool | nil', description: "For oil drums and mines: whether WA draws it. false lets a pack draw its own drum or mine (a mine's countdown included); WA still moves and explodes it. nil for anything else; writable from any callback." },
+      { name: 'visible', kind: 'variable', returnType: 'bool | nil', description: "For oil drums, mines and arrows: whether WA draws it. false lets a pack draw its own drum, mine or arrow (a mine's countdown included); WA still moves and explodes it. nil for anything else; writable from any callback." },
+  { name: 'frame', kind: 'property', returnType: 'int | nil', description: 'For arrows: the frame of sprite 46 WA drew into the land, 0 to 31. nil for anything else (read only).' },
+  { name: 'weapon', kind: 'property', returnType: 'string | nil', description: 'For arrows: the weapon id that fired it; nil for one wa.arrows.spawn made and for anything else (read only).' },
       { name: 'gravity', kind: 'variable', returnType: 'number | nil', description: "The object's gravity factor: 1 WA's normal, 0 none. On mines, crates, oil drums, missiles, arrows and graves; nil on anything else. Writes from simulation callbacks." },
       { name: 'camera', kind: 'variable', returnType: 'nil | bool | int', description: "This object's camera requests: nil is WA's, false never moves the camera, 0..13 asks at that priority instead. wa.camera.follow still applies. Any callback." },
       { name: 'x', kind: 'variable', returnType: 'number', description: 'Position X in px' },
@@ -1804,9 +1820,18 @@ export const BUILTIN_CLASSES: ClassDef[] = [
     description: 'A HUD weapon-tray entry returned by wa.hud.tray.add (WormForge 0.9.83).',
     syntaxExample: 'local entry = wa.hud.tray.add({ weapon = "px.javelin", team = 1 })\nentry:set({ lit = true, progress = 0.5 })\nentry:remove()',
     members: [
-      { name: 'set', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ key, lit, progress } -- lit draws a yellow border and holds the entry; progress 0..1 draws a bar along its bottom' }], returnType: 'void', description: 'Changes what the tray entry names, without adding a new one.', example: 'entry:set({ lit = true, progress = 0.5 })' },
+      { name: 'set', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ key, lit, progress, greyed } -- lit draws a yellow border and holds the entry; progress 0..1 draws a bar along its bottom; greyed darkens the cell as a delay does' }], returnType: 'void', description: 'Changes what the tray entry names, without adding a new one.', example: 'entry:set({ lit = true, progress = 0.5 })' },
       { name: 'remove', kind: 'method', parameters: [], returnType: 'void', description: 'Removes the tray entry.', example: 'entry:remove()' },
       { name: 'is_open', kind: 'method', parameters: [], returnType: 'bool', description: 'Whether the entry is still in the tray.', example: 'if entry:is_open() then ... end' },
+    ],
+  },
+  {
+    name: 'HudUtilityEntry',
+    description: "An entry in WA's utility tray, returned by wa.hud.utilities.add (WormForge 1.0).",
+    syntaxExample: 'local entry = wa.hud.utilities.add({ weapon = "stock.low_gravity", team = 1 })\nentry:remove()',
+    members: [
+      { name: 'remove', kind: 'method', parameters: [], returnType: 'bool', description: 'Removes the entry. True if it was there.', example: 'entry:remove()' },
+      { name: 'is_open', kind: 'method', parameters: [], returnType: 'bool', description: 'Whether the entry is still in the tray. The same on every peer.', example: 'if entry:is_open() then ... end' },
     ],
   },
   {

@@ -207,7 +207,6 @@ describe('0.9.9 verbs.md additions (updated 2026-11-01)', () => {
     'wa.world.set_speed(0.5)',
     'if wa.world.placing() then return end',
     'if wa.world.worm_selecting() then return end',
-    'wa.draw.quads({ quads = {}, sprite = "spark" })',
     'local t = wa.draw.trail({ sprite = "spark", width = 8 })\nt:push(1, 2)\nt:finish()\nt:remove()',
     'wa.hud.fps_counter()',
     'local e = wa.hud.tray.add({ weapon = "px.javelin", team = 1 })\ne:set({ lit = true, progress = 0.5 })\ne:remove()',

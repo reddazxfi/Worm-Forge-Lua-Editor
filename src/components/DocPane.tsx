@@ -21,8 +21,11 @@ const RECEIVER_BY_CLASS: Record<string, string> = {
   MagneticField: 'field',
   WindowHandle: 'window',
   HudTrayEntry: 'tray',
+  HudUtilityEntry: 'utility_entry',
   TrailHandle: 'trail',
+  BrushHandle: 'brush',
   RippleHandle: 'ripple',
+  AmbientHandle: 'ambient',
 };
 
 export function receiverForClass(className: string): string {

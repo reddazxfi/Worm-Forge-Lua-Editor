@@ -70,6 +70,7 @@ const HANDLE_CLASSES = new Set([
   'MagneticField',
   'WindowHandle',
   'HudTrayEntry',
+  'HudUtilityEntry',
   'TrailHandle',
   'BrushHandle',
   'RippleHandle',

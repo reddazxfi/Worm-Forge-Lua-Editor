@@ -651,7 +651,7 @@ const BRUSH_SPEC: TableDoc = {
   usedBy: ['wa.draw.brush'],
   source: 'crates/lua-host/src/brush.rs (wa.draw.brush)',
   note:
-    'The brush has no `visibility` field: pass it to `brush:box`, `brush:boxes` or `brush:quads`. `sprite` is required. Presentation only, and the drawing methods work only inside `wa.on.draw`. `wa.draw.quad` and `wa.draw.quads` are unchanged; a brush is optional.',
+    'The brush has no `visibility` field: pass it to `brush:box`, `brush:boxes` or `brush:quads`. `sprite` is required. Presentation only, and the drawing methods work only inside `wa.on.draw`. `wa.draw.quad` is unchanged. For many boxes or quads, use a brush.',
   example: `local glow = wa.draw.brush({
   sprite = "sprites/Glow.png",
   blend = "add",

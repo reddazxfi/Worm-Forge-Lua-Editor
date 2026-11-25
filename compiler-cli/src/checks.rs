@@ -3283,10 +3283,10 @@ mod tests {
 
     #[test]
     fn a_method_owned_by_a_different_handle_class_passes_the_union_check() {
-        // `frame` is a LuaActor method; `obj` alone suggests WorldHandle. Accepting it
+        // `gfx` is a LuaActor method; `obj` alone suggests WorldHandle. Accepting it
         // is the entire point of consulting ALL handle classes (measured notice).
         assert_eq!(
-            only_finding("if obj.kind == \"x\" then\n  obj:frame(1)\nend"),
+            only_finding("if obj.kind == \"x\" then\n  obj:gfx({ angle = 45 })\nend"),
             ("handle-union".to_string(), "info".to_string(), 2, 1)
         );
     }
@@ -4151,6 +4151,7 @@ mod tests {
                 "MagneticField",
                 "WindowHandle",
                 "HudTrayEntry",
+                "HudUtilityEntry",
                 "TrailHandle",
                 "BrushHandle",
                 "RippleHandle",
