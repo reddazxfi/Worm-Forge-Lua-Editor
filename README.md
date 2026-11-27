@@ -1,6 +1,6 @@
 
 
-# 🪱⚡ WormBench Code Studio
+# 🪱⚡ WormBench Luna
 > **Elevate your Worms Armageddon modding workflow with a seamless, robust, next-generation Lua development experience.** 🚀
 
 > **New to WormBench modding?** Start with [MODDING.md](MODDING.md). It explains
@@ -11,7 +11,7 @@
 > [API-5-CHANGES.md](API-5-CHANGES.md) for the 1.0/API 5 migration
 > list: renamed and removed verbs, new fields and the current generated counts.
 
-WormBench Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully crafted** code editor designed to **empower** modders to **unlock** the full potential of the WormBench scripting engine. Whether you're a seasoned modder or just getting started, our **cutting-edge** toolkit has you covered. ✨
+WormBench Luna is a **powerful**, **blazing-fast**, and **thoughtfully crafted** code editor designed to **empower** modders to **unlock** the full potential of the WormBench scripting engine. Whether you're a seasoned modder or just getting started, our **cutting-edge** toolkit has you covered. ✨
 
 ---
 

@@ -88,7 +88,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
           <div>
             <h1 className="font-bold text-[13px] tracking-tight flex items-center gap-1.5">
               <span className={isLight ? 'text-slate-900 font-extrabold' : 'text-[#e4edf7]'}>
-                WormBench Code Studio
+                WormBench Luna
               </span>
               <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-500 font-mono border border-amber-500/30">
                 v1.0.0 API 5

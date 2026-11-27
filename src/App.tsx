@@ -455,7 +455,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   >([
     {
       time: new Date().toLocaleTimeString(),
-      text: 'WormBench Code Studio initialized. Lockstep AST engine active.',
+      text: 'WormBench Luna initialized. Lockstep AST engine active.',
       type: 'info',
     },
     {

@@ -135,7 +135,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
               marginBottom: 8,
             }}
           >
-            WormBench stopped rendering
+            WormBench Luna stopped rendering
           </div>
           <h1 style={{ fontSize: 19, fontWeight: 700, margin: '0 0 8px' }}>
             The editor hit an error
