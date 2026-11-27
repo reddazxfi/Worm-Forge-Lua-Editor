@@ -1,6 +1,6 @@
 
 
-# 🪱⚡ WormBench Luna
+# <img src="public/wormbench-luna.png" width="38" height="38" align="absmiddle" alt="WormBench Luna" /> WormBench Luna
 > **Elevate your Worms Armageddon modding workflow with a seamless, robust, next-generation Lua development experience.** 🚀
 
 > **New to WormBench modding?** Start with [MODDING.md](MODDING.md). It explains

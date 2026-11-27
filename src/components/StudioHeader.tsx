@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { ModFolderInfo } from '../types/wormbench';
 import type { AppSurfaces } from '../services/appTheme';
+import lunaLogo from '../assets/wormbench-luna-transparent.png';
 
 // Packs deliberately NOT offered by the "Load Mod / Script" menu. These would
 // be examples that are also loaded by the mod loader, so offering them here as
@@ -82,9 +83,12 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
       <div className="px-3 py-2 flex items-center justify-between gap-3">
         {/* Brand Zone */}
         <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 font-bold shadow-md">
-            W
-          </div>
+          <img
+            src={lunaLogo}
+            alt="WormBench Luna"
+            className="w-7 h-7 object-contain shrink-0 drop-shadow-sm"
+            style={{ imageRendering: 'pixelated' }}
+          />
           <div>
             <h1 className="font-bold text-[13px] tracking-tight flex items-center gap-1.5">
               <span className={isLight ? 'text-slate-900 font-extrabold' : 'text-[#e4edf7]'}>
