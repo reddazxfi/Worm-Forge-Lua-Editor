@@ -400,7 +400,7 @@ end
 
 -------------------------------------------------------------------------------
 -- API 4 additions: new wa.* functions that MUST stay silent (no typo warning)
--- Regression probes for WormForge 0.9.1 / Lua API 4.
+-- Regression probes for WormBench 0.9.1 / Lua API 4.
 -------------------------------------------------------------------------------
 local function api4_panel_functions()
   local layout = wa.panel.layout()

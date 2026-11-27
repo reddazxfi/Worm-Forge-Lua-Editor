@@ -1,18 +1,18 @@
-# Making a WormForge mod
+# Making a WormBench mod
 
-This guide is for someone who can write Lua but has never used WormForge.
+This guide is for someone who can write Lua but has never used WormBench.
 It describes the format the loader actually reads, not an idealized version of
 it.
 
 If you have used Project X, the difference is one extra layer:
 
 - **Project X:** the scheme selected a script, and the script ran.
-- **WormForge:** a **profile** selects components from installed bundles, and
+- **WormBench:** a **profile** selects components from installed bundles, and
   each selected component's `install(ctx)` runs.
 
 That is the whole extra concept. Everything else is ordinary Lua.
 
-> **Coming from API 4?** WormForge 1.0 uses `api_version = 5`. The verb
+> **Coming from API 4?** WormBench 1.0 uses `api_version = 5`. The verb
 > renames, removals and new fields are collected in
 > [API-5-CHANGES.md](API-5-CHANGES.md).
 
@@ -23,7 +23,7 @@ That is the whole extra concept. Everything else is ordinary Lua.
 A mod is a folder:
 
 ```text
-WormForge/Mods/hello/
+WormBench/Mods/hello/
   mod.toml
   code/hello.lua
   profiles/Hello.toml
@@ -72,10 +72,10 @@ that is pre-API-4 code. Do not copy it into a new mod.
 
 ## Step 1: Make the folder
 
-Put your own bundle directly under the game's `WormForge/Mods/` folder:
+Put your own bundle directly under the game's `WormBench/Mods/` folder:
 
 ```text
-WormForge/Mods/hello/
+WormBench/Mods/hello/
   mod.toml
   code/hello.lua
   profiles/Hello.toml
@@ -249,9 +249,9 @@ delay = 1     # one turn before it can be used
 Omit a field to inherit the weapon's `defaults`. `ammo`, `delay` and `crate` are
 the common overrides; the loader's weapon panel exposes the same fields.
 
-Bundled profiles live in `profiles/` and are copied into `WormForge/Profiles`
+Bundled profiles live in `profiles/` and are copied into `WormBench/Profiles`
 when the pack is installed. For local testing you can also put the profile
-directly in `WormForge/Profiles/` and select it in the loader.
+directly in `WormBench/Profiles/` and select it in the loader.
 
 ---
 
@@ -320,7 +320,7 @@ What is happening:
 
 If you want the shortest working example, use this feature.
 
-`WormForge/Mods/hello/mod.toml`:
+`WormBench/Mods/hello/mod.toml`:
 
 ```toml
 id = "hello"
@@ -337,7 +337,7 @@ name = "Hello"
 entry = "code/hello.lua"
 ```
 
-`WormForge/Mods/hello/profiles/Hello.toml`:
+`WormBench/Mods/hello/profiles/Hello.toml`:
 
 ```toml
 description = "Hello mod"
@@ -345,7 +345,7 @@ description = "Hello mod"
 features = ["hello.main"]
 ```
 
-`WormForge/Mods/hello/code/hello.lua`:
+`WormBench/Mods/hello/code/hello.lua`:
 
 ```lua
 return function(ctx)
@@ -359,7 +359,7 @@ end
 
 Then:
 
-1. Put the folder under `WormForge/Mods/`.
+1. Put the folder under `WormBench/Mods/`.
 2. Open the loader and find **Hello**.
 3. Select the **Hello mod** profile.
 4. Start a local match.
@@ -624,7 +624,7 @@ resolved value.
 
 ## Testing
 
-1. Put the bundle under `WormForge/Mods/<name>/`.
+1. Put the bundle under `WormBench/Mods/<name>/`.
 2. Open the loader and find the bundle.
 3. Install/refresh it if the loader offers that.
 4. Select the profile in **Profiles**.
@@ -688,7 +688,7 @@ If you remember one thing:
 
 ## Examples worth reading
 
-In your WormForge mods folder:
+In your WormBench mods folder:
 
 - `wf-lib/component_demo/` — the smallest weapon + feature + profile bundle.
 - `holdable_uzi/` — the generated starter shape, with one weapon option.

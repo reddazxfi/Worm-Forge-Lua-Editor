@@ -1,4 +1,4 @@
-# WormForge profile "0.9.3 demo profile": made in the mod loader; safe to edit by hand.
+# WormBench profile "0.9.3 demo profile": made in the mod loader; safe to edit by hand.
 description = "Pointer"
 features = ["core.fog", "core.utilities"]
 

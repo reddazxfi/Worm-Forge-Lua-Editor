@@ -9,7 +9,7 @@ import { profilesDirFromModsRoot } from '../profilesFolder';
 
 describe('parseProfile', () => {
   it('reads the demo profile the engine ships (inline crates, [weapons] placements)', () => {
-    // Shaped from WormForge-main-source/mods/component_demo/profiles/Demo.toml.
+    // Shaped from WormBench-main-source/mods/component_demo/profiles/Demo.toml.
     const toml = [
       '# The demo weapon set.',
       'description = "Big Bazooka plus a few stock weapons; nothing else on the panel."',
@@ -210,18 +210,18 @@ describe('bundledBy', () => {
 });
 
 describe('profilesDirFromModsRoot', () => {
-  // Mirrors the engine: profile_dir(mods) = wormforge_root(mods)/Profiles, and
-  // wormforge_root(mods) = mods.parent() (components.rs:1372-1378).
+  // Mirrors the engine: profile_dir(mods) = wormbench_root(mods)/Profiles, and
+  // wormbench_root(mods) = mods.parent() (components.rs:1372-1378).
   it('derives the sibling Profiles folder on Windows', () => {
-    expect(profilesDirFromModsRoot('D:\\Worms\\WormForge\\Mods')).toBe('D:\\Worms\\WormForge\\Profiles');
+    expect(profilesDirFromModsRoot('D:\\Worms\\WormBench\\Mods')).toBe('D:\\Worms\\WormBench\\Profiles');
   });
 
   it('derives it on POSIX', () => {
-    expect(profilesDirFromModsRoot('/home/me/WormForge/Mods')).toBe('/home/me/WormForge/Profiles');
+    expect(profilesDirFromModsRoot('/home/me/WormBench/Mods')).toBe('/home/me/WormBench/Profiles');
   });
 
   it('ignores trailing separators and mixed separators', () => {
-    expect(profilesDirFromModsRoot('D:/Worms/WormForge/Mods///')).toBe('D:\\Worms\\WormForge\\Profiles');
+    expect(profilesDirFromModsRoot('D:/Worms/WormBench/Mods///')).toBe('D:\\Worms\\WormBench\\Profiles');
   });
 
   it('gives the drive root the engine would give for a top-level Mods', () => {

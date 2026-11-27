@@ -1,4 +1,4 @@
-# wfcheck: check WormForge mods without the game
+# wbcheck: check WormBench mods without the game
 # SUPPORTS 1.0.0 API 5.0 - LATER VERSIONS WILL WARN A LOT
 # NOT SOURCE OF TRUTH - VIBE CODED - TRUST EXISTING MODS UNDER PX OVER THIS
 
@@ -7,21 +7,21 @@ typos in engine calls, names that read as `nil`, and ~ the important ones ~ the
 desync traps that make one player's game disagree with everyone else's.
 
 It runs the **real Lua 5.4 compiler** (the same one the game uses) plus the
-WormForge checker. It is a single executable. You do not need the editor app,
+WormBench checker. It is a single executable. You do not need the editor app,
 and you do not need to run a match.
 
 ```
 C:\Games\Worms\Mods> check-mods.bat
 
 mods\mymod\rules.lua:12:5: warning[wa-namespace-typo] wa.repalce is not an engine API.
-    = `wa.repalce` does not exist in WormForge 1.0.0.
+    = `wa.repalce` does not exist in WormBench 1.0.0.
 
 mods\mymod\rules.lua:44:1: error[lockstep-rng] math.random() is not lockstep-safe. It is
     seeded per-client, so each peer draws a different number and the match
     desyncs. Use wa.random(min, max) to draw from the shared lockstep RNG, or a
     counter seeded deterministically from the turn number.
 
-checked 3 file(s): 1 error(s), 1 warning(s), 0 note(s) (WormForge 1.0.0)
+checked 3 file(s): 1 error(s), 1 warning(s), 0 note(s) (WormBench 1.0.0)
 ```
 
 ---
@@ -32,7 +32,7 @@ You need two files in the same folder:
 
 | | |
 |---|---|
-| `wfcheck.exe` | the program (Windows) |
+| `wbcheck.exe` | the program (Windows) |
 | `check-mods.bat` | the thing you double-click |
 
 Double-click `check-mods.bat` and it checks that folder. The window stays open
@@ -45,7 +45,7 @@ prompt:
 check-mods.bat  C:\Games\Worms\Mods\mymod
 ```
 
-**macOS or Linux?** Use `check-mods.sh` and the `wfcheck` binary instead:
+**macOS or Linux?** Use `check-mods.sh` and the `wbcheck` binary instead:
 
 ```
 chmod +x check-mods.sh      (only the first time)
@@ -93,12 +93,12 @@ check-mods.bat /nopause --quiet --strict C:\...\Mods || echo "mods have problems
 
 ## Every option
 
-Run `wfcheck --help`. The ones you are most likely to want:
+Run `wbcheck --help`. The ones you are most likely to want:
 
 | | |
 |---|---|
-| `wfcheck <folder>` | check a folder (and everything under it) |
-| `wfcheck rules.lua` | check one file |
+| `wbcheck <folder>` | check a folder (and everything under it) |
+| `wbcheck rules.lua` | check one file |
 | `--only <rule>` | show just that rule, e.g. `--only lockstep-rng` |
 | `--explain <rule>` | what that rule means |
 | `--list-rules` | every rule it knows |
@@ -108,7 +108,7 @@ Run `wfcheck --help`. The ones you are most likely to want:
 
 ## Known limits
 
-- The engine API tables are pinned to **WormForge 1.0.0**. A newer engine may
+- The engine API tables are pinned to **WormBench 1.0.0**. A newer engine may
   have calls this build does not know about; it will not invent them. The tables
   are generated from the editor's definitions and checked against the current
   1.0.0 `verbs.md` surface plus the 1.0.0 release notes (camera, handle

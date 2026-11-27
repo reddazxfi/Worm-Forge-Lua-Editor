@@ -9,7 +9,7 @@
 // would cost a full compile-load cycle each and take minutes; one process that parses
 // the manifest once and loops takes seconds.
 //
-// Usage: cargo run --bin wasmforge-sweep -- <manifest.json>
+// Usage: cargo run --bin wormbench-sweep -- <manifest.json>
 //   manifest: a JSON array of absolute paths.
 //   stdout:   a JSON object mapping each path to a FileReport:
 //

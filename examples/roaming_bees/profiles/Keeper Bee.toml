@@ -1,6 +1,6 @@
 # The Keeper Bee and its map swarm, with infinite ammo, so it can be tested at
 # once. Load it from the mod loader's Profile tab once the loader has copied it
-# into WormForge/Profiles, or copy this file there by hand. Move the weapon
+# into WormBench/Profiles, or copy this file there by hand. Move the weapon
 # anywhere on the panel; any weapon may go any place.
 #
 # The swarm is an add-on, not the weapon: leaving it out of `features` keeps the

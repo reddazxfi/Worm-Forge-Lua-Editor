@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title WormForge Editor - Tauri EXE build
+title WormBench Editor - Tauri EXE build
 cd /d "%~dp0"
 
 where node >nul 2>nul || (echo [ERROR] Node.js not found. Install from https://nodejs.org & pause & exit /b 1)
@@ -33,6 +33,6 @@ call npx tauri build
 if errorlevel 1 (echo [ERROR] Tauri build failed. Read the error above - common causes: ^(1^) tauri.conf.json frontendDist ^("npm run build" must succeed first^), ^(2^) missing permissions in src-tauri\capabilities\default.json, ^(3^) missing Visual Studio Build Tools with "Desktop development with C++" for the Rust link step. & pause & exit /b 1)
 
 echo.
-echo DONE: %CD%\src-tauri\target\release\wormforge-code-editor.exe
+echo DONE: %CD%\src-tauri\target\release\wormbench-code-editor.exe
 explorer "src-tauri\target\release"
 pause

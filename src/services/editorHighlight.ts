@@ -117,7 +117,7 @@ export function highlightLuaLine(
       continue;
     }
 
-    // 3. Arrow operator -> (Flag as invalid in WormForge Lua)
+    // 3. Arrow operator -> (Flag as invalid in WormBench Lua)
     if (line.slice(i, i + 2) === '->') {
       result += `<span class="text-rose-500 font-bold underline decoration-wavy decoration-rose-500/70" title="'->' is not valid in Lua; use '.' (e.g. wa.log()) or ':' (e.g. a:gfx)">-&gt;</span>`;
       i += 2;
@@ -190,7 +190,7 @@ export function highlightLuaLine(
         result += `<span class="${p.waHandle}">${escapeHtml(word)}</span>`;
       // A function CALL: `(` OR `{` directly after. `{` matters because
       // `spawn_actor{ ... }` is Lua's call-with-table-argument sugar, and it is
-      // how a lot of WormForge code reads -- `spawn_actor{` was rendering as
+      // how a lot of WormBench code reads -- `spawn_actor{` was rendering as
       // plain text before this.
       } else if ((nextCh === '(' || nextCh === '{') && prevCh !== '.' && prevCh !== ':') {
         // A plain function CALL: `print`, `tostring`, `isClearOfTerrain`.

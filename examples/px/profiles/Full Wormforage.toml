@@ -1,4 +1,4 @@
-# WormForge profile "Full Wormforage": made in the mod loader; safe to edit by hand.
+# WormBench profile "Full Wormforage": made in the mod loader; safe to edit by hand.
 description = "The Full Fromage"
 features = ["core.utilities", "px.oil_drums", "px.saw_random", "spawn.bees.swarm"]
 

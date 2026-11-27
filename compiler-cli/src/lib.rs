@@ -1,4 +1,4 @@
-//! `wfcheck` -- the WormForge Lua checker as a library and a command line tool.
+//! `wbcheck` -- the WormBench Lua checker as a library and a command line tool.
 //!
 //! It answers one question without needing the desktop app and without needing
 //! the game running: **would this mod folder load, and would it desync?**
@@ -54,7 +54,7 @@ pub mod scopes;
 pub use diagnostic::{AstDiagnostic, Severity};
 pub use report::{check_file, check_source, CheckReport};
 
-/// The pinned WormForge version these tables and messages describe.
+/// The pinned WormBench version these tables and messages describe.
 ///
 /// Duplicated as a literal rather than imported: the checker's copy
 /// (`checks.rs:48`) is a private constant in a module we include, and there is

@@ -2,7 +2,7 @@
 //
 // RENAMED, AND DELIBERATELY SO. This was "Keycode Reference & Tester" and it was
 // lying. It showed Windows Virtual-Key codes (VK_LEFT 0x25, VK_SPACE 0x20) as if a
-// pack could use them. WormForge has never mapped the keyboard to virtuals for
+// pack could use them. WormBench has never mapped the keyboard to virtuals for
 // Lua: `wa.world.keys()` returns nine plain values and a pack never sees a code.
 // The old table also listed F1-F10, Enter, Backspace and Tab as if they were
 // readable, and none of them are -- `poll_keys()` never polls those keys at all.
@@ -26,7 +26,7 @@ interface KeyboardReferenceProps {
   onInsertCode: (snippet: string) => void;
 }
 
-/** What the last press set. `field` is null for a key WormForge does not read. */
+/** What the last press set. `field` is null for a key WormBench does not read. */
 interface Pressed {
   /** The physical key, as the OS names it ("KeyQ"). Shown only for the label. */
   eventCode: string;
@@ -145,7 +145,7 @@ export const KeyboardReference: React.FC<KeyboardReferenceProps> = ({
               pressed.unmapped ? (
                 <div className="font-mono text-[11.5px] mt-1 text-amber-300">
                   <b>{prettyKeyName(pressed.eventCode)}</b> is not one of the keys
-                  WormForge reads. Nothing in wa.world.keys() will change.
+                  WormBench reads. Nothing in wa.world.keys() will change.
                 </div>
               ) : (
                 <div className="flex items-center gap-2 font-mono mt-1 text-sm flex-wrap">
@@ -271,7 +271,7 @@ export const KeyboardReference: React.FC<KeyboardReferenceProps> = ({
           <p className="mt-3 font-sans text-[10.5px] leading-relaxed text-[#6f8095]">
             These are the only nine values{' '}
             <span className="font-mono">wa.world.keys()</span> returns. There are no
-            keycodes: WormForge has not mapped the keyboard to virtual keys for Lua, so a
+            keycodes: WormBench has not mapped the keyboard to virtual keys for Lua, so a
             pack cannot read a raw key value. Every field above is sampled once per frame
             and locked for that frame, so two reads in the same frame always agree.
           </p>

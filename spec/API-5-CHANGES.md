@@ -1,7 +1,7 @@
-# WormForge 1.0 / Lua API 5: what changed
+# WormBench 1.0 / Lua API 5: what changed
 
-This is the migration note for packs written against **API 4** (WormForge
-0.9.x). WormForge 1.0 is **Lua API 5**. The canonical verb list is
+This is the migration note for packs written against **API 4** (WormBench
+0.9.x). WormBench 1.0 is **Lua API 5**. The canonical verb list is
 `spec/verbs.md`; this page is the short version of what moved, vanished or
 started behaving differently.
 
@@ -255,21 +255,52 @@ is synchronized. The rest of the pack-owned panel surface is
 - The body id is the same in `wa.missiles.all()`, `wa.on.missile_frame`, an
   `on_explode` event's `missile` and what `wa.weapons.launch` returns.
 
+## Added since the RC5 sync
+
+These reached the engine between RC5 and the 1.0 release candidate and are now
+in `spec/verbs.md`, the editor tables and both Rust checkers.
+
+- `wa.on.frame(fn)` runs once per simulation frame, after WA's own frame, with
+  no arguments. It is a simulation callback with no worm or actor of its own:
+  spawns there name their owner (`owner = "none"` for no team).
+- `wa.world.explode{ x, y, owner, damage = 50, id = 100, below = true }` makes
+  WA's own explosion at a point. `owner` is required; `"none"` is no team's.
+- `wa.magnetism.field` also accepts a point (`{ x, y }`), and `field:move(x, y)`
+  moves such a field from the next simulation step. Fields on an actor move
+  with it and cannot be moved.
+- `wa.mines.spawn{ owner = "none", x, y }` lays the map's mine at the world
+  root: its blasts and hits are no team's.
+- `wa.hud.key(name)` reads this machine's keyboard inside `wa.on.hud`, and
+  `wa.panel.close()` shuts WA's panel on this machine. Both are HUD-only and
+  unsynchronized.
+- `a:sleep(frames, { near = px })` skips an actor's frame calls until it wakes
+  (0..3000 frames; land, water, a hit, a warp, damage or a nearby living worm);
+  the waking call's `ev.slept` counts the skipped calls.
+- `a.alive` and `object.alive` report whether a handle still lives. `a.grab`
+  (true, false, `"worm"`, `"projectile"`) says what may pick an actor up.
+- `worm.shots` is the selected weapon's shots per use (1..127, writable from
+  simulation callbacks); `worm.shots_used` is read only.
+- `mine.fuse` is writable from simulation callbacks (`-1` rolls it when the
+  mine triggers, else 0..10000 ms).
+- A claim's `hold.draw_hand = false` loads the hand sheet without drawing it.
+- `wa.world.trace` and `wa.world.collides` take `"actors"` and `"missiles"` in
+  `with`, plus `grab = { "object", "worm", "projectile" }`.
+
 ## Generated contract in 1.0
 
 The editor and both Rust checkers pin these values:
 
 | Name | Count |
 |---|---:|
-| `WA_FUNCTIONS` | 135 |
-| `HANDLE_CLASSES` | 12 |
-| `RECEIVERS` | 15 |
+| `WA_FUNCTIONS` | 141 |
+| `HANDLE_CLASSES` | 14 |
+| `RECEIVERS` | 16 |
 | `LOOP_ELEMENT` | 8 |
 | `KNOWN_GLOBALS` | 38 |
 | `WORM_STATES` (debug labels) | 32 |
 | `READABLE_WORM_STATES` | 31 |
 | `SETTABLE_WORM_STATES` | 5 |
-| `SPEC_KEYS` | 64 |
+| `SPEC_KEYS` | 65 |
 | `PROJECTILE_KEYS` | 8 |
 | `RECORD_FIELDS` | 257 |
 
@@ -289,7 +320,7 @@ npx vitest run
 - Bundled `examples/` were re-imported from the 1.0 mods tree (`35122c6`: PX
   0.20.86, Core Utilities 0.21.0, Keeper Bee 1.2.1) and now check clean at API
   5. `npm run gen:corpus` rebuilds the embedded corpus from `examples/`.
-- A `wfcheck.exe` built before 1.0 does not know the 1.0 surface. Use it for
+- A `wbcheck.exe` built before 1.0 does not know the 1.0 surface. Use it for
   syntax, path and lockstep checks, not as proof that a 1.0 verb is valid.
 - The editor's generated data and both Rust checker trees must stay identical;
   run the generators and `cmp` after touching the definitions.

@@ -1,7 +1,7 @@
 # Keeper Bee
 
 reddaz's Project X bee (the report's §5 queue entry `bee.pxc` -> `bee_spawner.lua`),
-ported from the API 1.0 script `bee.lua` to WormForge **API 4**.
+ported from the API 1.0 script `bee.lua` to WormBench **API 4**.
 
 | Component | What it is |
 |---|---|
@@ -21,7 +21,7 @@ spins detonates.
 - `profiles/Keeper Bee.toml` -- a profile placing the weapon in F1 and the swarm
   on, infinite ammo.
 - `sprites/`, `sounds/` -- PX's own bee art and buzzes, unchanged.
-- Checked clean: `wfcheck API-4.0/random_bees --strict
+- Checked clean: `wbcheck API-4.0/random_bees --strict
   --exclude semantic_all_rules.lua` -> no errors or warnings (REPORT.md 20);
   `check_paths.py` -> every declared path resolves.
 
@@ -63,7 +63,7 @@ the original `bee.lua`'s lines.
 
 | Original | API 4 | Why |
 |---|---|---|
-| `math.cos`/`math.sin`/`math.atan` (`:68`, `:426`, `:461`) | `wa.math.cos`/`sin`/`atan` | Lua's go to each machine's C runtime and can differ in the last bit: a desync. The engine's are WA's sine table and a portable atan (`wfcheck` rule `lockstep-rng`). |
+| `math.cos`/`math.sin`/`math.atan` (`:68`, `:426`, `:461`) | `wa.math.cos`/`sin`/`atan` | Lua's go to each machine's C runtime and can differ in the last bit: a desync. The engine's are WA's sine table and a portable atan (`wbcheck` rule `lockstep-rng`). |
 | `math.deg` (`:426`, `:461`) | `rad * (180 / math.pi)` | No engine twin; it is one multiply. (The original's loop variables also named `deg` are `angdeg` here, so they do not shadow it.) |
 | `wa.random(-rangeX, rangeX)`, `wa.random(sliceStart, sliceEnd)` (`:212`, `:570`) | the same, floored first | `wa.random` takes whole numbers (`spawn.rs` `random_fn`); the original handed it floats (`ROAM_RANGE_X * scale`, `waterY`), which the engine refuses rather than rounds. |
 | `wa.on.worm_message(...)`, `worm.id == 1*16+1`, `gameFrame > 2` (`:644-657`) | `wa.on.turn_start` | The API 2 file spawner. `turn_start` is the API 4 event that carries the turn's worm (`dispatch.rs` `turn_event`). |

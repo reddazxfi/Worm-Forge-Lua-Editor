@@ -19,7 +19,7 @@
 
 use std::fs;
 
-use wfcheck::rules::{self, RULE_LUA_AST};
+use wbcheck::rules::{self, RULE_LUA_AST};
 
 const CHECKS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/checks.rs");
 const SCOPES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/scopes.rs");
@@ -143,15 +143,15 @@ fn the_pinned_engine_version_agrees_with_the_checker() {
         .unwrap_or_else(|| {
             panic!(
                 "could not find `const ENGINE_VERSION` in {CHECKS}. If it was renamed, \
-                 update wfcheck::ENGINE_VERSION to match rather than deleting this test."
+                 update wbcheck::ENGINE_VERSION to match rather than deleting this test."
             )
         });
     assert_eq!(
         declared,
-        wfcheck::ENGINE_VERSION,
-        "the checker tells users 'does not exist in WormForge {declared}' while this tool \
+        wbcheck::ENGINE_VERSION,
+        "the checker tells users 'does not exist in WormBench {declared}' while this tool \
          reports itself as {} -- one of the two version strings is stale.",
-        wfcheck::ENGINE_VERSION
+        wbcheck::ENGINE_VERSION
     );
 }
 

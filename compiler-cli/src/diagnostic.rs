@@ -9,7 +9,7 @@
 //! WHAT WOULD SILENTLY BREAK IF THESE TWO DRIFT APART
 //! ----------------------------------------------------
 //! The serde attributes. The app sends this struct over the Tauri IPC bridge and
-//! `src/types/wormforge.ts` reads it, so `camelCase` and the skipped `detail`
+//! `src/types/wormbench.ts` reads it, so `camelCase` and the skipped `detail`
 //! key are load-bearing for the app, not cosmetic. Changing either here does
 //! nothing to the app, which is exactly why the drift guard in `tests/drift.rs`
 //! exists.

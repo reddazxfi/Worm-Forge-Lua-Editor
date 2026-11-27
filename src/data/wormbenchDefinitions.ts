@@ -3,7 +3,7 @@ import {
   VariableDef,
   EnumDef,
   ClassDef,
-} from '../types/wormforge';
+} from '../types/wormbench';
 import { WORM_STATES } from './wormStates';
 
 export const BUILTIN_VARIABLES: VariableDef[] = [
@@ -82,7 +82,7 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
     type: 'table',
     description: 'HUD text lines, top-centre banners, FPS counter, weapon tray, screen-space sprite/rect/text drawing, and WA-styled text windows for presentation overlays.',
     scope: 'global',
-    example: 'wa.hud.message_top("WormForge Active", { to = "all" })',
+    example: 'wa.hud.message_top("WormBench Active", { to = "all" })',
   },
   {
     name: 'wa.fire',
@@ -150,7 +150,7 @@ export const BUILTIN_VARIABLES: VariableDef[] = [
   {
     name: 'wa.magnetism',
     type: 'table',
-    description: 'Match-wide magnetic fields shared by every pack, plus a sample query for custom movement.',
+    description: 'Match-wide magnetic fields shared by every pack, on an actor or at a point, plus a sample query for custom movement.',
     scope: 'global',
     example: 'local field = wa.magnetism.field({ source = magnet, range = 170 })',
   },
@@ -416,7 +416,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     name: 'wa.log',
     parameters: [{ name: 'message', type: 'string', description: 'Log message to output to console and wkLua.log' }],
     returnType: 'void',
-    description: 'Prints a message directly to WormForge native logger and console output.',
+    description: 'Prints a message directly to WormBench native logger and console output.',
     example: 'wa.log("Mod loaded successfully!")',
   },
   {
@@ -509,7 +509,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'if wa.world.set_retreat(5000) then wa.log("retreat extended") end',
   },
   {
-    // From the developer's own verb list (wormforge-verbs.md, fork main
+    // From the developer's own verb list (wormbench-verbs.md, fork main
     // 2026-10-03): "wa.world.turn_clock(), retreat() -- turn time and retreat
     // time left, in ms". Its neighbour was already here; this one was missing,
     // and both engines flagged it as a typo.
@@ -574,10 +574,10 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.magnetism.field',
     parameters: [
-      { name: 'spec', type: 'table', description: '{ source = actor, [range = 170], [strength = 14000], [max_force = 12], [softening = 5], [polarity = "repel"], [enabled = true], [native = true] } -- source is required and must be a live Lua actor; range in px; at most 256 fields per match' },
+      { name: 'spec', type: 'table', description: '{ source = actor } for a field on a live Lua actor, or { x = px, y = px } for one at a point; [range = 170], [strength = 14000], [max_force = 12], [softening = 5], [polarity = "repel"], [enabled = true], [native = true] -- at most 256 fields per match' },
     ],
     returnType: 'MagneticField',
-    description: "Registers a match-wide magnetic field on an actor; fields sum across packs from one simulation-step snapshot and disappear with their source. Actors opt in with magnetic = 1. Simulation callbacks only.",
+    description: "Registers a match-wide magnetic field on an actor, or at a point; fields sum across packs from one simulation-step snapshot and disappear with their source. Actors opt in with magnetic = 1. A point field stays where it is put until field:move(x, y) places it elsewhere, and lasts until field:remove() or the match's end; a field with a source moves with it and can't be moved. Simulation callbacks only.",
     example: 'local field = wa.magnetism.field({ source = magnet_actor, range = 170, polarity = "repel" })',
   },
   {
@@ -613,7 +613,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     description: 'Bresenham hitscan raycast across landscape collision mask. Returns `{ x, y, hit = true, starts_solid = bool, nx, ny, tx, ty }` on hit or nil.',
     example: 'local hit = wa.land.trace(a.x, a.y, target.x, target.y)',
   },
-  // `wa.land.dig` is GONE in WormForge 0.9.1: the engine nils it on purpose
+  // `wa.land.dig` is GONE in WormBench 0.9.1: the engine nils it on purpose
   // (crates/lua-host/src/lib.rs:1279 -- "dig is cut's circle now"), and no file
   // in the new mods tree calls it. wa.land.cut{ shape = "circle" } replaced it.
   {
@@ -665,10 +665,10 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'wa.mines.spawn',
     parameters: [
-      { name: 'spec', type: 'table', description: '{ owner = <worm|actor>, x, y, vx, vy, fuse, arm, damage, radius, dud_proof, triggered, terrain_keep_speed_pct, on_contact } -- x/y in px; speeds in px/frame; fuse/arm in ms; radius in px; terrain_keep_speed_pct 0..1000' },
+      { name: 'spec', type: 'table', description: '{ owner = <worm|actor|"none">, x, y, vx, vy, fuse, arm, damage, radius, dud_proof, triggered, terrain_keep_speed_pct, on_contact } -- x/y in px; speeds in px/frame; fuse/arm in ms; radius in px; terrain_keep_speed_pct 0..1000; owner = "none" lays the map\'s mine' },
     ],
     returnType: 'WorldHandle',
-    description: "Builds one of WA's mines, as Project X's new CMine: WA flies, arms, triggers and explodes it as its own. A worm owner's team lays it; an actor's mine is the map's. Simulation callbacks only.",
+    description: "Builds one of WA's mines, as Project X's new CMine: WA flies, arms, triggers and explodes it as its own. A worm owner's team lays it; an actor's mine is the map's; owner = \"none\" lays the map's mine, parented to the world root (WA's team 0), so its blasts and hits are no team's. Simulation callbacks only.",
     example: 'local mine = wa.mines.spawn({ owner = worm, x = worm.x, y = worm.y, fuse = 400, damage = 50 })',
   },
   {
@@ -707,7 +707,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
       { name: 'spec', type: 'table', description: 'Spawn configuration: body = { physics, shape, hits, hit_by, pushed_by, layer, mask }, sprite, x, y, vx, vy, origin, owner, gravity, damage_terrain, damage_worms, drown, persist, visible, loop, magnetic, cursor, explode, on = { frame, land, hit, touched, contact }' }
     ],
     returnType: 'ActorHandle',
-    description: "Creates a native WA actor. An actor has only what its spawn names: no gravity, collision, looping, drowning or persisting otherwise, with a brain or without. body chooses its outline, outgoing movement, incoming attackers, how hard what runs into it pushes it, its collision layer and the mask it stamps. owner is a worm or actor; left out, a simulation callback's own worm or actor. owner = \"none\" spawns an actor of no team. A spawn's kind, from, on_explode and the old collide*/mask*/shape/as_object keys are errors. Simulation callbacks only. Returns the spawned ActorHandle.",
+    description: "Creates a native WA actor. An actor has only what its spawn names: no gravity, collision, looping, drowning or persisting otherwise, with a brain or without. body chooses its outline, outgoing movement, incoming attackers, how hard what runs into it pushes it, its collision layer and the mask it stamps. owner is a worm or actor; left out, a simulation callback's own worm or actor. owner = \"none\" spawns an actor of no team. grab (true, false, \"worm\" or \"projectile\") is what a tool that picks things up may do with it; a frame call after a:sleep carries ev.slept, the calls skipped. A spawn's kind, from, on_explode and the old collide*/mask*/shape/as_object keys are errors. Simulation callbacks only. Returns the spawned ActorHandle.",
     example: `local a = wa.actors.spawn({
   sprite = "sprites/blade.png",
   origin = "center",
@@ -901,6 +901,13 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'local w, h = wa.hud.size()',
   },
   {
+    name: 'wa.hud.key',
+    parameters: [{ name: 'name', type: 'string', description: 'A letter a..z, a digit 0..9, shift, ctrl, alt or tab' }],
+    returnType: 'bool',
+    description: "Whether this machine's key is held now, read live from its keyboard. Not synchronized: each machine reads its own, so only what it draws may follow it. False while the chat box or Esc menu is open, or WA isn't in front. Inside wa.on.hud only.",
+    example: 'local held = wa.hud.key("t")',
+  },
+  {
     name: 'wa.hud.sprite',
     parameters: [
       { name: 'spec', type: 'table', description: '{ sprite, frame = 0, x, y, part = { x, y, w, h }, color = 0xFFFFFFFF } -- screen px; part is whole pixels from the frame\'s top-left' }
@@ -935,7 +942,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     ],
     returnType: 'void',
     description: 'WA\'s top-centre banner, as selecting a weapon shows it: one line of at most 127 bytes. to is "all" (default), "active" (the player whose turn it is) or "coalition" (the active team\'s, or alliance 0-5). Call from simulation events.',
-    example: 'wa.hud.message_top("WormForge", { to = "all" })',
+    example: 'wa.hud.message_top("WormBench", { to = "all" })',
   },
   {
     name: 'wa.hud.window',
@@ -1009,6 +1016,13 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     returnType: 'void',
     description: 'Fires when a worm skims (skips) across water.',
     example: 'wa.on.skim(function(event)\n  wa.log(event.worm.id)\nend)',
+  },
+  {
+    name: 'wa.on.frame',
+    parameters: [{ name: 'callback', type: 'function', description: 'function() - once per simulation frame, after WA\'s own frame' }],
+    returnType: 'void',
+    description: "Once per simulation frame, after WA's own frame: every body has moved and every actor's frame call has run, the same frame on every machine. The handler takes no arguments; wa.world.frame() counts the frames. A simulation callback with no worm or actor of its own, so spawns there name their owner (owner = \"none\" for no team), and its hits count for no team.",
+    example: 'wa.on.frame(function()\n  wa.log("frame " .. wa.world.frame())\nend)',
   },
   {
     name: 'wa.on.turn_retreat',
@@ -1137,9 +1151,9 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   },
   {
     name: 'wa.world.trace',
-    parameters: [{ name: 'spec', type: 'table', description: '{ x0, y0, x1, y1, radius, with = { ... }, ignore = <entity> }' }],
+    parameters: [{ name: 'spec', type: 'table', description: '{ x0, y0, x1, y1, radius, with = { "terrain", "worms", "crates", "oil", "mines", "graves", "actors", "missiles" }, ignore = <entity>, grab = { "object", "worm", "projectile" } } -- with defaults to terrain; grab limits actors to those' }],
     returnType: 'table | nil',
-    description: 'Sweeps a circle from one point to the other against WA\'s own collision bitmap. Returns nil on a clear path, else the hit table (hit, x, y, nx, ny, tx, ty, obj, starts_solid, left_x, left_y).',
+    description: 'Sweeps a circle from one point to the other against WA\'s own collision bitmap. with names what counts (terrain by default), and grab limits actors to object, worm or projectile. Returns nil on a clear path, else the hit table (hit, x, y, nx, ny, tx, ty, obj, starts_solid, left_x, left_y).',
     example: 'wa.world.trace({ x0 = x0, y0 = y0, x1 = x1, y1 = y1, radius = 16 })',
   },
   {
@@ -1228,7 +1242,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
 
   {
     name: 'wa.world.collides',
-    parameters: [{ name: 'spec', type: 'table', description: '{ x, y, radius, with = { "terrain", "worms", "mines", "crates", "oil" }, ignore = <entity> }' }],
+    parameters: [{ name: 'spec', type: 'table', description: '{ x, y, radius, with = { "terrain", "worms", "mines", "crates", "oil", "graves", "actors", "missiles" }, ignore = <entity>, grab = { "object", "worm", "projectile" } } -- grab limits actors to those' }],
     returnType: 'bool, table | nil',
     description: 'Whether a circle there overlaps anything. Returns whether it collides, plus the first object hit.',
     example: 'local hit, obj = wa.world.collides({ x = a.x, y = a.y, radius = 8, with = { "worms" } })',
@@ -1241,6 +1255,15 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     returnType: 'void',
     description: 'Delivers ordinary radial blast hits with linear falloff from each body centre, plus the terrain hole. Simulation callbacks only.',
     example: 'wa.world.blast({ x = x, y = y, owner = worm, damage = 60, radius = 120 })',
+  },
+  {
+    name: 'wa.world.explode',
+    parameters: [
+      { name: 'spec', type: 'table', description: '{ x, y, owner = <worm|actor|"none">, damage = 50, id = 100, below = true } -- x/y in px and required; damage/id 0..10000; below places it a pixel lower, as a:explode\'s' },
+    ],
+    returnType: 'void',
+    description: "WA's own explosion at a point: its sprite, sound, hole and hits, as a:explode makes one at an actor, without an actor to make it from. owner is a worm or actor; left out, the callback's own worm or actor, which must exist. owner = \"none\" is no team's. Simulation callbacks only.",
+    example: 'wa.world.explode({ x = 400, y = 300, owner = "none", damage = 45 })',
   },
   {
     name: 'wa.on.body_move',
@@ -1276,7 +1299,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'local arrow = wa.arrows.spawn({ owner = worm, x = worm.x, y = worm.y, vx = 4, vy = -3 })',
   },
 
-  // ---- Lua API 4 additions (WormForge 0.9.1/0.9.11, Lua/verbs 9.11 api 4.0.txt) --
+  // ---- Lua API 4 additions (WormBench 0.9.1/0.9.11, Lua/verbs 9.11 api 4.0.txt) --
   // Every entry below was verified against crates/lua-host before being added --
   // the wa-namespace-typo check warns on anything missing here, so a gap is a
   // FALSE POSITIVE on valid API 4 code.
@@ -1332,6 +1355,13 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'wa.panel.select("px.javelin")',
   },
   {
+    name: 'wa.panel.close',
+    parameters: [],
+    returnType: 'bool',
+    description: "Shuts WA's own weapon panel on this machine at its next input, with its slide, as a right click on it does. A weapon pick is still only WA's own message, so nothing reaches the other machines. Returns false when this build can't (no input hook, or no panel-close locator in this WA.exe). Inside wa.on.hud only.",
+    example: 'local closed = wa.panel.close()',
+  },
+  {
     name: 'wa.panel.stock',
     parameters: [],
     returnType: 'table | nil',
@@ -1366,7 +1396,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   },
   {
     // Documented in the 0.9.1 release verb list ("Since 0.9.1") but not present
-    // in the vendored WormForge-main source snapshot yet (grep: zero hits). Added
+    // in the vendored WormBench-main source snapshot yet (grep: zero hits). Added
     // anyway: the namespace check only warns, so listing it costs a missed
     // finding, while NOT listing it would flag working code -- and a false
     // positive on valid code is the worse error.
@@ -1396,9 +1426,9 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
     example: 'wa.world.set_turn_clock(45000)',
   },
 
-  // ---- Lua API 4 additions in WormForge 0.9.11 (fog of war) -------------------
+  // ---- Lua API 4 additions in WormBench 0.9.11 (fog of war) -------------------
   // Source: the 0.9.11 release verb list (`spec/verbs 9.11 api 4.0.txt`, updated
-  // 2026-10-19). The vendored WormForge-main snapshot is still 0.9.1 and has no
+  // 2026-10-19). The vendored WormBench-main snapshot is still 0.9.1 and has no
   // `Fog` in crates/lua-host, so these cannot be re-verified against it -- same
   // situation as wa.weapons.set_selectable above. Listed anyway because the
   // namespace check only WARNS: a missing name means a false positive on working
@@ -1582,6 +1612,8 @@ export const BUILTIN_CLASSES: ClassDef[] = [
     members: [
       { name: 'id', kind: 'property', returnType: 'int', description: 'The body id in this match, shared with objects and missiles and counted from 0x100, so it never meets a worm\'s team * 16 + index. The same on every machine and never reused.' },
       { name: 'kind', kind: 'property', returnType: 'string', description: 'Always "actor": what the handle is and which verbs it has. What an actor stands for is in what it declares (hit_by, body.layer, magnetic) and in the pack\'s own tables by a.id.' },
+      { name: 'alive', kind: 'property', returnType: 'bool', description: 'Whether the actor still lives (read only): false once it was removed, exploded or drowned.' },
+      { name: 'grab', kind: 'variable', returnType: 'bool | string | nil', description: 'What a tool that picks things up may do with it: true (an object, the default), false (never), "worm" (it stands for its owner) or "projectile" (it is in flight); nil resets it to true. Writes from any callback.' },
       { name: 'x', kind: 'variable', returnType: 'number', description: 'Position X in px' },
       { name: 'y', kind: 'variable', returnType: 'number', description: 'Position Y in px' },
       { name: 'vx', kind: 'variable', returnType: 'number', description: 'Velocity X in px/frame' },
@@ -1600,6 +1632,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'remove', kind: 'method', parameters: [], returnType: 'void', description: 'Removes this actor and frees its native resources (simulation callbacks only). It was a:despawn before 1.0.', example: 'a:remove()' },
       { name: 'in_water', kind: 'method', parameters: [], returnType: 'bool', description: 'Tests if actor coordinates are submerged below water level.', example: 'if a:in_water() then a:remove() end' },
       { name: 'on_feet', kind: 'method', parameters: [], returnType: 'bool', description: 'Tests if actor is currently resting on solid ground.', example: 'if a:on_feet() then ... end' },
+      { name: 'sleep', kind: 'method', parameters: [{ name: 'frames', type: 'int', description: 'Frame calls to skip, 0..3000; 0 wakes it' }, { name: 'opts', type: 'table', optional: true, description: '{ near = px } -- 1..32767: wake when a living worm comes that close' }], returnType: 'void', description: 'Skips the actor\'s next frame calls, for one with nothing to do. WA still moves it and its other handlers run; it wakes early, its frame call running that frame, when it lands, leaves the ground, reaches the water or takes damage, when it is hit, blasted, touched or warped, or when a living worm comes within near. Its own on.contact bumps do not wake it. The call that ends a sleep has ev.slept, the calls skipped (0 on every other frame). Simulation callbacks only.', example: 'a:sleep(250, { near = 96 })' },
       { name: 'move', kind: 'method', parameters: [{ name: 'opts', type: 'table', optional: true, description: '{ terrain = bool, worms = bool }' }], returnType: 'table', description: 'Adds its speed to its position once and reports land under its feet: { terrain = bool, land = bool, left_ground = bool }. It is not WA\'s sweep: it does not stop at land, bounce or meet worms, and produces no bumps. Simulation callbacks only.', example: 'local hit = a:move({ terrain = true })' },
       { name: 'gfx', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ angle, scale, tint, depth, glow_of, follow } -- glow_of = worm makes it glow in that worm\'s place; follow = worm keeps it smooth with the worm between frames' }], returnType: 'void', description: "Sets several drawing fields at once. It is the actor's one drawing setter: it replaced a:angle, a:scale, a:tint and a:blend. glow_of = worm: the actor is drawn in that worm's place (a vehicle hiding its body), so it glows behind it as worm.tint makes the worm glow; false ends it. follow = worm (since 0.9.83): art the pack puts at the worm every frame is drawn moved as the worm is drawn between frames. Drawing only.", example: 'a:gfx({ angle = 45, tint = 0xFF8000, glow_of = worm })' },
       { name: 'frame', kind: 'method', parameters: [{ name: 'index', type: 'int', description: '0-based frame index' }], returnType: 'void', description: 'Sets the active animation frame (simulation callbacks only).', example: 'a:frame(3)' },
@@ -1628,6 +1661,8 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'facing', kind: 'variable', returnType: 'int', description: 'Facing direction: -1 (left) or 1 (right) (writable)' },
       { name: 'shots_fired', kind: 'variable', returnType: 'int', description: 'Shots fired this turn for repeat-fire weapons (sim callback only)' },
       { name: 'shots_to_fire', kind: 'variable', returnType: 'int', description: 'Shots to fire this turn for repeat-fire weapons (sim callback only)' },
+      { name: 'shots', kind: 'variable', returnType: 'int', description: "The selected weapon's shots per use, 1..127 (writable from simulation callbacks for this selection)." },
+      { name: 'shots_used', kind: 'property', returnType: 'int', description: 'How many shots this use has fired (read only).' },
       { name: 'fuel', kind: 'variable', returnType: 'number', description: 'Jet pack fuel (0 is unlimited, writable)' },
       { name: 'gravity', kind: 'variable', returnType: 'number', description: 'Gravity scale factor (1.0 = normal, writable)' },
       { name: 'wind', kind: 'variable', returnType: 'number', description: 'Wind scale factor (1.0 = normal, writable)' },
@@ -1692,7 +1727,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'hit', kind: 'method', parameters: [{ name: 'arg', type: 'int | table', description: 'Damage amount, or { amount = int, vx, vy, react = bool, kind } -- vx/vy knockback in px/frame; react = false skips WA\'s hit reaction' }], returnType: 'void', description: "Damages the worm, optionally with knockback. react = false: the damage alone, without WA's hit (no flinch, push or landing damage). kind is the hit's kind (see Hit kinds), the Prod's when left out. It was worm:hurt before 1.0. Since 0.9.83.", example: 'worm:hit{ amount = 20, vx = 2, vy = -1 }' },
       { name: 'heal', kind: 'method', parameters: [{ name: 'amount', type: 'int', description: 'HP to restore' }, { name: 'opts', type: 'table', optional: true, description: '{ from_zero = bool } -- revive a 0-HP worm WA has not started killing (since 0.9.8)' }], returnType: 'int', description: "Adds health. A worm at 0 HP is refused, unless from_zero = true and WA hasn't started killing it. Returns new HP.", example: 'worm:heal(25, { from_zero = true })' },
       // Health-timing verbs used by Core Utilities. Worm-only and simulation-only,
-      // like `teleport_pose`. See WormForgeNew actor.rs.
+      // like `teleport_pose`. See WormBench actor.rs.
       { name: 'commit_health', kind: 'method', parameters: [], returnType: 'bool', description: "Commits only this worm's pending health display through WA message 0x44. The damage WA still owes stays owed, so a zero-HP worm is not left standing at 0; no synthetic hit or turn-wide death runs. Worm-only, simulation callback only. Returns whether the engine performed it.", example: 'worm:commit_health()' },
       { name: 'show_health', kind: 'method', parameters: [], returnType: 'bool', description: "Moves only this worm's health label down to its current HP while leaving WA's pending damage owed. The label updates without killing a zero-HP worm early. Worm-only, simulation callback only. Returns whether the engine performed it.", example: 'worm:show_health()' },
       { name: 'die', kind: 'method', parameters: [{ name: 'opts', type: 'table', optional: true, description: '{ settled = true } -- with settled, WA starts the death once the worm stops moving instead of at once' }], returnType: 'bool', description: "Starts a zero-HP worm's death now, even in flight. With `{ settled = true }`, gives WA its ordinary death permission (message 0x40) instead: its frame handler still applies movement and landing checks and starts the death animation once the worm settles, without waiting for the battlefield. False for a worm with health, already dying, waiting to be placed, or in the Kamikaze/Suicide Bomber flight. Worm-only, simulation callback only. Returns whether the engine performed it.", example: 'if not worm.turn and worm.hp == 0 then worm:die{ settled = true } end' },
@@ -1709,10 +1744,11 @@ export const BUILTIN_CLASSES: ClassDef[] = [
     members: [
       { name: 'id', kind: 'property', returnType: 'int', description: 'The body id in this match: actors, objects and missiles share one counter, the body id from WA\'s world-entity constructor, counted from 0x100 so it never meets a worm\'s team * 16 + index. The same on every machine and never reused.' },
       { name: 'kind', kind: 'property', returnType: 'string', description: '"mine" | "missile" | "crate" | "worm" | "oil" | "grave" | "arrow" | "land" | "object"' },
+      { name: 'alive', kind: 'property', returnType: 'bool', description: 'Whether the body still lives (read only): false once WA freed it (its kind becomes \"none\").' },
       { name: 'team', kind: 'property', returnType: 'int', description: 'Owning team number (1 to 6), 0 for none (read only)' },
       { name: 'alliance', kind: 'property', returnType: 'int', description: 'Visible coalition colour of the owning team, as worm.alliance; nil without a team (read only)' },
       { name: 'worm_id', kind: 'property', returnType: 'int', description: 'For gravestones: stable worm ID of the deceased worm' },
-      { name: 'fuse', kind: 'property', returnType: 'int', description: 'For mines: remaining fuse countdown in milliseconds' },
+      { name: 'fuse', kind: 'variable', returnType: 'int', description: 'For mines: the fuse countdown in milliseconds. Writable from simulation callbacks: -1 rolls it when the mine triggers, else 0..10000 ms; a triggered mine counts on from the new value.' },
       { name: 'damage', kind: 'property', returnType: 'int | nil', description: "For oil drums: WA's damage count; nil for anything else (read only)." },
       { name: 'max_damage', kind: 'property', returnType: 'int | nil', description: "For oil drums: the damage at which the drum goes off (WA's 50); nil for anything else (read only)." },
       { name: 'visible', kind: 'variable', returnType: 'bool | nil', description: "For oil drums, mines and arrows: whether WA draws it. false lets a pack draw its own drum, mine or arrow (a mine's countdown included); WA still moves and explodes it. nil for anything else; writable from any callback." },
@@ -1737,7 +1773,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
     // 0.9.11. A hand-built light handle, not a world object: it has its own
     // three methods and nothing else. Presentation only.
     name: 'LightHandle',
-    description: 'Free fog-of-war light created by wa.fog.light (WormForge 0.9.11).',
+    description: 'Free fog-of-war light created by wa.fog.light (WormBench 0.9.11).',
     syntaxExample: 'local light = wa.fog.light({ x = 100, y = 200 })\nlight:move(120, 210)\nlight:remove()',
     members: [
       { name: 'move', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'Target X in px' }, { name: 'y', type: 'number', description: 'Target Y in px' }], returnType: 'void', description: 'Moves a free light.', example: 'light:move(120, 210)' },
@@ -1760,6 +1796,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
       { name: 'enabled', kind: 'variable', returnType: 'bool', description: 'Whether this field contributes. Reads false after removal.' },
       { name: 'native', kind: 'variable', returnType: 'bool', description: 'Whether the field also affects WA\'s native mines and missiles.' },
       { name: 'remove', kind: 'method', parameters: [], returnType: 'bool', description: 'Removes the field: true once, then false (simulation callback only).' },
+      { name: 'move', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'X to move the point field to, in px' }, { name: 'y', type: 'number', description: 'Y to move the point field to, in px' }], returnType: 'void', description: "Moves a point field to (x, y) from the next simulation step. A field with a source moves with it and can't be moved; a removed field errors. Simulation callbacks only.", example: 'field:move(420, 300)' },
       { name: 'contains', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'X in px' }, { name: 'y', type: 'number', description: 'Y in px' }], returnType: 'bool', description: "Whether a point is inside this field's current snapshot." },
     ],
   },
@@ -1817,7 +1854,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
   },
   {
     name: 'HudTrayEntry',
-    description: 'A HUD weapon-tray entry returned by wa.hud.tray.add (WormForge 0.9.83).',
+    description: 'A HUD weapon-tray entry returned by wa.hud.tray.add (WormBench 0.9.83).',
     syntaxExample: 'local entry = wa.hud.tray.add({ weapon = "px.javelin", team = 1 })\nentry:set({ lit = true, progress = 0.5 })\nentry:remove()',
     members: [
       { name: 'set', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ key, lit, progress, greyed } -- lit draws a yellow border and holds the entry; progress 0..1 draws a bar along its bottom; greyed darkens the cell as a delay does' }], returnType: 'void', description: 'Changes what the tray entry names, without adding a new one.', example: 'entry:set({ lit = true, progress = 0.5 })' },
@@ -1827,7 +1864,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
   },
   {
     name: 'HudUtilityEntry',
-    description: "An entry in WA's utility tray, returned by wa.hud.utilities.add (WormForge 1.0).",
+    description: "An entry in WA's utility tray, returned by wa.hud.utilities.add (WormBench 1.0).",
     syntaxExample: 'local entry = wa.hud.utilities.add({ weapon = "stock.low_gravity", team = 1 })\nentry:remove()',
     members: [
       { name: 'remove', kind: 'method', parameters: [], returnType: 'bool', description: 'Removes the entry. True if it was there.', example: 'entry:remove()' },
@@ -1836,7 +1873,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
   },
   {
     name: 'TrailHandle',
-    description: 'A persistent ribbon returned by wa.draw.trail (WormForge 0.9.62).',
+    description: 'A persistent ribbon returned by wa.draw.trail (WormBench 0.9.62).',
     syntaxExample: 'local t = wa.draw.trail({ sprite = "spark", width = 8 })\nt:push(x, y)\nt:finish()',
     members: [
       { name: 'push', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'X in px' }, { name: 'y', type: 'number', description: 'Y in px' }], returnType: 'void', description: 'Feeds one point to the trail, from any callback.', example: 't:push(x, y)' },
@@ -1847,7 +1884,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
   },
   {
     name: 'BrushHandle',
-    description: 'A sheet made ready to draw, returned by wa.draw.brush (WormForge 1.0).',
+    description: 'A sheet made ready to draw, returned by wa.draw.brush (WormBench 1.0).',
     syntaxExample: 'local b = wa.draw.brush({ sprite = "sprites/Glow.png" })\nwa.on.draw(function()\n  b:box(100, 200, 8, 6)\nend)',
     members: [
       { name: 'box', kind: 'method', parameters: [{ name: 'x', type: 'number', description: 'Centre X in px' }, { name: 'y', type: 'number', description: 'Centre Y in px' }, { name: 'w', type: 'number', description: 'Width in px' }, { name: 'h', type: 'number', description: 'Height in px' }, { name: 'angle', type: 'number', optional: true, description: 'Radians about the centre; positive turns clockwise on screen. Default 0.' }, { name: 'frame', type: 'int', optional: true, description: 'Replaces the brush frame for this box.' }, { name: 'color', type: 'int', optional: true, description: '0xAARRGGBB; replaces the brush colour for this box.' }, { name: 'visibility', type: 'entity', optional: true, description: 'A worm: draw only where that worm is visible.' }], returnType: 'void', description: 'Draws a w x h box centred on (x, y), its corners from the top-left clockwise, turned angle radians about the centre using the brush fields. Inside wa.on.draw only.', example: 'b:box(x, y, 8, 6, angle)' },
@@ -1857,7 +1894,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
   },
   {
     name: 'RippleHandle',
-    description: 'A screen ripple returned by wa.view.ripple (WormForge 0.9.83).',
+    description: 'A screen ripple returned by wa.view.ripple (WormBench 0.9.83).',
     syntaxExample: 'local r = wa.view.ripple({ x = 100, y = 200 })\nr:stop()',
     members: [
       { name: 'stop', kind: 'method', parameters: [], returnType: 'void', description: 'Ends the ripple early.', example: 'r:stop()' },
@@ -1865,7 +1902,7 @@ export const BUILTIN_CLASSES: ClassDef[] = [
   },
   {
     name: 'AmbientHandle',
-    description: 'A sound of no object, returned by wa.sound.ambient (WormForge 1.0).',
+    description: 'A sound of no object, returned by wa.sound.ambient (WormBench 1.0).',
     syntaxExample: 'local rain = wa.sound.ambient({ path = "sounds/rain.wav", volume = 0.6 })\\nrain:stop({ fade_ms = 1500 })',
     members: [
       { name: 'set', kind: 'method', parameters: [{ name: 'spec', type: 'table', description: '{ volume = 1, fade_ms = 0 } -- volume 0..1; fade_ms 0..60000; a spec without volume changes nothing' }], returnType: 'void', description: "Fades the ambient sound to volume over fade_ms; a spec without volume changes nothing. Presentation only, from any callback.", example: 'rain:set({ volume = 0.3, fade_ms = 800 })' },

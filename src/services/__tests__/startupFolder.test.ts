@@ -31,7 +31,7 @@ afterEach(() => {
 /** Write a raw blob the way an OLD build would have. */
 function seedStored(partial: Record<string, unknown>) {
   store.set(
-    'wormforge_editor_config',
+    'wormbench_editor_config',
     JSON.stringify({ ...DEFAULT_CONFIG, ...partial }),
   );
 }
@@ -102,7 +102,7 @@ describe('§35 startup-folder migration', () => {
   it('is idempotent: a second load changes nothing', () => {
     seedStored({ autoLoadFolder: 'D:\\Mods\\bee', modsRootPath: '' });
     const first = loadConfig();
-    store.set('wormforge_editor_config', JSON.stringify(first));
+    store.set('wormbench_editor_config', JSON.stringify(first));
     const second = loadConfig();
     expect(second).toEqual(first);
   });
@@ -178,7 +178,7 @@ describe('autocomplete preference', () => {
     // A config written before the option existed has no key at all.
     const old = { ...DEFAULT_CONFIG } as Record<string, unknown>;
     delete old.autocomplete;
-    store.set('wormforge_editor_config', JSON.stringify(old));
+    store.set('wormbench_editor_config', JSON.stringify(old));
     expect(loadConfig().autocomplete).toBe(true);
 
     seedStored({ autocomplete: 'no' });

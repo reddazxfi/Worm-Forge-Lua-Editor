@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 /// Cargo builds the binary for us and tells us where it is.
-const EXE: &str = env!("CARGO_BIN_EXE_wfcheck");
+const EXE: &str = env!("CARGO_BIN_EXE_wbcheck");
 
 struct Output {
     code: i32,
@@ -54,7 +54,7 @@ fn run_stdin(args: &[&str], input: &str) -> Output {
 }
 
 fn write_temp(name: &str, contents: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join("wfcheck-it");
+    let dir = std::env::temp_dir().join("wbcheck-it");
     std::fs::create_dir_all(&dir).expect("temp dir");
     let path = dir.join(name);
     std::fs::write(&path, contents).expect("write fixture");
@@ -123,7 +123,7 @@ fn a_missing_path_exits_two() {
 fn help_and_version_succeed_and_say_the_engine_version() {
     let help = run(&["--help"]);
     assert_eq!(help.code, 0);
-    assert!(help.stdout.contains("wfcheck"), "{}", help.stdout);
+    assert!(help.stdout.contains("wbcheck"), "{}", help.stdout);
     assert!(help.stdout.contains("1.0.0"), "{}", help.stdout);
 
     let version = run(&["--version"]);
@@ -135,7 +135,7 @@ fn help_and_version_succeed_and_say_the_engine_version() {
 fn every_listed_rule_is_explained_and_every_rule_is_listed() {
     let list = run(&["--list-rules"]);
     assert_eq!(list.code, 0);
-    for rule in wfcheck::rules::RULES {
+    for rule in wbcheck::rules::RULES {
         assert!(list.stdout.contains(rule.id), "--list-rules is missing {}", rule.id);
         let explained = run(&["--explain", rule.id]);
         assert_eq!(explained.code, 0, "--explain {} failed", rule.id);
@@ -191,7 +191,7 @@ fn notes_never_fail_a_run_even_under_strict() {
 
 #[test]
 fn a_folder_is_walked_recursively_for_lua() {
-    let dir = fresh_dir("wfcheck-it-walk");
+    let dir = fresh_dir("wbcheck-it-walk");
     std::fs::create_dir_all(dir.join("deep/deeper")).unwrap();
     std::fs::write(dir.join("top.lua"), CLEAN).unwrap();
     std::fs::write(dir.join("deep/mid.lua"), DESYNC).unwrap();
@@ -210,7 +210,7 @@ fn a_folder_is_walked_recursively_for_lua() {
 
 #[test]
 fn exclude_drops_matching_paths() {
-    let dir = fresh_dir("wfcheck-it-exclude");
+    let dir = fresh_dir("wbcheck-it-exclude");
     std::fs::create_dir_all(dir.join("vendor")).unwrap();
     std::fs::write(dir.join("keep.lua"), DESYNC).unwrap();
     std::fs::write(dir.join("vendor/skip.lua"), DESYNC).unwrap();
@@ -268,7 +268,7 @@ fn gcc_output_is_one_line_per_finding_with_a_rule_tag() {
 fn two_runs_over_the_same_tree_produce_identical_bytes() {
     // The promise that makes the JSON diffable in CI, and that keeps a finding
     // from appearing to move between runs.
-    let dir = fresh_dir("wfcheck-it-stable");
+    let dir = fresh_dir("wbcheck-it-stable");
     std::fs::create_dir_all(dir.join("b")).unwrap();
     std::fs::create_dir_all(dir.join("a")).unwrap();
     for (folder, name) in [("a", "one"), ("a", "two"), ("b", "three")] {

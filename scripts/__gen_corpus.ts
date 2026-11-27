@@ -143,7 +143,7 @@ export function modsFromPack(
   }
 
   const slots = replacedSlots(files);
-  let author = 'WormForge Porting Engine';
+  let author = 'WormBench Porting Engine';
   let version = '0.1.0';
   // The pack's OWN id, when mod.toml declares one -- `px.ports`, `core.utilities`,
   // `example.components`. That is the id the engine and the loader use, so the
@@ -342,7 +342,7 @@ export function renderMod(m: CorpusMod): string {
     .join('\n');
 }
 
-export const HEADER = `import { ModFolderInfo } from '../types/wormforge';
+export const HEADER = `import { ModFolderInfo } from '../types/wormbench';
 
 // GENERATED FILE -- do not edit by hand.
 //

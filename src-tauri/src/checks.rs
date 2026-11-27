@@ -456,7 +456,7 @@ fn check_method_call(&mut self, call: &FunctionCall) {
     /// This replaces the old A5 `state-key-typo` check, which validated keys against
     /// `wa.game_state(id).states.KEY`. **`wa.game_state` does not exist**: zero hits
     /// across the engine's `crates/` tree, absent from the developer's own verb list
-    /// (`wormforge-verbs.md`, fork main 2026-10-03), and the 63 keys were generated,
+    /// (`wormbench-verbs.md`, fork main 2026-10-03), and the 63 keys were generated,
     /// not measured. So A5 was checking a fiction, and the list it enforced is gone.
     ///
     /// What replaces it is real and much smaller. `settable_worm_state()` in
@@ -638,7 +638,7 @@ fn check_method_call(&mut self, call: &FunctionCall) {
                     format!("{full} exists only in a build with the `diagnostics` feature."),
                     Some(format!(
                         "`wa.{ns}` is installed by crates/lua-host/src/api.rs under \
-                         #[cfg(feature = \"diagnostics\")], so a stock WormForge has no such \
+                         #[cfg(feature = \"diagnostics\")], so a stock WormBench has no such \
                          namespace and this call raises \"attempt to call a nil value\". \
                          It also needs `debug_input = true` in the calling pack's mod.toml \
                          (actor.rs:2854). `mods/tools` declares it; a pack you ship must too."
@@ -662,14 +662,14 @@ fn check_method_call(&mut self, call: &FunctionCall) {
                             None => (
                                 format!("{full} is not an engine API."),
                                 Some(format!(
-                                    "`wa.{verb}` does not exist in WormForge {ENGINE_VERSION}."
+                                    "`wa.{verb}` does not exist in WormBench {ENGINE_VERSION}."
                                 )),
                             ),
                         }
                     }
                     None => (
                         format!("{full} is not an engine API."),
-                        Some(format!("`wa.{verb}` does not exist in WormForge {ENGINE_VERSION}.")),
+                        Some(format!("`wa.{verb}` does not exist in WormBench {ENGINE_VERSION}.")),
                     ),
                 },
             };
@@ -1386,7 +1386,7 @@ fn kind_test_receiver(expr: &Expression) -> Option<String> {
 /// match and must stay silent.
 ///
 /// TWO THINGS THIS USED TO GET WRONG, both found by running it over the engine's
-/// OWN packs (`wfcheck WormForge-main-source/mods`), which the engine's own rule
+/// OWN packs (`wbcheck WormBench-main-source/mods`), which the engine's own rule
 /// (`tools/check_sim_math.py`) passes clean:
 ///
 ///  1. It only knew `wa.on.draw`. `wa.on.hud` is the same kind of callback -- the

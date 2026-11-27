@@ -25,7 +25,7 @@ import {
 // Imported so the intent is obvious: the sweep's dedup must agree with the APP's, not merely
 // with itself. Pinned against the real function, never a copy of it.
 import { mergeDiagnostics } from '../diagnostics';
-import type { SyntaxDiagnostic } from '../../types/wormforge';
+import type { SyntaxDiagnostic } from '../../types/wormbench';
 
 /** The allowlists as configured for a file with no adjudicated rules. */
 const NONE = { rustTodo: new Set<string>(), tsWeaker: new Set<string>() };

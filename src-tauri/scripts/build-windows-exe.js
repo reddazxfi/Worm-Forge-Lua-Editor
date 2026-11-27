@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * WormForge Code Editor - Automated Cross-Platform .EXE Builder
+ * WormBench Code Editor - Automated Cross-Platform .EXE Builder
  * Can be run with: node scripts/build-windows-exe.js
  */
 
@@ -26,7 +26,7 @@ function run(command, desc) {
 }
 
 console.log(`\x1b[33m=======================================================`);
-console.log(`  WormForge Editor - Windows .EXE Packaging Pipeline`);
+console.log(`  WormBench Editor - Windows .EXE Packaging Pipeline`);
 console.log(`=======================================================\x1b[0m`);
 
 // Step 1: Ensure Vite distribution is built

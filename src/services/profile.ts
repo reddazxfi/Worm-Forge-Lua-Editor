@@ -1,6 +1,6 @@
 // A profile, read for display.
 //
-// Profiles are data, not code: `WormForge/Profiles/<Name>.toml` selects
+// Profiles are data, not code: `WormBench/Profiles/<Name>.toml` selects
 // components and weapon placements and is resolved by the loader without running
 // any Lua. Nothing here executes or validates a profile the way the engine does
 // -- this is a SUMMARY for a human deciding what to open, and it says so

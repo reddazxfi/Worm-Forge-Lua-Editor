@@ -123,7 +123,7 @@ struct AstBinding {
 /// One parameter of a user-defined function.
 ///
 /// `type` is a reserved word in Rust, hence `r#type`. Serde emits it as `type`,
-/// which is what `ParameterDef` in types/wormforge.ts expects.
+/// which is what `ParameterDef` in types/wormbench.ts expects.
 ///
 /// Clone is needed because a function's parameters are also copied into the
 /// custom-class member discovered from `function O.m(...)`.
@@ -134,7 +134,7 @@ struct AstParameter {
     r#type: String,
 }
 
-/// A function the USER wrote. Mirrors `FunctionDef` in types/wormforge.ts.
+/// A function the USER wrote. Mirrors `FunctionDef` in types/wormbench.ts.
 ///
 /// Only extracted symbols cross the wire. The engine's own API table
 /// (BUILTIN_FUNCTIONS) stays in TypeScript and is merged on the front end, so
@@ -693,7 +693,7 @@ fn main() {
             check_mod_modules
         ])
         .run(tauri::generate_context!())
-        .expect("error while running WormForge Editor");
+        .expect("error while running WormBench Editor");
 }
 
 #[cfg(test)]
@@ -808,7 +808,7 @@ mod tests {
 
     /// The regression corpus, in miniature: the shapes rules.lua actually uses.
     #[test]
-    fn handles_a_realistic_wormforge_callback() {
+    fn handles_a_realistic_wormbench_callback() {
         let (v, ok) = extract(
             r#"
 wa.on.hurt = function(worm, ev)

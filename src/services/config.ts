@@ -84,7 +84,7 @@ export const DEFAULT_CONFIG: EditorConfig = {
   consoleHeight: 220,
 };
 
-const STORAGE_KEY = 'wormforge_editor_config';
+const STORAGE_KEY = 'wormbench_editor_config';
 
 export function loadConfig(): EditorConfig {
   try {
@@ -220,7 +220,7 @@ export function saveConfig(cfg: EditorConfig): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   } catch (e) {
-    console.error('Failed to save WormForge config:', e);
+    console.error('Failed to save WormBench config:', e);
   }
 }
 
@@ -236,7 +236,7 @@ function serializeOverrideIni(key: string, overrides: SyntaxOverrides): string {
 }
 
 export function exportConfigAsIni(cfg: EditorConfig): string {
-  return `; WormForge Code Editor Configuration
+  return `; WormBench Code Editor Configuration
 [Editor]
 theme = ${cfg.theme}
 background_dark = ${cfg.backgroundDark || ''}

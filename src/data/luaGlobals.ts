@@ -1,4 +1,4 @@
-// Globals a WormForge mod may legitimately read.
+// Globals a WormBench mod may legitimately read.
 //
 // WHY THIS FILE IS THE ONLY COPY
 // Both diagnostic implementations consult this list: the Rust checker
@@ -43,7 +43,7 @@ export const LUA_GLOBALS: string[] = [
   // Load-time helpers the engine's sandbox nils out (sandbox.rs:11-27). Listed so that
   // reading one is not reported as a typo; USING one is a separate, real problem.
   'dofile', 'loadfile', 'load', 'require', 'collectgarbage',
-  // WormForge
+  // WormBench
   'wa',
 ];
 

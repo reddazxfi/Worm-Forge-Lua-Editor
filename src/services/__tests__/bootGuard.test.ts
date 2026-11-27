@@ -33,10 +33,10 @@ describe('index.html boot safety', () => {
   });
 
   it('keeps the fallback outside #root and reachable without the bundle', () => {
-    expect(html).toContain('id="wf-boot-fallback"');
-    expect(html.indexOf('id="wf-boot-fallback"')).toBeGreaterThan(html.indexOf('id="root"'));
-    expect(html).toContain('id="wf-boot-reload"');
-    expect(html).toContain('id="wf-boot-reset"');
+    expect(html).toContain('id="wb-boot-fallback"');
+    expect(html.indexOf('id="wb-boot-fallback"')).toBeGreaterThan(html.indexOf('id="root"'));
+    expect(html).toContain('id="wb-boot-reload"');
+    expect(html).toContain('id="wb-boot-reset"');
     // A module script would not run if the bundle failed; the watchdog is classic.
     const watchdog = html.slice(html.lastIndexOf('<script>'));
     expect(watchdog).toContain('setInterval');
@@ -56,7 +56,7 @@ describe('index.html boot safety', () => {
   });
 
   it('does not reset settings or custom verbs', () => {
-    expect(html).not.toContain('wormforge_editor_config');
-    expect(html).not.toContain('wormforge_custom_verbs');
+    expect(html).not.toContain('wormbench_editor_config');
+    expect(html).not.toContain('wormbench_custom_verbs');
   });
 });

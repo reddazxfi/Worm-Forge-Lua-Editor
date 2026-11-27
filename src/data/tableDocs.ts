@@ -386,6 +386,7 @@ const WEAPON_CLAIM_FIELDS: TableField[] = [
       { name: 'hand_rotation', kind: 'number', description: 'Hand rotation. Default 1.' },
       { name: 'hand_radius', kind: 'number', description: 'Hand orbit radius. Default 1.' },
       { name: 'hand_radial_rotation', kind: 'number', description: 'Hand rotation as it orbits. Default 1.' },
+      { name: 'draw_hand', kind: 'bool', description: 'Load the hand sheet but do not draw it. Default true.' },
       { name: 'weap_scale', kind: 'number', description: 'Weapon scale. Default 1.' },
       { name: 'weap_rotation', kind: 'number', description: 'Weapon rotation. Default 1.' },
       { name: 'weap_radius', kind: 'number', description: 'Weapon orbit radius. Default 1.' },
@@ -564,13 +565,14 @@ const SPAWN: TableDoc = {
     { name: 'visible', kind: 'bool', description: 'Default true.' },
     { name: 'gravity', kind: 'number', type: 'factor', description: 'A factor, 1 normal and 0 none, as worm.gravity and object.gravity take it. Default 0: the spawn has no gravity unless it asks.' },
     { name: 'magnetic', kind: 'number', type: '0..1000', description: 'Automatic magnetic response multiplier. Default 0 (opted out); fields are summed in creation order and applied before movement.' },
+    { name: 'grab', kind: 'any', type: 'true | false | "worm" | "projectile"', description: 'What a tool that picks things up may do with it: true (an object, the default), false (never), "worm" (it stands for its owner) or "projectile" (it is in flight).' },
     { name: 'loop', kind: 'bool', description: 'Loop the animation. Default false.' },
     { name: 'damage_terrain', kind: 'bool', description: 'Its explosion damages terrain. Defaults to on when `explode` is set.' },
     { name: 'damage_worms', kind: 'bool', description: 'Its explosion damages worms. Defaults to on when `explode` is set.' },
     { name: 'persist', kind: 'bool', description: 'Survives its explosion. Default false.' },
     { name: 'drown', kind: 'bool', description: 'Drowns in water. Default false.' },
     { name: 'cursor', kind: 'bool', description: 'Follow the cursor. Default false.' },
-    { name: 'on', kind: 'function', type: 'function | { frame, land, hit, touched, contact }', description: 'The brain. A function is its frame callback; a table may name frame, land, hit, touched and contact separately. `touched` is something that ran into the actor; `contact` is the actor\'s own movement running into something. A spawn\'s defaults do not switch anything on whether `on` is given.' },
+    { name: 'on', kind: 'function', type: 'function | { frame, land, hit, touched, contact }', description: 'The brain. A function is its frame callback; a table may name frame, land, hit, touched and contact separately. `touched` is something that ran into the actor; `contact` is the actor\'s own movement running into something. A frame call after a:sleep has ev.slept, the calls skipped. A spawn\'s defaults do not switch anything on whether `on` is given.' },
     {
       name: 'explode',
       kind: 'table',
@@ -723,7 +725,7 @@ const HUD_WINDOW: TableDoc = {
   summary:
     "A text window in WA's own fonts and box style, sized to its text and open until closed or the match ends.",
   usedBy: ['wa.hud.window'],
-  source: 'WormForge 0.9.11 release verb list (data/verbs.json)',
+  source: 'WormBench 0.9.11 release verb list (data/verbs.json)',
   note:
     'At most 32 open. The window fades out while the weapon panel is open unless over_panel = true.',
   example: `local window = wa.hud.window({

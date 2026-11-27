@@ -189,7 +189,7 @@ export const SYNTAX_PRESETS: SyntaxPreset[] = [
   {
     id: 'classic',
     name: 'Classic',
-    description: 'The original WormForge palette from §33. Nine accents, VS Code-like.',
+    description: 'The original WormBench palette from §33. Nine accents, VS Code-like.',
     palette: { dark: CLASSIC_DARK, light: CLASSIC_LIGHT },
   },
   {

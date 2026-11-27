@@ -7,7 +7,7 @@ import {
   fieldDocText,
 } from '../tableContext';
 import { TABLE_DOCS, findTableDoc, fieldPaths, fieldAt, fieldsAtPath } from '../../data/tableDocs';
-import { BUILTIN_FUNCTIONS } from '../../data/wormforgeDefinitions';
+import { BUILTIN_FUNCTIONS } from '../../data/wormbenchDefinitions';
 
 /** The caret is at the end of the snippet. */
 const at = (src: string) => tableContextAt(src);

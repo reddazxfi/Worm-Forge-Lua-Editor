@@ -323,7 +323,7 @@ export const WorkspaceTree: React.FC<WorkspaceTreeProps> = ({
       </div>
 
       {/* Bundled profiles. Separate from Lua on purpose: they are data the
-          installer copies into WormForge/Profiles, not code the engine loads. */}
+          installer copies into WormBench/Profiles, not code the engine loads. */}
       {model.profiles.length > 0 && (
         <div>
           {groupHeader(

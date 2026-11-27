@@ -16,7 +16,7 @@ import { bundledBy, linkFeatures, type ComponentSource, type FeatureLink } from 
 import type { AppSurfaces } from '../services/appTheme';
 
 interface ProfilesScreenProps {
-  /** `WormForge/Profiles`, derived from the mods folder. '' when it cannot be derived. */
+  /** `WormBench/Profiles`, derived from the mods folder. '' when it cannot be derived. */
   profilesRoot: string;
   profiles: InstalledProfile[];
   /** True once a scan has completed and `profiles` is authoritative. */
@@ -32,7 +32,7 @@ interface ProfilesScreenProps {
 }
 
 /**
- * Profiles installed under `WormForge/Profiles`.
+ * Profiles installed under `WormBench/Profiles`.
  *
  * READ-ONLY, on purpose. A profile lives OUTSIDE the opened mod folder, and every
  * save path in the editor is rooted at that folder (`saveModFile(root, rel)`), so
@@ -154,7 +154,7 @@ export const ProfilesScreen: React.FC<ProfilesScreenProps> = ({
         <div className="flex items-center gap-2 ml-auto shrink-0">
           <button
             onClick={onRefresh}
-            title="Rescan WormForge/Profiles"
+            title="Rescan WormBench/Profiles"
             className={`p-1.5 rounded border transition-colors ${
               isLight
                 ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300'
@@ -316,7 +316,7 @@ export const ProfilesScreen: React.FC<ProfilesScreenProps> = ({
         }`}
       >
         Read-only. Edit a profile in-game, or edit the file directly at the path shown — profiles in{' '}
-        <span className="font-mono">WormForge/Profiles</span> live outside the opened mod folder.
+        <span className="font-mono">WormBench/Profiles</span> live outside the opened mod folder.
       </div>
     </div>
   );

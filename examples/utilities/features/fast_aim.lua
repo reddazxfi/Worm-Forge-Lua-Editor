@@ -14,7 +14,7 @@ return function(pct)
       local ok, v = pcall(function() return worm.aim_target end)
       supported = ok and type(v) == "number"
       if not supported then
-        wa.log("fast aim: this WormForge has no worm.aim_target; fast aim is off")
+        wa.log("fast aim: this WormBench has no worm.aim_target; fast aim is off")
       end
     end
     if not supported then return end

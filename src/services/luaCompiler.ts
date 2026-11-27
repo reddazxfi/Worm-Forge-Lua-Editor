@@ -17,7 +17,7 @@ import {
   VariableDef,
   ClassDef,
   EnumDef,
-} from '../types/wormforge';
+} from '../types/wormbench';
 import { isDesktop } from './modFolder';
 
 export type CheckEngine = 'game-compiler' | 'builtin';

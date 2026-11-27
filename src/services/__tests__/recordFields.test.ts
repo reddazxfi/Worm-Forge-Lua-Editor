@@ -9,7 +9,7 @@ import { RECORD_FIELDS, RECORD_ACTIONS } from '../../data/recordFields';
 // crates/weapons/src/record.rs and kept current by a test there. Same pattern as
 // wormKeys.test.ts -- skip loudly when the engine folder is absent rather than
 // pretend to have checked.
-const ROOT = resolve(__dirname, '../../../WormForge-main-source');
+const ROOT = resolve(__dirname, '../../../WormBench-main-source');
 const JSON_PATH = join(ROOT, 'web/weapon-editor/record_fields.json');
 const haveEngine = existsSync(JSON_PATH);
 

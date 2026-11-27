@@ -1,9 +1,9 @@
 
 
-# 🪱⚡ WormForge Code Studio
+# 🪱⚡ WormBench Code Studio
 > **Elevate your Worms Armageddon modding workflow with a seamless, robust, next-generation Lua development experience.** 🚀
 
-> **New to WormForge modding?** Start with [MODDING.md](MODDING.md). It explains
+> **New to WormBench modding?** Start with [MODDING.md](MODDING.md). It explains
 > the bundle / component / profile / `install(ctx)` model step by step, using
 > the same format the loader reads.
 >
@@ -11,11 +11,11 @@
 > [API-5-CHANGES.md](API-5-CHANGES.md) for the 1.0/API 5 migration
 > list: renamed and removed verbs, new fields and the current generated counts.
 
-WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully crafted** code editor designed to **empower** modders to **unlock** the full potential of the WormForge scripting engine. Whether you're a seasoned modder or just getting started, our **cutting-edge** toolkit has you covered. ✨
+WormBench Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully crafted** code editor designed to **empower** modders to **unlock** the full potential of the WormBench scripting engine. Whether you're a seasoned modder or just getting started, our **cutting-edge** toolkit has you covered. ✨
 
 ---
 
-📁[WormForge Repo](https://github.com/ropahektic/WormForge)
+📁[WormBench Repo](https://github.com/EdLud/WormBench)
 
 ---
 
@@ -26,7 +26,7 @@ WormForge Code Studio is a **powerful**, **blazing-fast**, and **thoughtfully cr
 - 🛡️ **Lockstep Guardian™** — Proactively catches desync-prone patterns like `math.random` and unordered `pairs()` iteration, so your mods stay **deterministic** and your multiplayer matches stay **drama-free**. 🛡️
 - 🎯 **Runtime-Fatal Name Detection** — Catches names that **compile fine but crash in-game**, before they cost you a whole match. See below. 🚨
 - 📚 **Built-in Documentation Pane** — Explore engine functions, classes, enums, and constants without ever leaving your editor.
-- ⚡ **WormForge Verb Autocomplete** — Type `worm:` or `wa.` and get the real member list, with signatures and documentation, straight from the engine definitions.
+- ⚡ **WormBench Verb Autocomplete** — Type `worm:` or `wa.` and get the real member list, with signatures and documentation, straight from the engine definitions.
 - 📂 **Open / Save Mod Folders** — Open a pack folder (`mod.toml` + Lua), edit its files in tabs, and save straight back to disk with Ctrl+S. 🗂️
 - 🧠 **Scope-Aware Suggestions** — Autocomplete is ranked by *where you actually are*. A local declared two lines up always outranks the entire engine API, and a name from an unrelated function never shows up at all. 🎯
 - 🧹 **Structure-Aware Format** — Re-indents Lua by blocks and brackets, not by regex guesswork. Strings and comments can't fool it, and it tells you when a chunk doesn't balance instead of silently mangling it. ✨
@@ -134,7 +134,7 @@ to GitHub Pages on every push to `main`. Enable **Settings → Pages → Source:
 GitHub Actions** once in the repository; after that the site is at:
 
 ```text
-https://<owner>.github.io/Worm-Forge-Lua-Editor/
+https://<owner>.github.io/WormBench-Lua-Editor/
 ```
 
 The web build keeps the editor, the API sidebar and single-file syntax checking.
@@ -164,7 +164,7 @@ build-tauri.bat
 ```
 Your shiny new executable will be waiting at:
 ```
-src-tauri\target\release\wormforge-code-editor.exe
+src-tauri\target\release\wormbench-code-editor.exe
 ```
 🎉 *(The first build compiles Rust crates **and** the vendored Lua 5.4 C sources, and may take several minutes. Grab a coffee!)* ☕
 
@@ -207,7 +207,7 @@ src-tauri\target\release\wormforge-code-editor.exe
 
 Contributions are **warmly welcomed**! 💖 Feel free to open an issue or submit a pull request. Together, we can **forge** the future of Worms modding. 🔥
 
-> ⚠️ Adding a WormForge verb? Add it to `src/data/wormforgeDefinitions.ts`. That one table feeds the docs pane, the autocomplete, **and** the unknown-method warnings — three consumers, zero duplication. 🔗
+> ⚠️ Adding a WormBench verb? Add it to `src/data/wormbenchDefinitions.ts`. That one table feeds the docs pane, the autocomplete, **and** the unknown-method warnings — three consumers, zero duplication. 🔗
 
 ---
 
@@ -238,7 +238,7 @@ of sync with its generated Rust copy. 🧪
 
 MIT. See [LICENSE](LICENSE). ⚖️
 
-Not affiliated with Team17 or Worms Armageddon. This is a third-party tool for the [WormForge](https://github.com/ropahektic/WormForge) modding engine, which is MIT-licensed and maintained separately.
+Not affiliated with Team17 or Worms Armageddon. This is a third-party tool for the [WormBench](https://github.com/EdLud/WormBench) modding engine, which is MIT-licensed and maintained separately.
 
 <div align="center">
 

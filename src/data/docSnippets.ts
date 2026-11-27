@@ -4,10 +4,10 @@
 // The DocPane Insert button used to insert `example` verbatim. Many of those
 // examples are one-line calls or contain `...`, which is a signature, not code
 // a mod author can run. The entries here are complete functions or hook bodies
-// copied from WormForgeNew/mods, with their source path, so Insert lands a
+// copied from the WormBench engine's mods tree, with their source path, so Insert lands a
 // useful block and the docs pane can say where it came from.
 //
-// Keep this data separate from wormforgeDefinitions.ts: the definition tables
+// Keep this data separate from wormbenchDefinitions.ts: the definition tables
 // feed the checker and completion, while these strings are documentation only.
 
 export interface DocSnippet {
@@ -19,7 +19,7 @@ export interface DocSnippet {
 
 export const DOC_SNIPPETS: Record<string, DocSnippet> = {
   "InventoryStore": {
-    source: "WormForgeNew/mods/px/scheme/highland_rules.lua",
+    source: "WormBench-engine/mods/px/scheme/highland_rules.lua",
     code: `local function deal(worm)
   local cave = wa.world.cavern()
   for _, name in ipairs({ "offensive", "second", "movement" }) do
@@ -37,7 +37,7 @@ export const DOC_SNIPPETS: Record<string, DocSnippet> = {
 end`,
   },
   "InventoryStore:add": {
-    source: "WormForgeNew/mods/px/scheme/state.lua",
+    source: "WormBench-engine/mods/px/scheme/state.lua",
     code: `shared.restore_lightning_inventory = function(worm)
   local hand = dead_hands[worm.id]
   if not hand then return end
@@ -48,7 +48,7 @@ end`,
 end`,
   },
   "InventoryStore:apply": {
-    source: "WormForgeNew/mods/px/scheme/highland_rules.lua",
+    source: "WormBench-engine/mods/px/scheme/highland_rules.lua",
     code: `local function on_death(event)
   local victim = event.victim
   local active = event.active
@@ -81,7 +81,7 @@ end`,
 end`,
   },
   "InventoryStore:clear": {
-    source: "WormForgeNew/mods/px/scheme/state.lua",
+    source: "WormBench-engine/mods/px/scheme/state.lua",
     code: `shared.restore_lightning_inventory = function(worm)
   local hand = dead_hands[worm.id]
   if not hand then return end
@@ -92,7 +92,7 @@ end`,
 end`,
   },
   "InventoryStore:deal": {
-    source: "WormForgeNew/mods/px/scheme/highland_rules.lua",
+    source: "WormBench-engine/mods/px/scheme/highland_rules.lua",
     code: `local function deal(worm)
   local cave = wa.world.cavern()
   for _, name in ipairs({ "offensive", "second", "movement" }) do
@@ -110,7 +110,7 @@ end`,
 end`,
   },
   "InventoryStore:list": {
-    source: "WormForgeNew/mods/px/scheme/highland_rules.lua",
+    source: "WormBench-engine/mods/px/scheme/highland_rules.lua",
     code: `local function deal(worm)
   local cave = wa.world.cavern()
   for _, name in ipairs({ "offensive", "second", "movement" }) do
@@ -128,7 +128,7 @@ end`,
 end`,
   },
   "InventoryStore:transfer": {
-    source: "WormForgeNew/mods/px/scheme/highland_rules.lua",
+    source: "WormBench-engine/mods/px/scheme/highland_rules.lua",
     code: `local function on_death(event)
   local victim = event.victim
   local active = event.active
@@ -161,7 +161,7 @@ end`,
 end`,
   },
   "LuaActor": {
-    source: "WormForgeNew/mods/examples/gif_donkey/lua.lua",
+    source: "WormBench-engine/mods/examples/gif_donkey/lua.lua",
     code: `local function brain(a)
   local now = wa.world.frame()
   born[a.id] = born[a.id] or now
@@ -182,7 +182,7 @@ end`,
 end`,
   },
   "LuaActor:collision_ignore": {
-    source: "WormForgeNew/mods/px/weapons/electromagnet.lua",
+    source: "WormBench-engine/mods/px/weapons/electromagnet.lua",
     code: `shared.fires.electromagnet = function(fire)
   local worm = fire.worm
   local pol = (fire.polarity == 1 or fire.polarity == -1) and fire.polarity or polarity[worm.id] or 1
@@ -210,7 +210,7 @@ end`,
 end`,
   },
   "LuaActor:remove": {
-    source: "WormForgeNew/mods/examples/gif_donkey/lua.lua",
+    source: "WormBench-engine/mods/examples/gif_donkey/lua.lua",
     code: `local function brain(a)
   local now = wa.world.frame()
   born[a.id] = born[a.id] or now
@@ -231,7 +231,7 @@ end`,
 end`,
   },
   "LuaActor:explode": {
-    source: "WormForgeNew/mods/examples/gif_donkey/lua.lua",
+    source: "WormBench-engine/mods/examples/gif_donkey/lua.lua",
     code: `local function brain(a)
   local now = wa.world.frame()
   born[a.id] = born[a.id] or now
@@ -252,7 +252,7 @@ end`,
 end`,
   },
   "LuaActor:fits": {
-    source: "WormForgeNew/mods/px/lib/portals.lua",
+    source: "WormBench-engine/mods/px/lib/portals.lua",
     code: `function Network:move(body)
   local kind = body.kind or "worm"
   if kind == "worm" and (body.hp <= 0 or body.taken) then return false end
@@ -298,7 +298,7 @@ end`,
 end`,
   },
   "LuaActor:frame": {
-    source: "WormForgeNew/mods/examples/turret/weapons.lua",
+    source: "WormBench-engine/mods/examples/turret/weapons.lua",
     code: `local function spark_brain(a)
   local n = sparks[a.id] or 0
   a:frame(n)
@@ -311,7 +311,7 @@ end`,
 end`,
   },
   "LuaActor:gfx": {
-    source: "WormForgeNew/mods/examples/tools/stress/stress.lua",
+    source: "WormBench-engine/mods/examples/tools/stress/stress.lua",
     code: `local function orb_brain(o)
   local spin = 0
   return function(a)
@@ -341,7 +341,7 @@ end`,
 end`,
   },
   "LuaActor:in_water": {
-    source: "WormForgeNew/mods/examples/gif_donkey/lua.lua",
+    source: "WormBench-engine/mods/examples/gif_donkey/lua.lua",
     code: `local function brain(a)
   local now = wa.world.frame()
   born[a.id] = born[a.id] or now
@@ -362,7 +362,7 @@ end`,
 end`,
   },
   "LuaActor:look": {
-    source: "WormForgeNew/mods/examples/pooz/weapons.lua",
+    source: "WormBench-engine/mods/examples/pooz/weapons.lua",
     code: `local function set_clip(a, st, name)
   if st.anim ~= name then
     st.anim = name
@@ -386,7 +386,7 @@ end`,
 end`,
   },
   "LuaActor:move": {
-    source: "WormForgeNew/mods/examples/gif_donkey/lua.lua",
+    source: "WormBench-engine/mods/examples/gif_donkey/lua.lua",
     code: `local function brain(a)
   local now = wa.world.frame()
   born[a.id] = born[a.id] or now
@@ -407,7 +407,7 @@ end`,
 end`,
   },
   "LuaActor:on_feet": {
-    source: "WormForgeNew/mods/examples/wormcraft/weapons.lua",
+    source: "WormBench-engine/mods/examples/wormcraft/weapons.lua",
     code: `local function letter_brain(delay, last, origin, left, y, n, dest_x, dest_y, i)
   local t = 0
   local shown = false
@@ -468,7 +468,7 @@ end`,
 end`,
   },
   "LuaActor:warp": {
-    source: "WormForgeNew/mods/examples/wormcraft/weapons.lua",
+    source: "WormBench-engine/mods/examples/wormcraft/weapons.lua",
     code: `local function letter_brain(delay, last, origin, left, y, n, dest_x, dest_y, i)
   local t = 0
   local shown = false
@@ -529,7 +529,7 @@ end`,
 end`,
   },
   "MagneticField": {
-    source: "WormForgeNew/mods/px/weapons/electromagnet.lua",
+    source: "WormBench-engine/mods/px/weapons/electromagnet.lua",
     code: `local function remove(m)
   m.alive = false
   m.field:remove()
@@ -539,7 +539,7 @@ end`,
 end`,
   },
   "MagneticField:contains": {
-    source: "WormForgeNew/mods/px/weapons/electromagnet.lua",
+    source: "WormBench-engine/mods/px/weapons/electromagnet.lua",
     code: `wa.on.missile_frame(function(missile)
   if missile.phase ~= "pre" or not DAMPED[missile.weapon] then return end
   for _, m in ipairs(magnets) do
@@ -551,7 +551,7 @@ end`,
 end)`,
   },
   "MagneticField:remove": {
-    source: "WormForgeNew/mods/px/weapons/electromagnet.lua",
+    source: "WormBench-engine/mods/px/weapons/electromagnet.lua",
     code: `local function remove(m)
   m.alive = false
   m.field:remove()
@@ -561,7 +561,7 @@ end)`,
 end`,
   },
   "MissileEntity": {
-    source: "WormForgeNew/mods/px/lib/px_zone_fx.lua",
+    source: "WormBench-engine/mods/px/lib/px_zone_fx.lua",
     code: `function M.flight(weapon, healing)
   local count = 0
   wa.on.missile_frame(function(m)
@@ -574,12 +574,12 @@ end`,
 end`,
   },
   "wa.on.body_move": {
-    source: "WormForgeNew/mods/px/weapons/portal_gun.lua",
+    source: "WormBench-engine/mods/px/weapons/portal_gun.lua",
     code: `wa.on.body_move(function(body) if next(network.pairs) then network:move(body) end end,
   { kinds = { "worm", "missile", "mine", "crate", "oil", "grave", "arrow" } })`,
   },
   "wa.on.contact": {
-    source: "WormForgeNew/mods/px/weapons/hang_glider.lua",
+    source: "WormBench-engine/mods/px/weapons/hang_glider.lua",
     code: `wa.on.contact(function(worm, other)
   local g = gliders[worm.id]
   if g and g.landing and other.kind == "land" and worm.y < wa.world.water() then
@@ -594,7 +594,7 @@ end`,
 end)`,
   },
   "wa.on.death": {
-    source: "WormForgeNew/mods/px/weapons/reinforcement.lua",
+    source: "WormBench-engine/mods/px/weapons/reinforcement.lua",
     code: `local function update_selectable()
   -- DLLs before 0.9.1 lack the verb: there it stays selectable, and refused.
   if not wa.weapons.set_selectable then return end
@@ -610,7 +610,7 @@ end
 wa.on.death(update_selectable)`,
   },
   "wa.on.draw": {
-    source: "WormForgeNew/mods/px/scheme/specialists_rules.lua",
+    source: "WormBench-engine/mods/px/scheme/specialists_rules.lua",
     code: `wa.on.draw(function()
   for _, worm in ipairs(wa.worms.all()) do
     local class = class_of(worm)
@@ -624,7 +624,7 @@ wa.on.death(update_selectable)`,
 end)`,
   },
   "wa.on.hud": {
-    source: "WormForgeNew/mods/examples/tools/worm_state_logger.lua",
+    source: "WormBench-engine/mods/examples/tools/worm_state_logger.lua",
     code: `wa.on.hud(function()
   local line = "Worm state: ?"
   for _, worm in ipairs(wa.worms.all()) do
@@ -637,7 +637,7 @@ end)`,
 end)`,
   },
   "wa.on.hurt": {
-    source: "WormForgeNew/mods/examples/tools/hello.lua",
+    source: "WormBench-engine/mods/examples/tools/hello.lua",
     code: `wa.on.hurt(function(hit)
   if hit.phase == "post" and hit.lost > 0 then
     wa.log(hit.kind .. " -" .. tostring(hit.lost) .. " hp")
@@ -645,13 +645,13 @@ end)`,
 end)`,
   },
   "wa.on.skim": {
-    source: "WormForgeNew/mods/skim_voices/features/skim_voices.lua",
+    source: "WormBench-engine/mods/skim_voices/features/skim_voices.lua",
     code: `wa.on.skim(function(event)
   wa.log("worm " .. tostring(event.worm.id) .. " skimmed")
 end)`,
   },
   "wa.on.missile_frame": {
-    source: "WormForgeNew/mods/px/lib/px_zone_fx.lua",
+    source: "WormBench-engine/mods/px/lib/px_zone_fx.lua",
     code: `function M.flight(weapon, healing)
   local count = 0
   wa.on.missile_frame(function(m)
@@ -664,7 +664,7 @@ end)`,
 end`,
   },
   "wa.on.oil_explode": {
-    source: "WormForgeNew/mods/px/lib/oil_drums.lua",
+    source: "WormBench-engine/mods/px/lib/oil_drums.lua",
     code: `wa.on.oil_explode(function(ev)
   local kind = take(ev.drum)
   local burst = launched[ev.drum.id] and LAUNCHED[kind] or BURST[kind]
@@ -674,31 +674,31 @@ end`,
 end)`,
   },
   "wa.on.arrow_land": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `wa.on.arrow_land(function(ev)
   wa.log("arrow at " .. ev.x .. ", " .. ev.y .. ", frame " .. ev.frame)
 end)`,
   },
   "wa.on.turn_cleanup": {
-    source: "WormForgeNew/mods/examples/tools/hello.lua",
+    source: "WormBench-engine/mods/examples/tools/hello.lua",
     code: `wa.on.turn_cleanup(function(event)
   wa.log("turn cleaned up for worm " .. tostring(event.worm.id))
 end)`,
   },
   "wa.on.turn_end": {
-    source: "WormForgeNew/mods/examples/tools/hello.lua",
+    source: "WormBench-engine/mods/examples/tools/hello.lua",
     code: `wa.on.turn_end(function(event)
   wa.log("movement ends for worm " .. tostring(event.worm.id))
 end)`,
   },
   "wa.on.turn_retreat": {
-    source: "WormForgeNew/mods/examples/tools/hello.lua",
+    source: "WormBench-engine/mods/examples/tools/hello.lua",
     code: `wa.on.turn_retreat(function(event)
   wa.log("retreat begins for worm " .. tostring(event.worm.id))
 end)`,
   },
   "wa.on.turn_start": {
-    source: "WormForgeNew/mods/examples/labs/shuffle_panel.lua",
+    source: "WormBench-engine/mods/examples/labs/shuffle_panel.lua",
     code: `wa.on.turn_start(function()
   local layout = wa.panel.layout()
   -- By id first: a table's order isn't the same on every machine, and the
@@ -718,7 +718,7 @@ end)`,
 end)`,
   },
   "wa.on.weapon_grant": {
-    source: "WormForgeNew/mods/utilities/weapons/plus_n.lua",
+    source: "WormBench-engine/mods/utilities/weapons/plus_n.lua",
     code: `wa.on.weapon_grant(function(ev)
   local collector
   for _, worm in ipairs(wa.worms.all()) do
@@ -740,7 +740,7 @@ end)`,
 end)`,
   },
   "wa.on.worm_message": {
-    source: "WormForgeNew/mods/examples/labs/q_bazooka.lua",
+    source: "WormBench-engine/mods/examples/labs/q_bazooka.lua",
     code: `return function()
   local prev_q = {}
 
@@ -764,7 +764,7 @@ end)`,
 end`,
   },
   "WorldHandle": {
-    source: "WormForgeNew/mods/px/weapons/lightning_strike.lua",
+    source: "WormBench-engine/mods/px/weapons/lightning_strike.lua",
     code: `local function strike_hit(s)
   if shared.zap_bowling_balls then shared.zap_bowling_balls(s.ex, s.ey) end
   if s.hit then turret.capture_hit(s.sentry, s.ex, s.ey, s.alliance) end
@@ -805,7 +805,7 @@ end`,
 end`,
   },
   "WorldHandle:arm": {
-    source: "WormForgeNew/mods/px/lib/px_blast_zone.lua",
+    source: "WormBench-engine/mods/px/lib/px_blast_zone.lua",
     code: `local function boom(z, obj)
   local b = wa.actors.spawn({
     sprite = false, x = z.x, y = z.y, owner = z.owner, on = function() end,
@@ -825,7 +825,7 @@ end`,
 end`,
   },
   "WorldHandle:fits": {
-    source: "WormForgeNew/mods/px/lib/portals.lua",
+    source: "WormBench-engine/mods/px/lib/portals.lua",
     code: `function Network:move(body)
   local kind = body.kind or "worm"
   if kind == "worm" and (body.hp <= 0 or body.taken) then return false end
@@ -871,7 +871,7 @@ end`,
 end`,
   },
   "WorldHandle:hit": {
-    source: "WormForgeNew/mods/px/weapons/bowling_ball.lua",
+    source: "WormBench-engine/mods/px/weapons/bowling_ball.lua",
     code: `local function hit(obj)
   if not overlaps(b, obj) then return end
   local damage = 0
@@ -904,7 +904,7 @@ end`,
 end`,
   },
   "WorldHandle:remove": {
-    source: "WormForgeNew/mods/px/weapons/sentry_laser.lua",
+    source: "WormBench-engine/mods/px/weapons/sentry_laser.lua",
     code: `local function fire(t, a, s, target)
   local ang = math.rad(s.angle)
   local x0, y0 = turret.muzzle(t, a, s.angle)
@@ -956,7 +956,7 @@ end`,
 end`,
   },
   "WorldHandle:revive": {
-    source: "WormForgeNew/mods/px/weapons/lightning_strike.lua",
+    source: "WormBench-engine/mods/px/weapons/lightning_strike.lua",
     code: `local function strike_hit(s)
   if shared.zap_bowling_balls then shared.zap_bowling_balls(s.ex, s.ey) end
   if s.hit then turret.capture_hit(s.sentry, s.ex, s.ey, s.alliance) end
@@ -997,7 +997,7 @@ end`,
 end`,
   },
   "WorldHandle:warp": {
-    source: "WormForgeNew/mods/px/lib/portals.lua",
+    source: "WormBench-engine/mods/px/lib/portals.lua",
     code: `function Network:move(body)
   local kind = body.kind or "worm"
   if kind == "worm" and (body.hp <= 0 or body.taken) then return false end
@@ -1043,7 +1043,7 @@ end`,
 end`,
   },
   "WormEntity": {
-    source: "WormForgeNew/mods/examples/labs/q_bazooka.lua",
+    source: "WormBench-engine/mods/examples/labs/q_bazooka.lua",
     code: `local prev_q = {}
 
 wa.on.worm_message(function(worm, msg)
@@ -1065,7 +1065,7 @@ wa.on.worm_message(function(worm, msg)
 end, { msgs = { wa.msg.FRAME_FINISH } })`,
   },
   "WormEntity:ammo": {
-    source: "WormForgeNew/mods/examples/labs/hurt_lab.lua",
+    source: "WormBench-engine/mods/examples/labs/hurt_lab.lua",
     code: `local TEN = "labs.hurt_lab"
 
 wa.on.worm_message(function(worm, msg)
@@ -1091,7 +1091,7 @@ wa.on.worm_message(function(worm, msg)
 end, { msgs = { wa.msg.FIRE_WEAPON } })`,
   },
   "WormEntity:delay": {
-    source: "WormForgeNew/mods/px/scheme/specialists_rules.lua",
+    source: "WormBench-engine/mods/px/scheme/specialists_rules.lua",
     code: `wa.on.worm_message(function(worm, msg)
   if msg == wa.msg.TURN_STARTED and worm.turn then
     -- Native upkeep handles positive values; only PX's temporary -1
@@ -1105,7 +1105,7 @@ end, { msgs = { wa.msg.FIRE_WEAPON } })`,
 end, { msgs = { wa.msg.TURN_STARTED } })`,
   },
   "WormEntity:reduce_health": {
-    source: "WormForgeNew/mods/px/weapons/sacrifice.lua",
+    source: "WormBench-engine/mods/px/weapons/sacrifice.lua",
     code: `local function fire(worm)
   local steps = math.min(choice, math.floor((worm.hp - 1) / 50))
   if steps < 1 or not worm:reduce_health(50 * steps) then
@@ -1117,7 +1117,7 @@ end, { msgs = { wa.msg.TURN_STARTED } })`,
 end`,
   },
   "WormEntity:carry": {
-    source: "WormForgeNew/mods/examples/labs/worm_toss.lua",
+    source: "WormBench-engine/mods/examples/labs/worm_toss.lua",
     code: `local function tick(a)
   local down = wa.world.pointer().down
 
@@ -1141,7 +1141,7 @@ end`,
 end`,
   },
   "WormEntity:equip": {
-    source: "WormForgeNew/mods/examples/labs/q_bazooka.lua",
+    source: "WormBench-engine/mods/examples/labs/q_bazooka.lua",
     code: `local prev_q = {}
 
 wa.on.worm_message(function(worm, msg)
@@ -1163,7 +1163,7 @@ wa.on.worm_message(function(worm, msg)
 end, { msgs = { wa.msg.FRAME_FINISH } })`,
   },
   "WormEntity:fits": {
-    source: "WormForgeNew/mods/px/weapons/tele_arrow.lua",
+    source: "WormBench-engine/mods/px/weapons/tele_arrow.lua",
     code: `local function teleport(event)
   local worm
   for _, w in ipairs(wa.worms.all()) do
@@ -1184,7 +1184,7 @@ end, { msgs = { wa.msg.FRAME_FINISH } })`,
 end`,
   },
   "WormEntity:freeze": {
-    source: "WormForgeNew/mods/px/weapons/ice_arrow.lua",
+    source: "WormBench-engine/mods/px/weapons/ice_arrow.lua",
     code: `wa.on.worm_message(function(worm)
   if pending[worm.id] then
     pending[worm.id] = nil
@@ -1193,7 +1193,7 @@ end`,
 end, { msgs = { wa.msg.FRAME_FINISH } })`,
   },
   "WormEntity:heal": {
-    source: "WormForgeNew/mods/px/weapons/lightning_strike.lua",
+    source: "WormBench-engine/mods/px/weapons/lightning_strike.lua",
     code: `local function strike_hit(s)
   if shared.zap_bowling_balls then shared.zap_bowling_balls(s.ex, s.ey) end
   if s.hit then turret.capture_hit(s.sentry, s.ex, s.ey, s.alliance) end
@@ -1234,7 +1234,7 @@ end, { msgs = { wa.msg.FRAME_FINISH } })`,
 end`,
   },
   "WormEntity:commit_health": {
-    source: "WormForgeNew/mods/utilities/features/live_hp.lua",
+    source: "WormBench-engine/mods/utilities/features/live_hp.lua",
     code: `-- Live HP, originally by reddaz. Commit WA's pending health display directly;
 -- native hit, movement, freeze and death handling retain their own states.
 wa.on.hurt(function(hit)
@@ -1248,7 +1248,7 @@ wa.on.hurt(function(hit)
 end)`,
   },
   "WormEntity:die": {
-    source: "WormForgeNew/mods/utilities/features/instant_death.lua",
+    source: "WormBench-engine/mods/utilities/features/instant_death.lua",
     code: `-- Let each zero-HP victim die without waiting for the battlefield.
 -- In flight mode, die now; otherwise let WA start it once the worm settles.
 wa.on.worm_message(function(worm)
@@ -1260,7 +1260,7 @@ wa.on.worm_message(function(worm)
 end, { msgs = { wa.msg.FRAME_FINISH } })`,
   },
   "WormEntity:hit": {
-    source: "WormForgeNew/mods/examples/labs/hurt_lab.lua",
+    source: "WormBench-engine/mods/examples/labs/hurt_lab.lua",
     code: `local TEN = "labs.hurt_lab"
 
 wa.on.worm_message(function(worm, msg)
@@ -1286,7 +1286,7 @@ wa.on.worm_message(function(worm, msg)
 end, { msgs = { wa.msg.FIRE_WEAPON } })`,
   },
   "WormEntity:jetpack_steer": {
-    source: "WormForgeNew/mods/px/weapons/helicopter.lua",
+    source: "WormBench-engine/mods/px/weapons/helicopter.lua",
     code: `local function heli_frame(worm)
   local h = helis[worm.id]
   local state = worm.state
@@ -1411,7 +1411,7 @@ end, { msgs = { wa.msg.FIRE_WEAPON } })`,
 end`,
   },
   "WormEntity:jump": {
-    source: "WormForgeNew/mods/px/weapons/double_jump.lua",
+    source: "WormBench-engine/mods/px/weapons/double_jump.lua",
     code: `wa.on.worm_message(function(worm, msg)
   if msg == wa.msg.FRAME_FINISH then
     if on and not armed and worm.turn and GROUNDED[worm.state] then
@@ -1441,7 +1441,7 @@ end`,
 end, { msgs = { wa.msg.FRAME_FINISH, wa.msg.FIRE_WEAPON, wa.msg.JUMP, wa.msg.JUMP_UP } })`,
   },
   "WormEntity:release": {
-    source: "WormForgeNew/mods/px/weapons/hang_glider.lua",
+    source: "WormBench-engine/mods/px/weapons/hang_glider.lua",
     code: `local function glider_close(worm, g, landing, hard_landing)
   g.deployed = false
   -- A gentle landing can spend several frames falling under WA's control
@@ -1473,7 +1473,7 @@ end, { msgs = { wa.msg.FRAME_FINISH, wa.msg.FIRE_WEAPON, wa.msg.JUMP, wa.msg.JUM
 end`,
   },
   "WormEntity:set_state": {
-    source: "WormForgeNew/mods/user_mods/roaming_bees/semantic_all_rules.lua",
+    source: "WormBench-engine/mods/user_mods/roaming_bees/semantic_all_rules.lua",
     code: `local function everySettableStateIsFine(worm)
   worm:set_state("standing")
   worm:set_state("falling")
@@ -1484,7 +1484,7 @@ end`,
 end`,
   },
   "WormEntity:take": {
-    source: "WormForgeNew/mods/px/weapons/electric_grenade.lua",
+    source: "WormBench-engine/mods/px/weapons/electric_grenade.lua",
     code: `local function progress_arc(arc)
   arc.explosion = arc.explosion + 1
   for i = #arc.pending, 1, -1 do
@@ -1556,7 +1556,7 @@ end`,
 end`,
   },
   "WormEntity:teleport_pose": {
-    source: "WormForgeNew/mods/px/weapons/super_tele.lua",
+    source: "WormBench-engine/mods/px/weapons/super_tele.lua",
     code: `fires.super_tele_click = function(ev)
   local worm = ev.worm
   if worm.hp <= 0 then return end
@@ -1579,7 +1579,7 @@ end`,
 end`,
   },
   "WormEntity:warp": {
-    source: "WormForgeNew/mods/px/weapons/tele_arrow.lua",
+    source: "WormBench-engine/mods/px/weapons/tele_arrow.lua",
     code: `local function teleport(event)
   local worm
   for _, w in ipairs(wa.worms.all()) do
@@ -1602,7 +1602,7 @@ end`,
   // The 0.9.9 handle methods have no shipped-mod caller yet; these are minimal
   // complete blocks from the verb list, not excerpts.
   "LuaActor:hit": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function on_explode(actor)
   for _, other in ipairs(wa.actors.all()) do
     if other.id ~= actor.id then
@@ -1612,7 +1612,7 @@ end`,
 end`,
   },
   "WormEntity:use": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function give_jetpack(worm)
   if not worm.turn then
     return worm:use("stock.jet_pack")
@@ -1621,13 +1621,13 @@ end`,
 end`,
   },
   "HudTrayEntry:set": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function show_progress(entry, progress)
   entry:set({ lit = progress >= 1, progress = progress })
 end`,
   },
   "HudTrayEntry:remove": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function hide_entry(entry)
   if entry:is_open() then
     entry:remove()
@@ -1635,13 +1635,13 @@ end`,
 end`,
   },
   "HudTrayEntry:is_open": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function still_shown(entry)
   return entry:is_open()
 end`,
   },
   "HudUtilityEntry:remove": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function clear_utility(entry)
   if entry:is_open() then
     entry:remove()
@@ -1649,52 +1649,98 @@ end`,
 end`,
   },
   "HudUtilityEntry:is_open": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function still_shown(entry)
   return entry:is_open()
 end`,
   },
   "TrailHandle:push": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function leave_trail(trail, x, y)
   trail:push(x, y)
 end`,
   },
   "TrailHandle:finish": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function stop_feeding(trail)
   trail:finish()
 end`,
   },
   "TrailHandle:remove": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function drop_trail(trail)
   trail:remove()
 end`,
   },
   "BrushHandle:box": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function draw_ring(brush, x, y)
   brush:box(x, y, 24, 24, 0, 0, 0x80FFFFFF)
 end`,
   },
   "BrushHandle:boxes": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function draw_puffs(brush, puffs)
   brush:boxes(puffs, #puffs // 7)
 end`,
   },
   "BrushHandle:quads": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function draw_cells(brush, cells)
   brush:quads(cells, #cells // 10)
 end`,
   },
   "RippleHandle:stop": {
-    source: "WormForge API example",
+    source: "WormBench API example",
     code: `local function end_ripple(ripple)
   ripple:stop()
 end`,
+  },
+  "wa.on.frame": {
+    source: "WormBench API example",
+    code: `wa.on.frame(function()
+  local n = wa.world.frame()
+  if n % 30 == 0 then
+    wa.log("frame " .. n)
+  end
+end)`,
+  },
+  "wa.world.explode": {
+    source: "WormBench API example",
+    code: `wa.on.frame(function()
+  wa.world.explode({ x = 400, y = 300, owner = "none", damage = 45 })
+end)`,
+  },
+  "wa.hud.key": {
+    source: "WormBench API example",
+    code: `wa.on.hud(function()
+  if wa.hud.key("t") then
+    wa.hud.text({ text = "Rules", x = 8, y = 8 })
+  end
+end)`,
+  },
+  "wa.panel.close": {
+    source: "WormBench API example",
+    code: `wa.on.hud(function()
+  if wa.hud.key("tab") then
+    wa.panel.close()
+  end
+end)`,
+  },
+  "LuaActor:sleep": {
+    source: "WormBench API example",
+    code: `local function rest(a)
+  if a:on_feet() then
+    a:sleep(250, { near = 96 })
+  end
+end`,
+  },
+  "MagneticField:move": {
+    source: "WormBench API example",
+    code: `local field = wa.magnetism.field({ x = 400, y = 300, range = 120 })
+wa.on.frame(function()
+  field:move(420, 300)
+end)`,
   },
 };
 

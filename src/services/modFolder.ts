@@ -256,7 +256,7 @@ export async function saveModFile(root: string, rel: string, content: string): P
 // ---------------------------------------------------------------------------
 // The official library (wf-lib)
 //
-// WormForge replaces Mods/wf-lib on every update to keep its hashes identical.
+// WormBench replaces Mods/wf-lib on every update to keep its hashes identical.
 // The editor still lets you read and edit those files, but a save must not land
 // inside that managed shelf: it would be erased by the next update. Instead the
 // whole mod folder is moved to its parent Mods/ folder -- the exact shape the
@@ -626,7 +626,7 @@ export interface BuildModProfileOptions {
  * on F1 and adds a small stock kit instead of leaving every other slot empty.
  *
  * The chosen parameter values are written to `[options."<component id>"]`.
- * The engine copies this file into `WormForge/Profiles/` when the pack is
+ * The engine copies this file into `WormBench/Profiles/` when the pack is
  * installed (`adopt_profiles`, `crates/weapons/src/components.rs:1446`) and
  * never overwrites an existing profile of the same name.
  */
@@ -842,7 +842,7 @@ export interface ModListEntry {
    * File stems of `profiles/*.toml` inside the mod, e.g. ["Highlander"].
    *
    * Only names, and only for comparing against the INSTALLED profile of the
-   * same name. The loader copies a bundled profile into `WormForge/Profiles` at
+   * same name. The loader copies a bundled profile into `WormBench/Profiles` at
    * install time and never overwrites one that exists, so the two may have
    * diverged; nothing here may present them as the same file.
    */
@@ -1307,7 +1307,7 @@ export async function listModEntries(rootPath: string): Promise<ModListEntry[] |
 
         // Names of the profiles this mod ships. One readDir, contents not read:
         // the only question asked of them is "does a profile with this name
-        // already exist in WormForge/Profiles".
+        // already exist in WormBench/Profiles".
         let bundledProfiles: string[] = [];
         try {
           const profileEntries = await readDir(`${modPath}${sep}profiles`);

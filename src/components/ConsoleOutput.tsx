@@ -8,7 +8,7 @@ import {
   Info,
   ExternalLink,
 } from 'lucide-react';
-import { SyntaxDiagnostic } from '../types/wormforge';
+import { SyntaxDiagnostic } from '../types/wormbench';
 import { CheckEngine } from '../services/luaCompiler';
 import { countSeverities, filterBySeverity, type DiagnosticFilter } from '../services/diagnostics';
 import type { AppSurfaces } from '../services/appTheme';

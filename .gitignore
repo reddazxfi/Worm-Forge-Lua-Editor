@@ -1,5 +1,6 @@
 node_modules/
 build/
+.agents/
 dist/
 coverage/
 .DS_Store
@@ -28,5 +29,5 @@ compacted-history.md
 PROGRESS.md
 SYNC_PROMPT.md
 repomix.config.json
-WormForge-main-source/
+WormBench-main-source/
 ModsLatest/

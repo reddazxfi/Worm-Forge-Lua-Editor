@@ -208,7 +208,7 @@ describe('editorThemes', () => {
   it('alters no line of the real engine corpus, in any preset or mode', () => {
     // Plain path strings rather than file:// URLs: readdirSync returns Dirents, and
     // mixing those with URL juggling is where this first attempt went wrong.
-    const root = resolve(__dirname, '../../../WormForge-main-source');
+    const root = resolve(__dirname, '../../../WormBench-main-source');
     const files: string[] = [];
     const walk = (dir: string) => {
       let entries: import('node:fs').Dirent[];

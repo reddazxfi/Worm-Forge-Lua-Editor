@@ -58,7 +58,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     // Persist first: the next launch (and the index.html watchdog) can then show
     // what happened even if this screen is never seen.
     recordCrash('react', error, info.componentStack ?? undefined);
-    console.error('[WormForge] render error', error, info);
+    console.error('[WormBench] render error', error, info);
   }
 
   private reload = () => {
@@ -135,7 +135,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
               marginBottom: 8,
             }}
           >
-            WormForge stopped rendering
+            WormBench stopped rendering
           </div>
           <h1 style={{ fontSize: 19, fontWeight: 700, margin: '0 0 8px' }}>
             The editor hit an error

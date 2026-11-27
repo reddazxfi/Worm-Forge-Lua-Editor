@@ -3,7 +3,7 @@
 
 return function(ctx)
   if not wa.crates.set_drop then
-    wa.log("Crate pop needs a newer WormForge: crates arrive as normal")
+    wa.log("Crate pop needs a newer WormBench: crates arrive as normal")
     return
   end
   local low, high = ctx.option("height_min"), ctx.option("height_max")

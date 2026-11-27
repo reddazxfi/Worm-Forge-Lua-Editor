@@ -5,7 +5,7 @@ import {
   ClassDef,
   CustomVerb,
   ParsedSymbolTree,
-} from '../types/wormforge';
+} from '../types/wormbench';
 
 export type { SyntaxDiagnostic, ParsedSymbolTree };
 import {
@@ -13,7 +13,7 @@ import {
   BUILTIN_ENUMERATIONS,
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
-} from '../data/wormforgeDefinitions';
+} from '../data/wormbenchDefinitions';
 import {
   ALL_HANDLE_CLASSES,
   customMembersFor,
@@ -108,7 +108,7 @@ function scanUndefinedGlobals(meaningful: Token[]): SyntaxDiagnostic[] {
       if (meaningful[i + 2]?.value === ':') bound.add('self');
 
       // Parameters: every identifier up to the `)` that closes the first `(`.
-      // Anonymous callbacks are the common WormForge style
+      // Anonymous callbacks are the common WormBench style
       // (`wa.on.hurt(function(worm, ev) ... end)`), so this has to work when
       // `function` is immediately followed by `(`.
       for (let k = i + 1; k < meaningful.length; k++) {
@@ -312,7 +312,7 @@ function isNilGuarded(meaningful: Token[], i: number): boolean {
  * Only CALLS are checked (`wa.a.b(...)`). A bare `wa.a.b` on the right of an
  * assignment is a field write, not a call, and is left to the member checks.
  *
- * Warning, never error: BUILTIN_FUNCTIONS is pinned to WormForge 1.0 (API 5)
+ * Warning, never error: BUILTIN_FUNCTIONS is pinned to WormBench 1.0 (API 5)
  * and may lag the engine, so a key this build does not know is SUSPICIOUS, not
  * wrong.
  */
@@ -413,7 +413,7 @@ function scanWaNamespaceTypos(meaningful: Token[], userVerbs: CustomVerb[] = [])
           (suggestion ? ` Did you mean "${suggestion}"?` : ''),
       detail: diagnosticsOnly
         ? `\`wa.audit\` is installed by crates/lua-host/src/api.rs under ` +
-          `#[cfg(feature = "diagnostics")], so a stock WormForge has no such namespace and ` +
+          `#[cfg(feature = "diagnostics")], so a stock WormBench has no such namespace and ` +
           `this call raises "attempt to call a nil value". It also needs ` +
           `\`debug_input = true\` in the calling pack's mod.toml (actor.rs:2854). ` +
           `\`mods/tools\` declares it; a pack you ship must too.`
@@ -1346,7 +1346,7 @@ export function parseAndValidate(
       }
     }
 
-    // Arrow Operator Check: '->' is NOT valid Lua in WormForge
+    // Arrow Operator Check: '->' is NOT valid Lua in WormBench
     if (t.type === 'arrow' || t.value === '->') {
       const leftTok = meaningfulTokens[idx - 1];
       const rightTok = meaningfulTokens[idx + 1];
@@ -1356,7 +1356,7 @@ export function parseAndValidate(
       diagnostics.push({
         line: t.line,
         column: t.column,
-        message: `'->' is not a valid operator in WormForge Lua (it belongs to PX engine internals). Use '.' for functions/properties (${target}.${member}) or ':' for method calls (${target}:${member}()).`,
+        message: `'->' is not a valid operator in WormBench Lua (it belongs to PX engine internals). Use '.' for functions/properties (${target}.${member}) or ':' for method calls (${target}:${member}()).`,
         severity: 'error',
         rule: 'invalid-arrow-operator',
       });
@@ -1428,7 +1428,7 @@ export function parseAndValidate(
       }
     }
 
-    // WormForge Method invocation check: e.g. a:move, worm:hit, a:explode
+    // WormBench Method invocation check: e.g. a:move, worm:hit, a:explode
     if (t.value === ':') {
       const left = meaningfulTokens[idx - 1];
       const right = meaningfulTokens[idx + 1];
@@ -1549,7 +1549,7 @@ export function parseAndValidate(
           line: t.line,
           column: t.column,
           message: b.disabled
-            ? `Lockstep Violation: "math.${b.name}" is disabled in WormForge to prevent desyncs. ${b.hint}`
+            ? `Lockstep Violation: "math.${b.name}" is disabled in WormBench to prevent desyncs. ${b.hint}`
             : `Lockstep Warning: "math.${b.name}" is not lockstep-safe: the C library result can differ between machines and desync the match. ${b.hint}`,
           // `math.random`/`randomseed` really are nil in the sandbox, so the
           // call raises. `math.cos`/`sin`/`atan` still run; they are a

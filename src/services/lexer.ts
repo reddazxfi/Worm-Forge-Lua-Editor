@@ -16,7 +16,7 @@
 // directly after a dot, e.g. `worm.1111`. If a user reports a crash, check for
 // that pattern first.
 
-import type { SyntaxDiagnostic } from '../types/wormforge';
+import type { SyntaxDiagnostic } from '../types/wormbench';
 
 export interface Token {
   type:
@@ -298,7 +298,7 @@ export function tokenize(code: string): { tokens: Token[]; diagnostics: SyntaxDi
       }
     }
 
-    // Arrow Operator: -> (Invalid in Lua / WormForge; flag with error diagnostic)
+    // Arrow Operator: -> (Invalid in Lua / WormBench; flag with error diagnostic)
     if (char === '-' && code[i + 1] === '>') {
       tokens.push({
         type: 'arrow',

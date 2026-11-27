@@ -102,7 +102,7 @@ const TS_WEAKER = new Set([
   'worm-state-typo',
 ]);
 
-const ROOT = 'WormForge-main-source';
+const ROOT = 'WormBench-main-source';
 
 // Only the pack corpus. The engine's own Rust test fixtures are not user mods and
 // deliberately exercise invalid Lua, so including them would make every file a false
@@ -117,7 +117,7 @@ const ROOT = 'WormForge-main-source';
 const SKIP = /[\\/]crates[\\/]|[\\/]target[\\/]|[\\/]node_modules[\\/]|[\\/]tools[\\/]/;
 
 console.log('Building the sweep harness...');
-execFileSync('cargo', ['build', '--quiet', '--bin', 'wasmforge-sweep'], {
+execFileSync('cargo', ['build', '--quiet', '--bin', 'wormbench-sweep'], {
   cwd: 'src-tauri',
   stdio: 'inherit',
 });
@@ -135,7 +135,7 @@ const dir = mkdtempSync(join(tmpdir(), 'wfsweep-'));
 const manifest = join(dir, 'files.json');
 writeFileSync(manifest, JSON.stringify(files), 'utf8');
 
-const out = execFileSync('cargo', ['run', '--quiet', '--bin', 'wasmforge-sweep', '--', manifest], {
+const out = execFileSync('cargo', ['run', '--quiet', '--bin', 'wormbench-sweep', '--', manifest], {
   cwd: 'src-tauri',
   encoding: 'utf8',
   maxBuffer: 256 * 1024 * 1024,
@@ -211,10 +211,10 @@ for (const file of files) {
   ];
 
   // Strip the corpus ROOT as an ABSOLUTE prefix. The old
-  // `.replace('WormForge-main-source/', '')` removed only the first occurrence of that
+  // `.replace('WormBench-main-source/', '')` removed only the first occurrence of that
   // literal, so absolute paths leaked through as
   // `C:/Users/.../highlander_code/...` -- which reads as "the corpus is at the repo root"
-  // rather than "the corpus is under WormForge-main-source/".
+  // rather than "the corpus is under WormBench-main-source/".
   const rel = file
     .replace(/\\/g, '/')
     .replace(resolve(ROOT).replace(/\\/g, '/') + '/', '');

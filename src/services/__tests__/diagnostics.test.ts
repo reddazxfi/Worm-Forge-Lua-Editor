@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { mergeDiagnostics } from '../diagnostics';
-import type { SyntaxDiagnostic } from '../../types/wormforge';
+import type { SyntaxDiagnostic } from '../../types/wormbench';
 
 const d = (file: string | undefined, rule: string): SyntaxDiagnostic => ({
   line: 1,

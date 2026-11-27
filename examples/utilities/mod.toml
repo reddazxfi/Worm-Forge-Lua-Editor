@@ -2,7 +2,7 @@
 id = "core.utilities"
 name = "Core utilities"
 version = "0.21.0"
-author = "WormForge"
+author = "WormBench"
 api_version = 5
 format_version = 2
 dependencies = ["wf.sdk"]

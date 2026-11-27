@@ -124,7 +124,7 @@ fn paint(enabled: bool, code: &str, text: &str) -> String {
 
 /// Whether stdout is a terminal rather than a pipe or a file.
 ///
-/// Decided by asking the OS, not by guessing from the format: `wfcheck ... >
+/// Decided by asking the OS, not by guessing from the format: `wbcheck ... >
 /// log.txt` inside `check-mods.bat` must not write escape codes into the log.
 ///
 /// No dependency: `GetConsoleMode` on Windows, `isatty` elsewhere.
@@ -327,12 +327,12 @@ fn pretty(
 fn summary_line(tally: &Tally) -> String {
     if tally.total() == 0 {
         return format!(
-            "\nchecked {} file(s): no findings (WormForge {ENGINE_VERSION})\n",
+            "\nchecked {} file(s): no findings (WormBench {ENGINE_VERSION})\n",
             tally.files
         );
     }
     format!(
-        "\nchecked {} file(s): {} error(s), {} warning(s), {} note(s) (WormForge {ENGINE_VERSION})\n",
+        "\nchecked {} file(s): {} error(s), {} warning(s), {} note(s) (WormBench {ENGINE_VERSION})\n",
         tally.files, tally.errors, tally.warnings, tally.infos
     )
 }
@@ -386,7 +386,7 @@ struct JsonRoot {
 }
 
 /// JSON reuses `AstDiagnostic` directly rather than a parallel struct, so the
-/// field names are the same ones `src/types/wormforge.ts` already parses.
+/// field names are the same ones `src/types/wormbench.ts` already parses.
 ///
 /// The diagnostics are cloned because the report owns its findings and the
 /// report outlives the serialisation. One clone per finding is cheaper than the
@@ -522,7 +522,7 @@ mod tests {
         assert!(text.contains("[wa-namespace-typo]"));
         assert!(text.contains("\n    = "), "detail was dropped: {text:?}");
         assert!(
-            text.contains("does not exist in WormForge 1.0.0"),
+            text.contains("does not exist in WormBench 1.0.0"),
             "wrong detail shown: {text:?}"
         );
         for line in text.lines().filter(|l| l.trim_start().starts_with("= ")) {

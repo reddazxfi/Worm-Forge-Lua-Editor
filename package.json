@@ -1,8 +1,8 @@
 {
-  "name": "wormforge-code-editor",
+  "name": "wormbench-code-editor",
   "private": true,
   "version": "1.0.0",
-  "description": "WormForge Lua Code Editor with Engine Verbs and AST Inspector",
+  "description": "WormBench Lua Code Editor with Engine Verbs and AST Inspector",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

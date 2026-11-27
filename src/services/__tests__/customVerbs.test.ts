@@ -19,7 +19,7 @@ import {
   VERBS_STORAGE_KEY,
 } from '../customVerbs';
 import { parseAndValidate } from '../parser';
-import type { ClassDef, CustomVerb } from '../../types/wormforge';
+import type { ClassDef, CustomVerb } from '../../types/wormbench';
 
 const grapple = (): CustomVerb => ({
   class: 'WormEntity',
@@ -124,7 +124,7 @@ describe('verbsForRust', () => {
 
 describe('verb persistence contract', () => {
   it('uses a distinct localStorage key from the editor config', () => {
-    expect(VERBS_STORAGE_KEY).not.toBe('wormforge_editor_config');
+    expect(VERBS_STORAGE_KEY).not.toBe('wormbench_editor_config');
     expect(VERBS_STORAGE_KEY).toContain('verbs');
   });
 

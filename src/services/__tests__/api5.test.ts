@@ -64,6 +64,19 @@ describe('1.0 verb review: the new surface is real', () => {
     // A weapon claim's new pose source.
     'wa.weapons.replace({ copy_from = "stock.bazooka", hold_as = "stock.grenade" })',
     'wa.weapons.replace({ copy_from = "stock.bazooka", collects_crates = false })',
+    // 1.0 RC6: the frame event, point explosions and fields, this machine's keys and panel.
+    'wa.on.frame(function()\n  local n = wa.world.frame()\nend)',
+    'wa.on.frame(function()\n  wa.world.explode({ x = 100, y = 200, owner = "none" })\nend)',
+    'wa.on.hud(function()\n  local held = wa.hud.key("shift")\n  local closed = wa.panel.close()\nend)',
+    'local field = wa.magnetism.field({ x = 100, y = 200 })\nwa.on.frame(function() field:move(120, 200) end)',
+    'local mine = wa.mines.spawn({ owner = "none", x = 100, y = 200 })',
+    'local hit = wa.world.trace({ x0 = 0, y0 = 0, x1 = 10, y1 = 10, with = { "actors", "missiles" }, grab = { "worm" } })',
+    // Actors sleep, and report what they are; worms carry the selected weapon's shot count.
+    'local function f(a)\n  a:sleep(30, { near = 64 })\n  return a.alive, a.grab\nend',
+    'local function f(a) a.grab = "worm" end',
+    'local function f(worm)\n  worm.shots = 3\n  return worm.shots_used\nend',
+    'local function f(object) return object.alive end',
+    'local function f(mine) mine.fuse = -1 end',
   ];
 
   it.each(silent)('%s is real 1.0 API and produces no finding', (src) => {

@@ -2,7 +2,7 @@
 // tree unchanged (parser.ts passes BUILTIN_ENUMERATIONS through), and the
 // state_label table must stay generated from the engine's own WORM_STATES.
 import { describe, it, expect } from 'vitest';
-import { BUILTIN_ENUMERATIONS } from '../../data/wormforgeDefinitions';
+import { BUILTIN_ENUMERATIONS } from '../../data/wormbenchDefinitions';
 import { WORM_STATES, READABLE_WORM_STATES, SETTABLE_WORM_STATES } from '../../data/wormStates';
 import { parseAndValidate } from '../parser';
 

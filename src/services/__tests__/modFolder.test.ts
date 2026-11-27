@@ -751,16 +751,16 @@ describe('isSafeModRelativePath', () => {
 
 describe('the official wf-lib shelf', () => {
   it('recognises an immediate child pack on Windows and both slash styles', () => {
-    expect(officialModLocation('C:\\Worms\\WormForge\\Mods\\wf-lib\\px')).toEqual({
-      fromRoot: 'C:\\Worms\\WormForge\\Mods\\wf-lib\\px',
-      libraryRoot: 'C:\\Worms\\WormForge\\Mods\\wf-lib',
-      modsRoot: 'C:\\Worms\\WormForge\\Mods',
+    expect(officialModLocation('C:\\Worms\\WormBench\\Mods\\wf-lib\\px')).toEqual({
+      fromRoot: 'C:\\Worms\\WormBench\\Mods\\wf-lib\\px',
+      libraryRoot: 'C:\\Worms\\WormBench\\Mods\\wf-lib',
+      modsRoot: 'C:\\Worms\\WormBench\\Mods',
       folderName: 'px',
-      preferredRoot: 'C:\\Worms\\WormForge\\Mods\\px',
+      preferredRoot: 'C:\\Worms\\WormBench\\Mods\\px',
     });
 
-    expect(officialModLocation('/home/me/WormForge/Mods/wf-lib/utilities')).toMatchObject({
-      preferredRoot: '/home/me/WormForge/Mods/utilities',
+    expect(officialModLocation('/home/me/WormBench/Mods/wf-lib/utilities')).toMatchObject({
+      preferredRoot: '/home/me/WormBench/Mods/utilities',
       folderName: 'utilities',
     });
   });

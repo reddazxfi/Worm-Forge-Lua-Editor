@@ -149,7 +149,7 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
         {mod.official && (
           <span
             className="absolute top-0 left-0 px-1 py-0.5 bg-amber-500 text-slate-950 text-[8px] font-bold tracking-wide rounded-br"
-            title="Official WormForge library mod"
+            title="Official WormBench library mod"
           >
             WF
           </span>
@@ -263,7 +263,7 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
 
           <button
             onClick={onOpenProfiles}
-            title="Profiles saved in WormForge/Profiles"
+            title="Profiles saved in WormBench/Profiles"
             className={`px-2.5 py-1.5 rounded border text-[11px] font-medium transition-colors ${
               isLight
                 ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300'
@@ -372,7 +372,7 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
             <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <div className="min-w-0">
               <p className="font-semibold text-[11px]">
-                PSA: <span className="font-mono">wf-lib</span> is WormForge&apos;s shelf, not your
+                PSA: <span className="font-mono">wf-lib</span> is WormBench&apos;s shelf, not your
                 scratchpad.
               </p>
               <p className={`text-[11px] mt-1 ${isLight ? 'text-amber-800' : 'text-amber-100/80'}`}>
@@ -388,7 +388,7 @@ export const ModsListScreen: React.FC<ModsListScreenProps> = ({
 
         {officialMods.length > 0 && (
           <div className="mb-6">
-            {sectionLabel(`WormForge official library (${officialMods.length})`)}
+            {sectionLabel(`WormBench official library (${officialMods.length})`)}
             <div className={gridClass}>{officialMods.map(tile)}</div>
           </div>
         )}

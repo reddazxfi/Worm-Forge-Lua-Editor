@@ -7,7 +7,7 @@ import {
   BUILTIN_ENUMERATIONS,
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
-} from '../../data/wormforgeDefinitions';
+} from '../../data/wormbenchDefinitions';
 import { WEAPON_SPEC_KEYS } from '../../data/specKeys';
 
 /** All rule ids a fixture raised, in order. */
@@ -17,7 +17,7 @@ const rulesOf = (src: string): string[] =>
 const typoFor = (src: string) =>
   parseAndValidate(src).diagnostics.find((d) => d.rule === 'wa-namespace-typo');
 
-describe('Lua API 4 surface (WormForge 0.9.1/0.9.5)', () => {
+describe('Lua API 4 surface (WormBench 0.9.1/0.9.5)', () => {
   // Exact snippets the Rust checker pins (checks.rs: api4_* tests). Both engines
   // must agree or __sweep.ts reports drift on every API 4 file.
   const silent = [
@@ -132,6 +132,7 @@ describe('Lua API 4 surface (WormForge 0.9.1/0.9.5)', () => {
       object: 'WorldHandle',
       mine: 'WorldHandle',
       grave: 'WorldHandle',
+      field: 'MagneticField',
       light: 'LightHandle',
       inventory: 'InventoryStore',
       inv: 'InventoryStore',
@@ -157,7 +158,7 @@ describe('Lua API 4 surface (WormForge 0.9.1/0.9.5)', () => {
 
 describe('Lua API 4 additions in 0.9.11 (fog of war)', () => {
   // Source: `spec/verbs 9.11 api 4.0.txt` (updated 2026-10-19). The vendored
-  // WormForge-main snapshot is 0.9.1, so these are pinned to the release verb
+  // WormBench-main snapshot is 0.9.1, so these are pinned to the release verb
   // list rather than to Rust source -- the same standing as
   // wa.weapons.set_selectable. A gap here is a false wa-namespace-typo on valid
   // 0.9.11 code, which is the failure this list exists to prevent.
@@ -186,7 +187,7 @@ describe('Lua API 4 additions in 0.9.11 (fog of war)', () => {
 
 describe('0.9.11 HUD windows and Invisibility', () => {
   const silent = [
-    'wa.hud.message_top("WormForge", { to = "all" })',
+    'wa.hud.message_top("WormBench", { to = "all" })',
     'wa.weapons.hold_sheet("px.gravity_gun", 1)',
     'local window = wa.hud.window({ text = "Turn 3", x = 10, y = 10 })\nwindow:set({ text = "Turn 4" })\nwindow:close()',
     'local function f(worm) worm.invisibility = true end',
@@ -289,7 +290,7 @@ describe('render-context math (mirror of checks.rs RenderScan)', () => {
   //
   // Every case below is anchored to a line in the engine's own source or its own
   // checker (`tools/check_sim_math.py`, which reports `passed` over all of
-  // `WormForge-main-source/mods`). Any finding we raise on the engine's own packs
+  // `WormBench-main-source/mods`). Any finding we raise on the engine's own packs
   // is ours, not the pack's. These mirror the same-named tests in checks.rs.
 
   it('wa.on.hud is render context too, not just wa.on.draw', () => {

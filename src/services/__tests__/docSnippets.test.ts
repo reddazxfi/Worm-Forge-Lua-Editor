@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DOC_SNIPPETS, docSnippetFor } from '../../data/docSnippets';
-import { BUILTIN_CLASSES, BUILTIN_FUNCTIONS } from '../../data/wormforgeDefinitions';
+import { BUILTIN_CLASSES, BUILTIN_FUNCTIONS } from '../../data/wormbenchDefinitions';
 import { parseAndValidate } from '../parser';
 
 /**
@@ -62,7 +62,7 @@ describe('full documentation snippets', () => {
   it('has a real source and a complete block, not a placeholder', () => {
     for (const [key, snippet] of Object.entries(DOC_SNIPPETS)) {
       expect(snippet.source, `${key} has no source`).toMatch(
-        /^(WormForgeNew\/mods\/|WormForge API example)/
+        /^(WormBench-engine\/mods\/|WormBench API example)/
       );
       expect(snippet.code, `${key} still contains ...`).not.toContain('...');
       expect(snippet.code, `${key} is only one line`).toContain('\n');

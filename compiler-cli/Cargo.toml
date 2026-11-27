@@ -1,8 +1,8 @@
 [package]
-name = "wormforge-check"
+name = "wormbench-check"
 version = "0.1.0"
 edition = "2021"
-description = "Standalone WormForge Lua checker: real Lua 5.4 compile plus the desync and scope checks, with no editor and no game required."
+description = "Standalone WormBench Lua checker: real Lua 5.4 compile plus the desync and scope checks, with no editor and no game required."
 license = "MIT"
 publish = false
 
@@ -13,12 +13,12 @@ publish = false
 [workspace]
 
 [lib]
-name = "wfcheck"
+name = "wbcheck"
 path = "src/lib.rs"
 
 [[bin]]
-name = "wfcheck"
-path = "src/bin/wfcheck.rs"
+name = "wbcheck"
+path = "src/bin/wbcheck.rs"
 
 [dependencies]
 # The exact Lua build the game compiles mods against. `lua54` = version parity

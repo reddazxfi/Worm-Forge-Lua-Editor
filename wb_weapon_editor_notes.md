@@ -1,4 +1,4 @@
-# WormForge weapon editor — work log
+# WormBench weapon editor — work log
 
 ## 2026-11-09 — session correction and scope lock
 
@@ -13,9 +13,8 @@ until the weapon editor is finished. The two edits made to the code editor
 
 **Current location:** the weapon editor moved to
 `C:\Users\lucia\Documents\GitHub\Worm-Forge-Lua-Editor\WormForgeWeaponEditor`.
-The copies under `C:\Users\lucia\Documents\GitHub\WormForge` and
-`C:\Users\lucia\Documents\GitHub\WormForgeNew` are outdated and must not be
-used as the source of truth.
+The copies under the older engine checkouts are outdated and must not be used
+as the source of truth.
 
 ## Completed tasks
 
@@ -25,7 +24,7 @@ used as the source of truth.
 3. **API 4.0 ZIP output** — verified (subfolder, `mod.toml`, profile, hold art,
    custom icon, and the optional `weps/` copy).
 4. **Typecheck / build / checker** — `tsc --noEmit`, `vite build` and
-   `wfcheck --stdin` all pass for the generated bundles.
+   `wbcheck --stdin` all pass for the generated bundles.
 
 ## Log
 
@@ -52,7 +51,7 @@ Fixed in `src/utils/luaGenerator.ts`:
   `missile.ends_on_contact` (previously dropped).
 
 Validation: `tsc --noEmit` clean, `vite build` succeeds, generated Lua passes
-`wfcheck --stdin` with no findings.
+`wbcheck --stdin` with no findings.
 
 ## 2026-11-09 — .wep import fixed; optional "Use .wep weapon file"
 
@@ -71,7 +70,7 @@ Also fixed the parser to be family-aware and to preserve zero values, and
 stopped arrow/spray/special weapons from receiving invalid `missile` tables.
 
 Validation: `tsc --noEmit` clean, `vite build` succeeds, all 43 `.wep` files in
-`WormForge-mods` parse, generated Lua passes `wfcheck`, and Playwright confirmed
+`WormBench-mods` parse, generated Lua passes `wbcheck`, and Playwright confirmed
 the import, the settings toggle, and a ZIP containing `weps/petrol_bomb.wep`.
 
 ## 2026-11-09 — clustlet behaviour and remaining .wep body values
@@ -88,7 +87,7 @@ pre-explosion sound, bounce contact sides/extra-reverse-chance/contact
 explosion, and homing art/trail. The parser decodes them into the baseline, so
 an imported `.wep` shows its real values and only user edits become overrides.
 
-Validation: `tsc --noEmit` clean, `vite build` succeeds, and `wfcheck --stdin`
+Validation: `tsc --noEmit` clean, `vite build` succeeds, and `wbcheck --stdin`
 passes the cluster impact/bounce/homing cases, the edited Advanced fields, and
 an imported `petrol_bomb.wep` with bit-bounce + random-motion edits.
 
@@ -96,7 +95,7 @@ The Gun / Mine Specifics tab also gained the rest of those families: gun shot
 interval/burst size/burst spread/hits/impact explosion/impact effect, mine
 arm/fuse/detects/explosion bias+push, and strike spacing/munition speed/plane
 sound/munition type. The parser decodes the same offsets and only edits are
-emitted. `wfcheck --stdin` passes edited `uzi.wep`, `freeze.wep` and
+emitted. `wbcheck --stdin` passes edited `uzi.wep`, `freeze.wep` and
 `napalm_strike.wep` records.
 
 ## 2026-11-10 - hold facing and full record action coverage
@@ -112,7 +111,7 @@ overlapping bytes cannot leak between actions. Roam gained edge-jump, jump, gas,
 independent fields and writes.
 
 Validation: `tsc --noEmit`, `vite build`, all 50 `.wep` files parse, and
-`wfcheck --stdin` passes the generated clustlet, roam, dig, bounce and
+`wbcheck --stdin` passes the generated clustlet, roam, dig, bounce and
 switched-homing bundles.
 
 ## 2026-11-10 - collision-mask overlap crash
@@ -131,5 +130,5 @@ Air strikes store their munition body 0x14 bytes past a missile's (`STRIKE_SHIFT
 The importer and generator now decode/emit `strike.plane` plus the full
 `missile.*` body and the `clusters.*`/`clusters.bit.*` child body, so a plane's
 clustlet explosion/bounce/homing/roam/dig values are editable like any other
-clustlet. Validated against `WormForgeNew/tools/record_fields.py` and 95 PX
+clustlet. Validated against `WormBench-engine/tools/record_fields.py` and 95 PX
 strike records under `myre/`.

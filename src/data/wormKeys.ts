@@ -2,7 +2,7 @@
 //
 // WHY THIS FILE EXISTS, AND WHY IT IS NOT A "KEYCODE" TABLE
 // The old KeycodeModal listed Windows Virtual-Key codes (VK_LEFT 0x25, etc.) and
-// implied they were something a pack could use. They are not. WormForge has not
+// implied they were something a pack could use. They are not. WormBench has not
 // mapped the keyboard to virtuals for Lua at all -- a pack never sees a keycode.
 // What a pack gets is a plain table of booleans, and this file is exactly that.
 //
@@ -151,7 +151,7 @@ export const WORM_KEYS: WormKeyBinding[] = [
 export const WORM_KEY_BINDINGS = WORM_KEYS.filter((k) => k.bit !== null && !k.aliasOf);
 
 /**
- * Keys the old reference table listed that WormForge does NOT expose to Lua.
+ * Keys the old reference table listed that WormBench does NOT expose to Lua.
  *
  * Kept as data rather than a comment, so the UI can say so out loud. A reference
  * that silently omits what is unavailable is how a pack author spends an evening

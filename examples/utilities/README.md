@@ -1,6 +1,6 @@
 # Core utilities
 
-WormForge's add-ons and tools, the mod **Core utilities** (`core.utilities`):
+WormBench's add-ons and tools, the mod **Core utilities** (`core.utilities`):
 **Utilities**, with match settings the lobby scheme doesn't have and some
 favourite mods as switches; **Fog of war**; **Worm glow**; **Crate pop**; the **+N Seconds**
 and **Bullet Time** utilities; and the **Cursor** weapon.

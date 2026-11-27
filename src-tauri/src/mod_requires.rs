@@ -5,7 +5,7 @@
 //! sibling packs, manifests and the require graph. The resolver mirrors the
 //! engine's discovery, closure, module grammar and shared-export lookup closely
 //! enough to report the errors the engine would report, while leaving the rest
-//! of the manifest schema to the game/wfcheck.
+//! of the manifest schema to the game/wbcheck.
 //!
 //! The engine sources this follows are:
 //!   crates/weapons/src/libraries.rs  (pack_dirs, closure, module_name)
@@ -666,7 +666,7 @@ fn validate_manifest(m: &Manifest, text: &str) -> Vec<(&'static str, String)> {
     if id == STOCK_BUNDLE {
         out.push((
             "bundle-invalid-manifest",
-            format!("the bundle id {STOCK_BUNDLE} is WormForge's own, for the stock weapons"),
+            format!("the bundle id {STOCK_BUNDLE} is WormBench's own, for the stock weapons"),
         ));
     }
     if m.api_version != API_VERSION {
@@ -1809,7 +1809,7 @@ mod tests {
 
     fn temp_root(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!(
-            "wf-require-{name}-{}-{}",
+            "wb-require-{name}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2115,9 +2115,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs WORMFORGE_MODS pointing at an installed Mods folder"]
+    #[ignore = "needs WORMBENCH_MODS pointing at an installed Mods folder"]
     fn corpus_packs_resolve_without_require_errors() {
-        let Ok(mods) = std::env::var("WORMFORGE_MODS") else {
+        let Ok(mods) = std::env::var("WORMBENCH_MODS") else {
             return;
         };
         for name in ["px_electric", "red_saw", "effects_sdk"] {

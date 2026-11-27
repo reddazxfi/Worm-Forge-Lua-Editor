@@ -9,7 +9,7 @@
 //
 // That makes the copies the most drift-prone files in the repo, and the drift is
 // SILENT. It already happened: engine_data.rs was a pre-API-4 snapshot while
-// checks.rs was current, so `wfcheck` warned `a:warp() is not a LuaActor method`
+// checks.rs was current, so `wbcheck` warned `a:warp() is not a LuaActor method`
 // on valid code -- a method that exists, in the engine, and in the copy the app
 // was using. Nothing failed. `cargo test` in the CLI passed 222 tests against the
 // stale table, because every test asserts the checker's behaviour, not the

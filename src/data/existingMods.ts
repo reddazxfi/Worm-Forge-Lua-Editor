@@ -1,4 +1,4 @@
-import { ModFolderInfo } from '../types/wormforge';
+import { ModFolderInfo } from '../types/wormbench';
 
 // GENERATED FILE -- do not edit by hand.
 //
@@ -3584,7 +3584,7 @@ end
         path: 'lib/px_blast_zone.lua',
         name: 'lib/px_blast_zone.lua',
         language: 'lua',
-        content: `-- Blast Zone: Project X's zone launcher, ported to WormForge.
+        content: `-- Blast Zone: Project X's zone launcher, ported to WormBench.
 
 local function placed(ctx)
   local informed = false
@@ -3996,7 +3996,7 @@ return M
         path: 'lib/px_health_zone.lua',
         name: 'lib/px_health_zone.lua',
         language: 'lua',
-        content: `-- Health Zone: Project X's zone launcher, ported to WormForge.
+        content: `-- Health Zone: Project X's zone launcher, ported to WormBench.
 
 local function placed(ctx)
   local informed = false
@@ -4201,7 +4201,7 @@ return homing
         path: 'lib/px_ninja_star.lua',
         name: 'lib/px_ninja_star.lua',
         language: 'lua',
-        content: `-- Ninja Star: Project X's thrown star, on WormForge.
+        content: `-- Ninja Star: Project X's thrown star, on WormBench.
 
 local function placed(ctx)
   local informed = false
@@ -4343,7 +4343,7 @@ return M
         path: 'lib/px_security_grenade.lua',
         name: 'lib/px_security_grenade.lua',
         language: 'lua',
-        content: `-- Security Grenade: Project X's grenade that bursts in a ring, on WormForge.
+        content: `-- Security Grenade: Project X's grenade that bursts in a ring, on WormBench.
 
 local function placed(ctx)
   local informed = false
@@ -4445,7 +4445,7 @@ return M
         path: 'lib/px_spot_hider.lua',
         name: 'lib/px_spot_hider.lua',
         language: 'lua',
-        content: `-- Spot Hider: Project X's zone launcher, ported to WormForge by reddaz.
+        content: `-- Spot Hider: Project X's zone launcher, ported to WormBench by reddaz.
 
 local function placed(ctx)
   local informed = false
@@ -19320,7 +19320,7 @@ end)
 
 return function(ctx)
   if not wa.crates.set_drop then
-    wa.log("Crate pop needs a newer WormForge: crates arrive as normal")
+    wa.log("Crate pop needs a newer WormBench: crates arrive as normal")
     return
   end
   local low, high = ctx.option("height_min"), ctx.option("height_max")
@@ -19666,7 +19666,7 @@ return function(pct)
       local ok, v = pcall(function() return worm.aim_target end)
       supported = ok and type(v) == "number"
       if not supported then
-        wa.log("fast aim: this WormForge has no worm.aim_target; fast aim is off")
+        wa.log("fast aim: this WormBench has no worm.aim_target; fast aim is off")
       end
     end
     if not supported then return end
@@ -19974,7 +19974,7 @@ end
 
 return function()
   if not wa.panel.stock then
-    wa.log("panel highlight: this WormForge has no wa.panel.stock; off")
+    wa.log("panel highlight: this WormBench has no wa.panel.stock; off")
     return
   end
   wa.on.hud(function()
@@ -20340,7 +20340,7 @@ return {
       on_fire = function(fire)
         if t or not wa.world.set_speed then
           if not wa.world.set_speed then
-            wa.log("bullet time: this WormForge has no wa.world.set_speed")
+            wa.log("bullet time: this WormBench has no wa.world.set_speed")
           end
           if fire.worm:ammo(id) >= 0 then fire.worm:ammo(id, 1) end
           return
@@ -23115,7 +23115,7 @@ return trail
     id: 'utilities.agility',
     name: 'Agility (Core Utilities)',
     version: '0.21.0',
-    author: 'WormForge',
+    author: 'WormBench',
     category: 'utility',
     primaryFile: 'features/agility.lua',
     workspacePrefix: 'utilities',

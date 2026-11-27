@@ -33,13 +33,13 @@ import { CreateModModal } from './components/CreateModModal';
 import {
   CustomVerb,
   SyntaxDiagnostic,
-} from './types/wormforge';
+} from './types/wormbench';
 import {
   BUILTIN_CLASSES,
   BUILTIN_ENUMERATIONS,
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
-} from './data/wormforgeDefinitions';
+} from './data/wormbenchDefinitions';
 import { EXISTING_MODS } from './data/existingMods';
 import { TABLE_DOCS } from './data/tableDocs';
 import { INITIAL_TEMPLATE, migrateInitialTemplate } from './data/templates';
@@ -74,19 +74,24 @@ import {
 } from './services/profilesFolder';
 import { EditorConfig, loadConfig, normalizeModIconSize, saveConfig } from './services/config';
 import { getAppSurfaces, sanitizeBackground } from './services/appTheme';
-import { resetPersistedSession } from './services/session';
+import { migrateRenamedSessionKeys, resetPersistedSession } from './services/session';
 
 export default function App() {
+  // The editor's storage keys were renamed with the product (WormForge ->
+  // WormBench). Carry the old values across once, before any initializer below
+  // reads the current keys, or an unsaved buffer is lost to the rename.
+  const migratedFromLegacy = migrateRenamedSessionKeys();
+
   // Configuration State
   const [config, setConfig] = useState<EditorConfig>(() => loadConfig());
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
   // Storage Keys for remembering last edited script and state
-  const STORAGE_FILES_KEY = 'wormforge_last_files';
-  const STORAGE_ACTIVE_FILE_KEY = 'wormforge_active_file';
-  const STORAGE_OPEN_FILES_KEY = 'wormforge_open_files';
-  const STORAGE_MOD_FOLDER_KEY = 'wormforge_mod_folder';
-  const STORAGE_SAVED_FILES_KEY = 'wormforge_saved_files';
+  const STORAGE_FILES_KEY = 'wormbench_last_files';
+  const STORAGE_ACTIVE_FILE_KEY = 'wormbench_active_file';
+  const STORAGE_OPEN_FILES_KEY = 'wormbench_open_files';
+  const STORAGE_MOD_FOLDER_KEY = 'wormbench_mod_folder';
+  const STORAGE_SAVED_FILES_KEY = 'wormbench_saved_files';
 
   // Files State with auto-restore on init
   const [files, setFiles] = useState<Record<string, string>>(() => {
@@ -137,8 +142,8 @@ export default function App() {
   // `savedFiles` is deliberately NOT persisted.
 //
 // It used to be written to localStorage in full, which meant storing a SECOND
-// complete copy of every buffer (`wormforge_saved_files` alongside
-// `wormforge_last_files`). Two copies of a 165 KB rules.lua plus the rest of a
+// complete copy of every buffer (`wormbench_saved_files` alongside
+// `wormbench_last_files`). Two copies of a 165 KB rules.lua plus the rest of a
 // pack exceed the ~5 MB localStorage quota, so `setItem` threw
 // QuotaExceededError, the bare `catch {}` swallowed it, and the value never
 // persisted. On the next launch `savedFiles` came back as `{}`, every file
@@ -256,7 +261,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   const [officialPrompt, setOfficialPrompt] = useState<OfficialLibraryPrompt | null>(null);
   const officialPromptResolver = useRef<((ok: boolean) => void) | null>(null);
   // ----- Installed profiles (Phase C) -----
-  // `WormForge/Profiles` is derived from the mods folder, not configured
+  // `WormBench/Profiles` is derived from the mods folder, not configured
   // separately -- see profilesDirFromModsRoot.
   const profilesRoot = profilesDirFromModsRoot(config.modsRootPath);
   const [showProfiles, setShowProfiles] = useState(false);
@@ -450,14 +455,23 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   >([
     {
       time: new Date().toLocaleTimeString(),
-      text: 'WormForge Code Studio initialized. Lockstep AST engine active.',
+      text: 'WormBench Code Studio initialized. Lockstep AST engine active.',
       type: 'info',
     },
     {
       time: new Date().toLocaleTimeString(),
-      text: 'Loaded WormForge API definitions (WormForge 1.0.0, Lua API 5).',
+      text: 'Loaded WormBench API definitions (WormBench 1.0.0, Lua API 5).',
       type: 'success',
     },
+    ...(migratedFromLegacy.length > 0
+      ? [
+          {
+            time: new Date().toLocaleTimeString(),
+            text: `Restored ${migratedFromLegacy.length} saved setting${migratedFromLegacy.length === 1 ? '' : 's'} from the old WormForge editor.`,
+            type: 'info' as const,
+          },
+        ]
+      : []),
   ]);
 
   // Modals
@@ -1311,7 +1325,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
   }, [refreshMods]);
 
   /**
-   * Reads `WormForge/Profiles`.
+   * Reads `WormBench/Profiles`.
    *
    * The mods list is refreshed alongside only when it is empty, because the
    * cross-links need each mod's declared components and re-walking 3000 files
@@ -1918,7 +1932,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
       style={
         {
           backgroundColor: appSurfaces.app,
-          '--wf-divider': appSurfaces.divider,
+          '--wb-divider': appSurfaces.divider,
         } as React.CSSProperties
       }
       className={`relative flex flex-col h-screen w-screen overflow-hidden select-none transition-colors ${
@@ -1990,7 +2004,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
                 ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300'
                 : 'bg-[#202631] hover:bg-[#2b3341] text-[#cfdbe8] border-[#2e3745]'
             }`}
-            title="Which keys WormForge reads, and what each one does"
+            title="Which keys WormBench reads, and what each one does"
           >
             <Keyboard className="w-3.5 h-3.5 text-sky-500" />
             <span className="hidden sm:inline">Keys</span>
@@ -2204,7 +2218,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
           <div
             onMouseDown={handleStartTreeResize}
             title="Drag vertically to resize Tree & Documentation panes"
-            className="h-1.5 cursor-row-resize shrink-0 transition-colors flex items-center justify-center bg-[var(--wf-divider)] hover:bg-amber-500/70 active:bg-amber-500"
+            className="h-1.5 cursor-row-resize shrink-0 transition-colors flex items-center justify-center bg-[var(--wb-divider)] hover:bg-amber-500/70 active:bg-amber-500"
           >
             <div className="w-8 h-0.5 rounded-full bg-slate-400/40" />
           </div>
@@ -2230,7 +2244,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
         <div
           onMouseDown={handleStartSidebarResize}
           title="Drag horizontally to resize Sidebar"
-          className="hidden lg:flex w-1.5 cursor-col-resize shrink-0 transition-colors items-center justify-center bg-[var(--wf-divider)] hover:bg-amber-500/70 active:bg-amber-500"
+          className="hidden lg:flex w-1.5 cursor-col-resize shrink-0 transition-colors items-center justify-center bg-[var(--wb-divider)] hover:bg-amber-500/70 active:bg-amber-500"
         >
           <div className="h-8 w-0.5 rounded-full bg-slate-400/40" />
         </div>
@@ -2274,7 +2288,7 @@ const [savedFiles, setSavedFiles] = useState<Record<string, string>>(() => {
           <div
             onMouseDown={handleStartConsoleResize}
             title="Drag vertically to resize Console output"
-            className="h-1.5 cursor-row-resize shrink-0 transition-colors flex items-center justify-center bg-[var(--wf-divider)] hover:bg-amber-500/70 active:bg-amber-500"
+            className="h-1.5 cursor-row-resize shrink-0 transition-colors flex items-center justify-center bg-[var(--wb-divider)] hover:bg-amber-500/70 active:bg-amber-500"
           >
             <div className="w-8 h-0.5 rounded-full bg-slate-400/40" />
           </div>

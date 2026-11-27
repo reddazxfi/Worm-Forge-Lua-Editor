@@ -20,7 +20,7 @@ import {
   FunctionDef,
   ModFolderInfo,
   VariableDef,
-} from '../types/wormforge';
+} from '../types/wormbench';
 import { fieldPaths, type TableDoc } from '../data/tableDocs';
 import { WorkspaceTree } from './WorkspaceTree';
 import type { WorkspaceModel } from '../services/workspaceTree';

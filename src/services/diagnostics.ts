@@ -8,7 +8,7 @@
 // platform dependency and can be tested directly, which is the only reason the bug
 // below is now caught by `npm test` rather than by a user opening the app.
 
-import type { SyntaxDiagnostic, SyntaxSeverity } from '../types/wormforge';
+import type { SyntaxDiagnostic, SyntaxSeverity } from '../types/wormbench';
 
 /**
  * Combines the TypeScript and Rust diagnostic lists during the B2 migration.

@@ -1,4 +1,4 @@
-# Bundled WormForge examples
+# Bundled WormBench examples
 
 New to the bundle/component/profile format? Read [`../MODDING.md`](../MODDING.md)
 first. These packs are the reading material after that.

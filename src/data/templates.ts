@@ -1,4 +1,4 @@
-export const INITIAL_TEMPLATE = `-- WormForge component template
+export const INITIAL_TEMPLATE = `-- WormBench component template
 -- API 5 units are pixels: positions and speeds are plain pixels, with fractions.
 -- Use pixel values directly; no manual coordinate conversion.
 --
@@ -10,7 +10,7 @@ export const INITIAL_TEMPLATE = `-- WormForge component template
 -- This is the feature form. A weapon entry returns
 -- { defaults = { ... }, install = ... } instead.
 return function(ctx)
-  wa.log("WormForge module initialized: " .. ctx.id)
+  wa.log("WormBench module initialized: " .. ctx.id)
 end
 `;
 
@@ -18,13 +18,13 @@ end
  * The pre-pixel-units starter. Kept only so a session persisted before the
  * template change is migrated instead of restored forever.
  */
-export const LEGACY_INITIAL_TEMPLATE = `-- WormForge mod template
+export const LEGACY_INITIAL_TEMPLATE = `-- WormBench mod template
 -- Lockstep rules: no math.random (use wa.random), no floats, no unordered pairs().
 
 local PX = 0x10000
 
 local function onInit()
-  wa.log("WormForge module initialized.")
+  wa.log("WormBench module initialized.")
 end
 
 onInit()

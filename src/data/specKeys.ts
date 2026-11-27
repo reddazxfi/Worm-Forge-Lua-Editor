@@ -3,7 +3,7 @@
 //
 // WHY A SEPARATE LIST
 // The keys are currently only documented as PROSE inside the
-// `wa.weapons.replace` parameter description in wormforgeDefinitions.ts:522
+// `wa.weapons.replace` parameter description in wormbenchDefinitions.ts:522
 // ("weapon, name, copy_from (or wep = ...), patch = {...}, sprite, ..."). That is
 // unreadable to code, so there was no way to check a key against it. This module
 // is the structured form of that sentence and is the single place to extend when
@@ -54,7 +54,7 @@ export const WEAPON_SPEC_KEYS: string[] = [
   'persist',
   'retreat_time',
   'hud',
-  // Lua API 4 (WormForge 0.9.1) claim fields. Verified against the engine:
+  // Lua API 4 (WormBench 0.9.1) claim fields. Verified against the engine:
   // `table_to_claim` in crates/lua-host/src/api.rs reads id/hold_as/
   // click_finish/stock_fire_choice/hold/panel_icons directly off the spec, and
   // `record_table::replace_writes` reads the record groups `fires`, `handling`,

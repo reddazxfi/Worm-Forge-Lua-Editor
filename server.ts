@@ -13,7 +13,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', engine: 'WormForge 0.9.9', time: new Date().toISOString() });
+  res.json({ status: 'ok', engine: 'WormBench 1.0.0', time: new Date().toISOString() });
 });
 
 // NOTE: the /api/fs/* endpoints that used to live here (scan-folder, save-file)
@@ -49,7 +49,7 @@ async function startServer() {
   // gives a blank dev window with a perfectly working EXE. 127.0.0.1 is
   // unambiguous IPv4 and still unreachable from the network.
   server.listen(Number(PORT), '127.0.0.1', () => {
-    console.log(`[WormForge Code Studio] Server running on http://127.0.0.1:${PORT}`);
+    console.log(`[WormBench Code Studio] Server running on http://127.0.0.1:${PORT}`);
   });
 }
 

@@ -1,4 +1,4 @@
-# WormForge profile "Highlander Orange": made in the mod loader; safe to edit by hand.
+# WormBench profile "Highlander Orange": made in the mod loader; safe to edit by hand.
 description = "Highlander: each worm is dealt one weapon from each of three pools and takes what a worm it kills carried."
 features = ["core.utilities", "hl.rules", "px.oil_drums"]
 

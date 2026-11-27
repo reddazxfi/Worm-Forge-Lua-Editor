@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WormForge Code Studio</title>
-    <meta name="description" content="Dedicated code editor, mod package manager, and syntax checker for WormForge Lua modding with engine verbs, AST inspector, and stock weapon slot tooling." />
-    <meta property="og:title" content="WormForge Code Studio" />
-    <meta property="og:description" content="Dedicated code editor, mod package manager, and syntax checker for WormForge Lua modding with engine verbs, AST inspector, and stock weapon slot tooling." />
+    <title>WormBench Code Studio</title>
+    <meta name="description" content="Dedicated code editor, mod package manager, and syntax checker for WormBench Lua modding with engine verbs, AST inspector, and stock weapon slot tooling." />
+    <meta property="og:title" content="WormBench Code Studio" />
+    <meta property="og:description" content="Dedicated code editor, mod package manager, and syntax checker for WormBench Lua modding with engine verbs, AST inspector, and stock weapon slot tooling." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -36,7 +36,7 @@
       /* The boot fallback must not depend on the bundled stylesheet: the white
          screen it reports can be caused by that stylesheet (or the whole bundle)
          failing to load. Everything here is self-contained. */
-      #wf-boot-fallback {
+      #wb-boot-fallback {
         position: fixed;
         inset: 0;
         z-index: 2147483647;
@@ -49,10 +49,10 @@
         color: #dbe4ef;
         font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
       }
-      #wf-boot-fallback[hidden] {
+      #wb-boot-fallback[hidden] {
         display: none;
       }
-      #wf-boot-fallback .wf-card {
+      #wb-boot-fallback .wb-card {
         width: min(720px, 100%);
         padding: 22px 24px;
         border: 1px solid #2b333e;
@@ -60,7 +60,7 @@
         background: #171b21;
         box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
       }
-      #wf-boot-fallback .wf-kicker {
+      #wb-boot-fallback .wb-kicker {
         margin-bottom: 8px;
         color: #fb7185;
         font-size: 11px;
@@ -68,24 +68,24 @@
         letter-spacing: 0.12em;
         text-transform: uppercase;
       }
-      #wf-boot-fallback h1 {
+      #wb-boot-fallback h1 {
         margin: 0 0 8px;
         font-size: 19px;
         font-weight: 700;
       }
-      #wf-boot-fallback p {
+      #wb-boot-fallback p {
         margin: 0 0 14px;
         color: #93a6bd;
         font-size: 13px;
         line-height: 1.5;
       }
-      #wf-boot-fallback .wf-actions {
+      #wb-boot-fallback .wb-actions {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
         margin-bottom: 16px;
       }
-      #wf-boot-fallback button {
+      #wb-boot-fallback button {
         padding: 7px 12px;
         border: 1px solid #2b333e;
         border-radius: 6px;
@@ -96,12 +96,12 @@
         font-weight: 600;
         cursor: pointer;
       }
-      #wf-boot-fallback button.wf-primary {
+      #wb-boot-fallback button.wb-primary {
         border-color: #7a5218;
         background: #3a2a12;
         color: #fbbf24;
       }
-      #wf-boot-fallback pre {
+      #wb-boot-fallback pre {
         margin: 0 0 14px;
         padding: 10px 12px;
         max-height: 280px;
@@ -116,7 +116,7 @@
         white-space: pre-wrap;
         word-break: break-word;
       }
-      #wf-boot-fallback .wf-hint {
+      #wb-boot-fallback .wb-hint {
         margin: 0;
         color: #66788c;
         font-size: 11px;
@@ -131,22 +131,22 @@
 
     <!-- Boot fallback. Deliberately OUTSIDE #root (React clears its container
          when a render throws) and styled inline. -->
-    <div id="wf-boot-fallback" hidden>
-      <div class="wf-card">
-        <div class="wf-kicker">WormForge could not finish starting</div>
+    <div id="wb-boot-fallback" hidden>
+      <div class="wb-card">
+        <div class="wb-kicker">WormBench could not finish starting</div>
         <h1>The editor window is not rendering</h1>
-        <p id="wf-boot-reason">
+        <p id="wb-boot-reason">
           The interface did not load. Reloading usually clears it. Your mod files on disk are
           untouched.
         </p>
-        <pre id="wf-boot-crash" hidden></pre>
-        <div class="wf-actions">
-          <button type="button" id="wf-boot-reload">Reload</button>
-          <button type="button" id="wf-boot-reset" class="wf-primary">
+        <pre id="wb-boot-crash" hidden></pre>
+        <div class="wb-actions">
+          <button type="button" id="wb-boot-reload">Reload</button>
+          <button type="button" id="wb-boot-reset" class="wb-primary">
             Reset session &amp; reload
           </button>
         </div>
-        <p class="wf-hint">
+        <p class="wb-hint">
           Reset clears only the restored buffers, the remembered folder and the open tabs. It does
           not delete mod files and does not touch settings or custom verbs.
         </p>
@@ -164,25 +164,37 @@
       // boundary's own card is what you see, not this one.
       (function () {
         'use strict';
-        var CRASH_KEY = 'wormforge_last_crash';
+        var CRASH_KEY = 'wormbench_last_crash';
+        // The app was called WormForge; a crash may still be recorded under the
+        // old key. Read it as a fallback and clear it with the reset button.
+        var CRASH_KEY_LEGACY = 'wormforge_last_crash';
         // Keep in sync with SESSION_STORAGE_KEYS in src/services/session.ts.
         var SESSION_KEYS = [
+          'wormbench_last_files',
+          'wormbench_active_file',
+          'wormbench_open_files',
+          'wormbench_mod_folder',
+          'wormbench_saved_files',
+        ];
+        var LEGACY_SESSION_KEYS = [
           'wormforge_last_files',
           'wormforge_active_file',
           'wormforge_open_files',
           'wormforge_mod_folder',
           'wormforge_saved_files',
+          CRASH_KEY_LEGACY,
         ];
         var started = Date.now();
         var everMounted = false;
         var visible = false;
-        var panel = document.getElementById('wf-boot-fallback');
-        var reason = document.getElementById('wf-boot-reason');
-        var details = document.getElementById('wf-boot-crash');
+        var panel = document.getElementById('wb-boot-fallback');
+        var reason = document.getElementById('wb-boot-reason');
+        var details = document.getElementById('wb-boot-crash');
 
         function readCrash() {
           try {
             var raw = localStorage.getItem(CRASH_KEY);
+            if (!raw) raw = localStorage.getItem(CRASH_KEY_LEGACY);
             return raw ? JSON.parse(raw) : null;
           } catch (e) {
             return null;
@@ -256,13 +268,14 @@
           true
         );
 
-        var reload = document.getElementById('wf-boot-reload');
-        var reset = document.getElementById('wf-boot-reset');
+        var reload = document.getElementById('wb-boot-reload');
+        var reset = document.getElementById('wb-boot-reset');
         if (reload) reload.addEventListener('click', function () { location.reload(); });
         if (reset) {
           reset.addEventListener('click', function () {
             try {
               SESSION_KEYS.forEach(function (key) { localStorage.removeItem(key); });
+              LEGACY_SESSION_KEYS.forEach(function (key) { localStorage.removeItem(key); });
             } catch (e) {}
             location.reload();
           });

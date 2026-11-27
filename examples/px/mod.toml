@@ -1,10 +1,10 @@
-# Project X's weapons, ported to WormForge, as a component bundle: each
+# Project X's weapons, ported to WormBench, as a component bundle: each
 # weapon is a component any profile can place (the loader's Manage Weapon
 # Panel lists them), credited to its Project X authors. A weapon goes on any panel place.
 #
 # Highlander's rules are the hl.rules add-on (scheme/). Each PX weapon
 # suggests its PX pool for them; a profile may set any weapon's. The profiles
-# in profiles/ are copied into WormForge/Profiles when the loader installs
+# in profiles/ are copied into WormBench/Profiles when the loader installs
 # this bundle. Where PX
 # uses WA's own weapon unchanged (Teleport, Fast Walk, Crate Spy, Crate
 # Shower, Flame Thrower) they place the stock one.

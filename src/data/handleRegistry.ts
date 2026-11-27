@@ -23,8 +23,8 @@
 //   InventoryStore  - wa.inventory is a plain Lua table (api.rs:342), not
 //                     userdata. It has methods, but it is a namespace.
 
-import { ClassDef, CustomVerb } from '../types/wormforge';
-import { BUILTIN_CLASSES, BUILTIN_FUNCTIONS, BUILTIN_VARIABLES } from './wormforgeDefinitions';
+import { ClassDef, CustomVerb } from '../types/wormbench';
+import { BUILTIN_CLASSES, BUILTIN_FUNCTIONS, BUILTIN_VARIABLES } from './wormbenchDefinitions';
 
 export type HandleClassName =
   | 'WormEntity'
@@ -43,7 +43,7 @@ export type HandleClassName =
   | 'AmbientHandle';
 
 /**
- * returnType strings in wormforgeDefinitions.ts use the ENGINE's vocabulary
+ * returnType strings in wormbenchDefinitions.ts use the ENGINE's vocabulary
  * ("WormHandle"), while BUILTIN_CLASSES uses the editor's ("WormEntity"). The
  * aliases live here so the call-site trace can compare them without either
  * side being rewritten -- the docs text reads correctly as it is.

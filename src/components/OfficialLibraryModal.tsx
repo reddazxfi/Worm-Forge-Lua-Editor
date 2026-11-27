@@ -81,7 +81,7 @@ export const OfficialLibraryModal: React.FC<OfficialLibraryModalProps> = ({
           {isSave ? (
             <>
               <p className={isLight ? 'text-slate-700' : 'text-[#c2d1e0]'}>
-                <strong>WormForge owns <span className="font-mono">wf-lib</span>.</strong> The updater
+                <strong>WormBench owns <span className="font-mono">wf-lib</span>.</strong> The updater
                 wipes and reinstalls that shelf to keep every official file hash-identical, so a save
                 left there is basically a note to your future self that says “gone next update”.
               </p>
@@ -115,7 +115,7 @@ export const OfficialLibraryModal: React.FC<OfficialLibraryModalProps> = ({
           ) : (
             <>
               <p className={isLight ? 'text-slate-700' : 'text-[#c2d1e0]'}>
-                <strong><span className="font-mono">wf-lib</span> is WormForge&apos;s own shelf.</strong>{' '}
+                <strong><span className="font-mono">wf-lib</span> is WormBench&apos;s own shelf.</strong>{' '}
                 The updater clears and reinstalls it on every release, so anything you save there has
                 the lifespan of a mayfly.
               </p>

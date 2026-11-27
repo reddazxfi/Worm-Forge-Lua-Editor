@@ -180,7 +180,7 @@ impl Finder {
 ///   - LEADING COMMENTS: worse, and invisible to `.trim()`. perf.lua opens with a
 ///     nine-line `--` block, so the first real token -- the `wa` of line 10 -- rendered
 ///     as that entire comment block, and the first "name" read in the file was
-///     `"-- WormForge's FPS counter and profiler, on this machine."`. The pack sweep
+///     `"-- WormBench's FPS counter and profiler, on this machine."`. The pack sweep
 ///     reported 16 of 32 files with findings whose name was a COMMENT.
 ///
 /// `.trim()` fixes the whitespace half and NOT the comment half, because a comment is
@@ -252,7 +252,7 @@ impl Visitor for Finder {
 
     /// Opens the function scope and binds its parameters. Covers the anonymous callback
     /// form too (`on_fire = function(fire) ... end`), which is the most common way a
-    /// WormForge pack declares one.
+    /// WormBench pack declares one.
     fn visit_function_body(&mut self, node: &FunctionBody) {
         self.push_scope();
         let line = pos(node).0;
@@ -845,12 +845,12 @@ return M
         // perf.lua opens with a nine-line `--` block, and the first real token is the
         // `wa` of line 10. A token carries its LEADING trivia, so that token rendered as
         // the entire comment block, and the first name read in the file was
-        // `"-- WormForge's FPS counter and profiler, on this machine."`.
+        // `"-- WormBench's FPS counter and profiler, on this machine."`.
         //
         // `.trim()` cannot fix this: a comment is not whitespace. That is the whole
         // reason `name_of` reads the token type instead of trimming the rendering.
         let src = "\
--- WormForge's FPS counter and profiler, on this machine.
+-- WormBench's FPS counter and profiler, on this machine.
 --
 -- counter: one line at the top right: the live frame rate, the average over
 --   the last 2 s, and the longest frame in the last 5 s, in ms.

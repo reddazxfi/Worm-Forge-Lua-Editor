@@ -83,7 +83,7 @@ describe('highlightLuaLine', () => {
   });
 });
 import { EXISTING_MODS } from '../../data/existingMods';
-import type { SyntaxDiagnostic } from '../../types/wormforge';
+import type { SyntaxDiagnostic } from '../../types/wormbench';
 
 /**
  * Runs every corpus file through the TypeScript checker.

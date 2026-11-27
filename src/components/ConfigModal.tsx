@@ -55,7 +55,7 @@ import {
   parseVerbsFile,
   serializeVerbsFile,
 } from '../services/customVerbs';
-import { ModFolderInfo, CustomVerb } from '../types/wormforge';
+import { ModFolderInfo, CustomVerb } from '../types/wormbench';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -304,11 +304,11 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
   };
 
   const handleExportJson = async () => {
-    await downloadTextFile('wormforge.config.json', JSON.stringify(config, null, 2), 'application/json');
+    await downloadTextFile('wormbench.config.json', JSON.stringify(config, null, 2), 'application/json');
   };
 
   const handleExportIni = async () => {
-    await downloadTextFile('wormforge.config.ini', exportConfigAsIni(config), 'text/plain');
+    await downloadTextFile('wormbench.config.ini', exportConfigAsIni(config), 'text/plain');
   };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {

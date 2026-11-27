@@ -1,4 +1,4 @@
-//! `wfcheck` -- check WormForge Lua mods without the app and without the game.
+//! `wbcheck` -- check WormBench Lua mods without the app and without the game.
 //!
 //! Argument parsing is hand written. A crate like `clap` would be the largest
 //! dependency in a tool whose entire appeal is being one self-contained file a
@@ -7,9 +7,9 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use wfcheck::format::{self, Format, RenderOptions};
-use wfcheck::walk::{self, WalkOptions};
-use wfcheck::{check_file, check_source, rules, ENGINE_VERSION};
+use wbcheck::format::{self, Format, RenderOptions};
+use wbcheck::walk::{self, WalkOptions};
+use wbcheck::{check_file, check_source, rules, ENGINE_VERSION};
 
 const EXIT_CLEAN: u8 = 0;
 const EXIT_FINDINGS: u8 = 1;
@@ -24,8 +24,8 @@ fn main() -> ExitCode {
         // `--help` and `--version` already printed what was asked for.
         Ok(None) => return ExitCode::from(EXIT_CLEAN),
         Err(message) => {
-            eprintln!("wfcheck: {message}");
-            eprintln!("Try `wfcheck --help`.");
+            eprintln!("wbcheck: {message}");
+            eprintln!("Try `wbcheck --help`.");
             return ExitCode::from(EXIT_USAGE);
         }
     };
@@ -35,7 +35,7 @@ fn main() -> ExitCode {
     match run(&options) {
         Ok(code) => ExitCode::from(code),
         Err(message) => {
-            eprintln!("wfcheck: {message}");
+            eprintln!("wbcheck: {message}");
             ExitCode::from(EXIT_INTERNAL)
         }
     }
@@ -161,7 +161,7 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
                 return Ok(None);
             }
             "-V" | "--version" => {
-                println!("wfcheck {VERSION} (pinned to WormForge {ENGINE_VERSION})");
+                println!("wbcheck {VERSION} (pinned to WormBench {ENGINE_VERSION})");
                 return Ok(None);
             }
             "--list-rules" => {
@@ -254,32 +254,32 @@ fn explain(rule: &str) -> Result<(), String> {
             println!("{}  [defined in {}]", info.id, info.origin);
             println!("{}", info.summary);
             println!();
-            println!("Run `wfcheck --only {} <path>` to show only these.", info.id);
+            println!("Run `wbcheck --only {} <path>` to show only these.", info.id);
             Ok(())
         }
-        None => Err(format!("no rule called `{rule}` -- try `wfcheck --list-rules`")),
+        None => Err(format!("no rule called `{rule}` -- try `wbcheck --list-rules`")),
     }
 }
 
 fn print_rules() {
     println!(
-        "wfcheck {} -- rules, pinned to WormForge {ENGINE_VERSION}\n",
+        "wbcheck {} -- rules, pinned to WormBench {ENGINE_VERSION}\n",
         VERSION
     );
     for info in rules::RULES {
         println!("  {}", info.id);
         println!("      {}", info.summary);
     }
-    println!("\n`wfcheck --explain <rule>` explains one in full.");
+    println!("\n`wbcheck --explain <rule>` explains one in full.");
 }
 
 fn print_help() {
     println!(
-        r#"wfcheck {VERSION} -- WormForge Lua checker (engine {ENGINE_VERSION})
+        r#"wbcheck {VERSION} -- WormBench Lua checker (engine {ENGINE_VERSION})
 
 USAGE
-    wfcheck [OPTIONS] [PATH]...
-    wfcheck --stdin --filename rules.lua < rules.lua
+    wbcheck [OPTIONS] [PATH]...
+    wbcheck --stdin --filename rules.lua < rules.lua
 
     PATH may be a file or a folder; folders are walked recursively for .lua.
     With no PATH, the current directory is checked.
@@ -323,10 +323,10 @@ EXIT CODES
     runs, it is just not deterministic across peers.
 
 EXAMPLES
-    wfcheck mods\mymod
-    wfcheck rules.lua --format json > report.json
-    wfcheck mods --only lockstep-rng --only lockstep-pairs
-    wfcheck mods --format github --strict .      (GitHub Actions)
+    wbcheck mods\mymod
+    wbcheck rules.lua --format json > report.json
+    wbcheck mods --only lockstep-rng --only lockstep-pairs
+    wbcheck mods --format github --strict .      (GitHub Actions)
 "#
     );
 }

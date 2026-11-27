@@ -1,6 +1,6 @@
 import React from 'react';
 import { BookOpen, Copy, Check, Plus, Code2, ArrowRight, FolderOpen, Link2 } from 'lucide-react';
-import { ClassDef, EnumDef, FunctionDef, MemberDef, VariableDef } from '../types/wormforge';
+import { ClassDef, EnumDef, FunctionDef, MemberDef, VariableDef } from '../types/wormbench';
 import { TableFields } from './TableFields';
 import type { TableDoc } from '../data/tableDocs';
 import { docSnippetFor } from '../data/docSnippets';
@@ -140,7 +140,7 @@ export const DocPane: React.FC<DocPaneProps> = ({
     // A table doc carries `summary`, not `description`: it describes a shape,
     // not an engine component, so the generic tagline would be a lie.
     (isTableDoc ? (selectedItem as TableDoc).summary : '') ||
-    'WormForge engine component for Worms Armageddon modding.';
+    'WormBench engine component for Worms Armageddon modding.';
   const exampleCode =
     activeMember?.example ||
     selectedItem.example ||

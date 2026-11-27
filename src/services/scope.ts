@@ -132,7 +132,7 @@ for (let idx = 0; idx < tokens.length; idx++) {
     //   `function f() end`      -- declaration, name binds in the enclosing scope
     //   `t.cb = function(x) end` -- anonymous callback, binds only its params
     //
-    // The second form is the single most common way a WormForge pack declares a
+    // The second form is the single most common way a WormBench pack declares a
     // callback (`fires.old_woman = function(fire) ... end`), and an earlier version
     // of this code treated every `function` as a named declaration. Its params
     // were then invisible inside their own body, which produced 1,158 false

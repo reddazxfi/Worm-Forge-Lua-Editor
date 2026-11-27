@@ -17,7 +17,7 @@ import {
   prettyKeyName,
 } from '../../data/wormKeys';
 
-const ROOT = resolve(__dirname, '../../../WormForge-main-source');
+const ROOT = resolve(__dirname, '../../../WormBench-main-source');
 const SPAWN_RS = join(ROOT, 'crates/lua-host/src/spawn.rs');
 const WORLD_RS = join(ROOT, 'crates/engine/src/world.rs');
 const SYNC_RS = join(ROOT, 'crates/game/src/sync_input.rs');

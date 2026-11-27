@@ -1,4 +1,4 @@
--- Spot Hider: Project X's zone launcher, ported to WormForge by reddaz.
+-- Spot Hider: Project X's zone launcher, ported to WormBench by reddaz.
 
 local function placed(ctx)
   local informed = false

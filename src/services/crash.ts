@@ -11,7 +11,7 @@
 // it runs while the app is already failing. Storage can be missing (SSR/tests),
 // full, or disabled.
 
-export const CRASH_KEY = 'wormforge_last_crash';
+export const CRASH_KEY = 'wormbench_last_crash';
 
 export type CrashKind = 'error' | 'unhandledrejection' | 'react' | 'boot';
 

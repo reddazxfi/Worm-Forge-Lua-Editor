@@ -27,7 +27,7 @@
 // untouched). The IPC arg is optional, so NEW front end + OLD exe degrades to
 // "no custom verbs known" instead of an invoke error.
 
-import type { ClassDef, CustomVerb, MemberDef } from '../types/wormforge';
+import type { ClassDef, CustomVerb, MemberDef } from '../types/wormbench';
 
 /** A Lua identifier: letters, digits, underscore, not starting with a digit. */
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -56,7 +56,7 @@ export function isValidClass(value: string): boolean {
 }
 
 export const VERB_FILE_NAME = 'custom_verbs.cfg';
-export const VERBS_STORAGE_KEY = 'wormforge_custom_verbs';
+export const VERBS_STORAGE_KEY = 'wormbench_custom_verbs';
 
 /** A verb row straight off disk: shapes match CustomVerb when valid. */
 interface RawVerb {

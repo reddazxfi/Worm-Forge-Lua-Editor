@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback, useImperativeHandle } from 'react';
 import { Target, Crosshair, Plus, Check, Sliders, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
-import { SyntaxDiagnostic, CustomVerb } from '../types/wormforge';
-import { BUILTIN_CLASSES, BUILTIN_ENUMERATIONS, BUILTIN_FUNCTIONS, BUILTIN_VARIABLES } from '../data/wormforgeDefinitions';
+import { SyntaxDiagnostic, CustomVerb } from '../types/wormbench';
+import { BUILTIN_CLASSES, BUILTIN_ENUMERATIONS, BUILTIN_FUNCTIONS, BUILTIN_VARIABLES } from '../data/wormbenchDefinitions';
 import { READABLE_WORM_STATES, SETTABLE_WORM_STATES } from '../data/wormStates';
 import {
   getClass,
@@ -1308,14 +1308,14 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
           kind: 'function',
           detail: `Replace '->' with '.' for standard Lua member access`,
           insertText: '.',
-          documentation: `'->' is not valid in WormForge Lua. Use '.' for functions and properties (e.g. wa.log(), wa.on.hurt()).`,
+          documentation: `'->' is not valid in WormBench Lua. Use '.' for functions and properties (e.g. wa.log(), wa.on.hurt()).`,
         },
         {
           label: `Fix: ${obj}: (method with self)`,
           kind: 'method',
           detail: `Replace '->' with ':' for Lua object methods`,
           insertText: `:${obj === 'a' || obj === 'actor' ? 'gfx()' : ''}`,
-          documentation: `'->' is not valid in WormForge Lua. Use ':' for object methods (e.g. a:gfx(), actor:move()).`,
+          documentation: `'->' is not valid in WormBench Lua. Use ':' for object methods (e.g. a:gfx(), actor:move()).`,
         },
       ];
       showAutocomplete(items, lineNum, colNum);
@@ -1410,7 +1410,7 @@ export const CodeEditor = React.forwardRef<CodeEditorHandle, CodeEditorProps>(fu
             rank: ENGINE_RANK + 2,
             detail: `${p} - ${row?.className ?? 'handle'} receiver`,
             insertText: p,
-            documentation: `Conventional name for a ${row?.className ?? 'WormForge'} handle. Type ":" or "." after it for members.`,
+            documentation: `Conventional name for a ${row?.className ?? 'WormBench'} handle. Type ":" or "." after it for members.`,
           });
         }
       }

@@ -116,7 +116,7 @@ return {
       on_fire = function(fire)
         if t or not wa.world.set_speed then
           if not wa.world.set_speed then
-            wa.log("bullet time: this WormForge has no wa.world.set_speed")
+            wa.log("bullet time: this WormBench has no wa.world.set_speed")
           end
           if fire.worm:ammo(id) >= 0 then fire.worm:ammo(id, 1) end
           return

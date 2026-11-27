@@ -30,7 +30,7 @@ end
 
 return function()
   if not wa.panel.stock then
-    wa.log("panel highlight: this WormForge has no wa.panel.stock; off")
+    wa.log("panel highlight: this WormBench has no wa.panel.stock; off")
     return
   end
   wa.on.hud(function()

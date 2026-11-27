@@ -1,13 +1,13 @@
 // Installed profiles, read from disk. DESKTOP ONLY, same as everything else that
 // touches the filesystem.
 //
-// WHERE THEY LIVE: `WormForge/Profiles`, beside `WormForge/Mods` -- not inside
+// WHERE THEY LIVE: `WormBench/Profiles`, beside `WormBench/Mods` -- not inside
 // the mods folder. That is the engine's own rule:
 //
 //     pub fn profiles_dir(mods_dir: &Path) -> PathBuf {
-//         crate::wormforge_root(mods_dir).join(PROFILES_DIR)
+//         crate::wormbench_root(mods_dir).join(PROFILES_DIR)
 //     }
-//     // wormforge_root() = mods_dir.parent()
+//     // wormbench_root() = mods_dir.parent()
 //     // crates/weapons/src/components.rs:1372-1378
 //
 // so it is DERIVED from the configured mods folder rather than being a second

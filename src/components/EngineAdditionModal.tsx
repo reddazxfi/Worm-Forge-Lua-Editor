@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Sparkles, Plus, Code2, Variable, Box, AlertTriangle } from 'lucide-react';
-import { ClassDef, CustomVerb, ParameterDef } from '../types/wormforge';
+import { ClassDef, CustomVerb, ParameterDef } from '../types/wormbench';
 import { isValidIdent, isValidClass } from '../services/customVerbs';
 
 interface EngineAdditionModalProps {
@@ -113,7 +113,7 @@ export const EngineAdditionModal: React.FC<EngineAdditionModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
           <p className="text-[11.5px] text-[#8ea1b8] leading-relaxed">
-            Expand the WormForge parser and autocompletion with custom classes and verbs.
+            Expand the WormBench parser and autocompletion with custom classes and verbs.
             In Lua, use <code className="text-emerald-300 font-mono">.</code> for functions/properties (e.g. <code className="text-emerald-300 font-mono">wa.log()</code>) or <code className="text-amber-300 font-mono">:</code> for methods with self (e.g. <code className="text-amber-300 font-mono">a:gfx()</code>). The arrow <code className="text-rose-400 font-mono">-&gt;</code> is from PX engine C++ internals, not valid Lua.
             {' '}For a custom namespaced function such as <code className="text-emerald-300 font-mono">wa.one.two()</code>, choose <code className="font-mono">+ New Class</code>, enter <code className="font-mono">wa.one</code> as the namespace and <code className="font-mono">two</code> as the member.
           </p>
