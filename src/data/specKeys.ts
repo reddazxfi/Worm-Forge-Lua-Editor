@@ -27,6 +27,7 @@ export const WEAPON_SPEC_KEYS: string[] = [
   'worm_sprites',
   'panel_icon',
   'icon',
+  'crosshair',
   'sprite_overrides',
   'cluster_sprite',
   'cluster_homing_sprite',

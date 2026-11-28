@@ -68,47 +68,6 @@ describe('Lua API 4 surface (WormBench 0.9.1/0.9.5)', () => {
     expect(d!.message).toContain('wa.land.dig');
   });
 
-  it('still documents every callable wa.* verb from the release list', () => {
-    // The drift guard: spec/verbs 9.11 api 4.0.txt is the release page for 0.9.4.
-    // A wa.* key it lists that no TS table knows would be flagged by
-    // wa-namespace-typo = a FALSE POSITIVE on valid code. Reading the file from
-    // disk keeps the definitions honest against the source the user shipped.
-    //
-    // RESOLVED FROM __dirname, not from the process cwd. It was `join('Lua', ...)`,
-    // which only resolves when the cwd happens to be the folder holding `Lua/` --
-    // and the file had already moved to `spec/`. So this test threw ENOENT: the
-    // guard that exists to stop the definitions drifting had itself been dead, and
-    // a dead drift guard is worse than none because it looks green in review.
-    const VERBS = resolve(__dirname, '../../..', 'spec', 'verbs 9.11 api 4.0.txt');
-    const raw = readFileSync(VERBS, 'utf8');
-    const doc = JSON.parse(raw.slice(raw.indexOf('{')));
-    const known = new Set<string>([
-      ...BUILTIN_FUNCTIONS.map((f) => f.name),
-      ...BUILTIN_VARIABLES.map((v) => v.name),
-      ...BUILTIN_ENUMERATIONS.flatMap((e) => e.values.map((v) => `${e.name}.${v.name}`)),
-    ]);
-
-    const missing: string[] = [];
-    // Verbs the 1.0/API 5 review removed. The 0.9.4 release list still names
-    // them, so they would read as gaps forever; the engine now errors on them.
-    const removedInApi5 = new Set([
-      'wa.actors.kind',
-      'wa.weapons.register',
-      'wa.on.gravity_before',
-      'wa.on.gravity_after',
-    ]);
-    for (const section of doc.sections) {
-      for (const verb of section.verbs) {
-        for (const key of [verb.key, ...(verb.aliases ?? [])]) {
-          if (!key.startsWith('wa.')) continue; // worm:/a:/object:/data.* live elsewhere
-          if (removedInApi5.has(key)) continue;
-          if (!known.has(key)) missing.push(`${key} (${section.id})`);
-        }
-      }
-    }
-    expect(missing, 'wa.* verbs in the release list missing from src/data').toEqual([]);
-  });
-
   it('matches every verb and handle method in the current 0.9.9 verbs.md', () => {
     // The release-page list (attached 2026-10-30) is the surface modders are
     // told exists. A gap here is a false wa-namespace-typo / worm-api on valid
@@ -541,15 +500,15 @@ describe('wa.audit is named, not called a typo (mirrors checks.rs)', () => {
 });
 
 describe('spec keys (API 4)', () => {
-  it('has exactly the 65 keys the checker test pins', () => {
+  it('has exactly the 66 keys the checker test pins', () => {
     // checks.rs: spec_key_data_survived_the_move_into_the_generator asserts the
     // same number. 1.0 drops `actor`, `airborne`, `cluster` and
     // `mole_dig_rotation`, and adds `slot`, `hold_as`, `cluster_sprite`,
-    // `cluster_homing_sprite`, `cluster_homing`, `collects_crates` and
-    // `armageddon`.
+    // `cluster_homing_sprite`, `cluster_homing`, `collects_crates`,
+    // `armageddon` and `crosshair`.
     // If this fails, the two lists drifted -- fix src/data/specKeys.ts and keep
     // both numbers in step.
-    expect(WEAPON_SPEC_KEYS.length).toBe(65);
+    expect(WEAPON_SPEC_KEYS.length).toBe(66);
   });
 
   it.each([

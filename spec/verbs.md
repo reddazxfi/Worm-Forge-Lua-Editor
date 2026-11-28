@@ -541,9 +541,9 @@ Units: px
 
 ### `worm:jetpack_steer`
 
-`worm:jetpack_steer(on)`
+`worm:jetpack_steer(on [, { speed_limit = false }])`
 
-The pack steers WA's jet pack; WA keeps collisions, fuel HUD and landing.
+The pack steers WA's jet pack; WA keeps collisions, fuel HUD and landing. WA still holds the worm to the scheme's Maximum Jet Pack Speed on each axis; `speed_limit = false` lifts that for this worm until the next call.
 
 ### `worm:clear_keys`
 
@@ -617,7 +617,7 @@ Also: `light`, `actor.light`
 
 ### Actor fields
 
-x, y, vx, vy and facing read and write; id, kind and owner read only. `alive` is whether it still lives (read only; false once removed, exploded or drowned). `grab` is what a tool that picks things up may do with it: true (an object, the default), false (never), `"worm"` (it stands for its owner) or `"projectile"` (it is in flight), nil for true; writes from any callback. `gravity` is a factor as `worm.gravity`: 1 normal, 0 none; a nonzero factor has WA move the actor, and writes need simulation callbacks. `visible` is drawn or not on this machine (any callback). `camera` is nil or false for no request, or a priority 0..13 that asks for the camera at the actor every frame, as `worm.camera` and `object.camera` set their own (any callback).
+x, y, vx, vy and facing read and write; id, kind and owner read only. `alive` is whether it still lives (read only; false once removed, exploded or drowned). `grab` is what a tool that picks things up may do with it: true (an object, the default), false (never), `"worm"` (it stands for its owner) or `"projectile"` (it is in flight), nil for true; writes from simulation callbacks. `gravity` is a factor as `worm.gravity`: 1 normal, 0 none; a nonzero factor has WA move the actor, and writes need simulation callbacks. `visible` is drawn or not on this machine (any callback). `camera` is nil or false for no request, or a priority 0..13 that asks for the camera at the actor every frame, as `worm.camera` and `object.camera` set their own (any callback).
 
 Units: x, y px · vx, vy px/frame
 
@@ -695,7 +695,7 @@ Whether it stands on land.
 
 `a:sleep(frames [, { near = px }])`
 
-Skips the actor's next `frames` frame calls (0 to 3000; 0 wakes it), for one with nothing to do. WA still moves it and its other handlers run; it wakes early, its frame call running that frame, when it lands, leaves the ground, reaches the water or takes damage, when it is hit, blasted, touched or warped, or when a living worm comes within `near` pixels (1..32767). Its own bumps (`on.contact`) do not wake it. The call that ends a sleep has `ev.slept`, the calls skipped (0 on every other frame), so the brain counts what those frames would have counted. Simulation callbacks only.
+Skips the actor's next `frames` frame calls (0 to 3000; 0 wakes it), for one with nothing to do. WA still moves it and its other handlers run; it wakes early, its frame call running that frame, when it lands, leaves the ground, reaches the water or takes damage, when it is hit, blasted, touched or warped, or when a living worm comes within `near` pixels (1..32767; left out, no worm wakes it). Its own bumps (`on.contact`) do not wake it. The call that ends a sleep has `ev.slept`, the calls skipped (0 on every other frame), so the brain counts what those frames would have counted. Simulation callbacks only.
 
 ### `a:hit`
 
@@ -1027,7 +1027,7 @@ Whether this screen belongs to that side. Draw and HUD only.
 
 ### `wa.world.trace`
 
-`wa.world.trace{ x0, y0, x1, y1, radius, with, ignore }`
+`wa.world.trace{ x0, y0, x1, y1, radius, with, ignore, grab }`
 
 Sweeps a circle and returns the first hit, its normal and the object. `with` names what counts: terrain, worms, crates, oil, mines, graves, actors, missiles (terrain alone by default); `grab = { "object", "worm", "projectile" }` limits actors to those. `ignore` is a body or a list.
 
@@ -1051,7 +1051,7 @@ Units: position px
 
 ### `wa.world.collides`
 
-`wa.world.collides{ x, y, radius, with, ignore }`
+`wa.world.collides{ x, y, radius, with, ignore, grab }`
 
 Whether a circle there overlaps anything. `with` and `grab` as `wa.world.trace`'s: terrain, worms, crates, oil, mines, graves, actors, missiles.
 

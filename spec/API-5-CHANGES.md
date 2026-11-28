@@ -282,7 +282,11 @@ in `spec/verbs.md`, the editor tables and both Rust checkers.
   simulation callbacks); `worm.shots_used` is read only.
 - `mine.fuse` is writable from simulation callbacks (`-1` rolls it when the
   mine triggers, else 0..10000 ms).
-- A claim's `hold.draw_hand = false` loads the hand sheet without drawing it.
+- A claim's `hold.draw_hand = false` loads the hand sheet without drawing it,
+  and `crosshair = false` keeps WA's aiming crosshair undrawn while that weapon
+  is out (for a weapon that draws its own).
+- `worm:jetpack_steer(on, { speed_limit = false })` lifts the scheme's Maximum
+  Jet Pack Speed for that worm until the next call.
 - `wa.world.trace` and `wa.world.collides` take `"actors"` and `"missiles"` in
   `with`, plus `grab = { "object", "worm", "projectile" }`.
 
@@ -300,7 +304,7 @@ The editor and both Rust checkers pin these values:
 | `WORM_STATES` (debug labels) | 32 |
 | `READABLE_WORM_STATES` | 31 |
 | `SETTABLE_WORM_STATES` | 5 |
-| `SPEC_KEYS` | 65 |
+| `SPEC_KEYS` | 66 |
 | `PROJECTILE_KEYS` | 8 |
 | `RECORD_FIELDS` | 257 |
 

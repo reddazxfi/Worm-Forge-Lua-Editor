@@ -317,6 +317,7 @@ const WEAPON_CLAIM_FIELDS: TableField[] = [
   { name: 'icon', kind: 'sprite', description: 'Alias of `panel_icon`.' },
   { name: 'panel_icons', kind: 'table', type: 'stock icon names', description: 'Extra panel icons for variant states.' },
   { name: 'is_weapon', kind: 'bool', description: 'Default true. Set false for a non-weapon claim.' },
+  { name: 'crosshair', kind: 'bool', description: 'Default true. Set false to keep WA\'s aiming crosshair undrawn while this weapon is out, for a weapon that draws its own.' },
   { name: 'collects_crates', kind: 'bool', description: 'Default true. Set false so missiles pass through crates instead of collecting them for the firing team.' },
   { name: 'ends_invisibility', kind: 'bool', description: 'Whether using this weapon ends team and per-worm Invisibility. Defaults to WA behavior (weapons that create projectiles end it; rope, Girder, Teleport, Prod, Freeze, Jet Pack, and utilities don\'t).' },
   { name: 'eat_fire', kind: 'bool', description: 'Default false. Consumes the fire key in the Lua handler.' },

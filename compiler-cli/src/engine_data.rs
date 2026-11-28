@@ -638,6 +638,7 @@ pub static SPEC_KEYS: &[&str] = &[
     "worm_sprites",
     "panel_icon",
     "icon",
+    "crosshair",
     "sprite_overrides",
     "cluster_sprite",
     "cluster_homing_sprite",

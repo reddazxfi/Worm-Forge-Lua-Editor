@@ -4461,7 +4461,7 @@ end
     fn spec_key_data_survived_the_move_into_the_generator() {
         assert_eq!(
             SPEC_KEYS.len(),
-            65,
+            66,
             "spec key count changed -- check src/data/specKeys.ts was not truncated"
         );
         for required in [
@@ -4474,6 +4474,7 @@ end
             "collects_crates",
             "ends_invisibility",
             "available_in_caves",
+            "crosshair",
             // 0.9.9 additions: the overlay projectile, the homing click, the two
             // sheep sheets and the rest of record_table::GROUPS.
             "projectile",
