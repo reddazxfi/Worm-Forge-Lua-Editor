@@ -1,249 +1,203 @@
-
-
 # <img src="public/wormbench-luna.png" width="38" height="38" align="absmiddle" alt="WormBench Luna" /> WormBench Luna
-> **Elevate your Worms Armageddon modding workflow with a seamless, robust, next-generation Lua development experience.** 🚀
 
-> **New to WormBench modding?** Start with [MODDING.md](MODDING.md). It explains
-> the bundle / component / profile / `install(ctx)` model step by step, using
-> the same format the loader reads.
+Lua editor and static checker for [WormBench](https://github.com/EdLud/WormBench) mods (Worms Armageddon).
+
+> **New to WormBench modding?** Start with [MODDING.md](MODDING.md). It walks through the mod, component, profile, and `install(ctx)` layout the loader reads.
 >
-> **Upgrading an API 4 pack?** See
-> [API-5-CHANGES.md](API-5-CHANGES.md) for the 1.0/API 5 migration
-> list: renamed and removed verbs, new fields and the current generated counts.
+> **Upgrading an API 4 mod?** See [API-5-CHANGES.md](API-5-CHANGES.md) for the 1.0 / API 5 migration list: renamed and removed verbs, new fields, and current generated counts.
 
-WormBench Luna is a **powerful**, **blazing-fast**, and **thoughtfully crafted** code editor designed to **empower** modders to **unlock** the full potential of the WormBench scripting engine. Whether you're a seasoned modder or just getting started, our **cutting-edge** toolkit has you covered. ✨
+## Features
 
----
+- **Real Lua 5.4 compiler (desktop):** Ships the same `mlua` Lua 5.4 front end as the engine's `crates/lua-host`, so syntax checks match what the game loads.
+- **Rust semantic checker:** Runs `full_moon` AST checks on desktop, with a TypeScript fallback in the web build.
+- **Desync checks:** Flags lockstep hazards like `math.random` and unordered `pairs()` iteration.
+- **Undefined-name checks:** Catches misspelled or undefined globals and fields that compile fine in Lua but crash in-game.
+- **Built-in API reference:** Browse engine functions, classes, enums, tables, and constants inside the editor.
+- **WormBench autocomplete:** Typing `worm:` or `wa.` lists real engine members with signatures and docs.
+- **Scope-aware suggestions:** Ranks autocomplete by scope, so nearby locals outrank engine globals and out-of-scope locals stay hidden.
+- **Mod folder editing:** Open a mod folder (`mod.toml` + Lua), edit files in tabs, and save to disk with `Ctrl+S`.
+- **Structure-aware formatter:** Re-indents Lua by blocks and brackets while ignoring strings and comments, and reports unbalanced chunks instead of rewriting them.
+- **Example mods and templates:** Includes 8 entry points (Agility, Sentry Gun, Keeper Bee, Highlander Rules, Swim Suit, POOZ, Kill The King, and Ripper Star). The `px` entries share the current `px.ports` source so the require graph stays intact.
+- **Parameterized Create Mod:** Prompts for behavior switches or weapon values, writes Lua under `code/`, and creates a profile under `profiles/` with those defaults. The loader shows the same fields, and `ctx.option("key")` reads them in Lua.
+- **Native desktop app:** Built with Tauri 2 on Windows without bundling Chromium.
 
-📁[WormBench Repo](https://github.com/EdLud/WormBench)
-
----
-
-## 🌟 Key Features
-
-- ✅ **Real Lua 5.4 Compiler (Desktop)** — The desktop app ships the *actual* Lua 5.4 build the game compiles your mods with — the same `mlua` front end as the engine's own `crates/lua-host`. "Does this load?" is now answered by the genuine article, not a lookalike. 🧠
-- ⛓️ **Strict Parser** — Featuring rust::full_moon checks with TypeScript as a fall-back for extra reliability.
-- 🛡️ **Lockstep Guardian™** — Proactively catches desync-prone patterns like `math.random` and unordered `pairs()` iteration, so your mods stay **deterministic** and your multiplayer matches stay **drama-free**. 🛡️
-- 🎯 **Runtime-Fatal Name Detection** — Catches names that **compile fine but crash in-game**, before they cost you a whole match. See below. 🚨
-- 📚 **Built-in Documentation Pane** — Explore engine functions, classes, enums, and constants without ever leaving your editor.
-- ⚡ **WormBench Verb Autocomplete** — Type `worm:` or `wa.` and get the real member list, with signatures and documentation, straight from the engine definitions.
-- 📂 **Open / Save Mod Folders** — Open a pack folder (`mod.toml` + Lua), edit its files in tabs, and save straight back to disk with Ctrl+S. 🗂️
-- 🧠 **Scope-Aware Suggestions** — Autocomplete is ranked by *where you actually are*. A local declared two lines up always outranks the entire engine API, and a name from an unrelated function never shows up at all. 🎯
-- 🧹 **Structure-Aware Format** — Re-indents Lua by blocks and brackets, not by regex guesswork. Strings and comments can't fool it, and it tells you when a chunk doesn't balance instead of silently mangling it. ✨
-- 🧩 **Example Mods & Templates** — **8 focused entry points** into modern packs: Agility, Sentry Gun, Keeper Bee, Highlander Rules, Swim Suit, POOZ, Kill The King, and Ripper Star. The `px` entries share the current `px.ports` source, so the require graph stays visible. 🔫
-- 🧰 **Parameterized New Mods** — Create Mod asks for behavior switches or weapon values, writes the Lua under `code/`, and ships a profile under `profiles/` with the chosen defaults. The loader shows the same fields, and `ctx.option("key")` reads them in Lua.
-- 🖥️ **Native Desktop App** — Powered by Tauri for a **lightweight**, **lightning-quick** Windows executable. No bloated Chromium bundle required! 🪶
-
----
-
-## ⌨️ Keyboard Shortcuts
+## Keyboard Shortcuts
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl` + `S` | Save the active file back to the mod folder |
-| `Ctrl` + `Z` / `Ctrl` + `Y` | Undo / redo — history is per-file and survives tab switches |
+| `Ctrl` + `S` | Save the active file to the mod folder |
+| `Ctrl` + `Z` / `Ctrl` + `Y` | Undo / redo (history is per-file and survives tab switches) |
 | `Ctrl` + `F` | Find in file |
 | `F3` | Jump to next match |
-| `Tab` | Accept the autocomplete suggestion (Enter always inserts a newline) |
+| `Tab` | Accept the autocomplete suggestion (`Enter` always inserts a newline) |
 | `Esc` | Dismiss the autocomplete popup |
 
----
+## How Checking Works
 
-## 🔍 How Checking Works — and Why It Matters
+On the desktop, a check runs in two stages:
 
-This is the part that separates a mod that loads from a mod that doesn't.
+1. **The Lua 5.4 compiler.** Your code goes through the same Lua 5.4 front end the engine uses. It parses the chunk and reports the same syntax errors (`'end' expected (to close 'function' at line 120)`, `no visible label 'nowhere' for <goto>`, malformed numbers). It compiles without executing, so no `wa.*` call runs.
+2. **The semantic pass.** The compiler only checks syntax. The semantic pass checks that `worm:hit` is a real verb, flags `math.random` desync risks, and tracks handle types.
 
-**On the desktop**, a check runs in two stages:
+If the desktop compiler isn't available (for example, in the web build or an older `.exe`), stage 1 is skipped and only the built-in TypeScript checker runs. The console labels which checker ran.
 
-1. **The real compiler.** Your Lua is handed to the same Lua 5.4 front end the game engine uses. It parses the chunk and reports exactly what the engine would report — `'end' expected (to close 'function' at line 120)`, `no visible label 'nowhere' for <goto>`, malformed numbers, and so on. It **compiles without executing**, so nothing runs and no `wa.*` call is ever invoked. 🌟
-2. **The semantic pass.** The compiler only knows syntax. It cannot know that `worm:hit` is a real verb, that `math.random` will desync, or that `obj` is really a worm wearing a WorldHandle costume. That pass catches those.
+### Reading the Console
 
-**If the real compiler can't be reached** — an older `.exe` that predates it, say — stage 1 is skipped and you get the built-in parser alone. The console **always labels which one ran**, so a clean pass from the real compiler never gets confused with a clean pass from the built-in one. Honesty, at scale. ✨
+Findings use three severities:
 
-### 🚦 Reading the Console
-
-Findings come in **three** severities, and they are not interchangeable:
-
-| Severity | Meaning | What it looks like |
+| Severity | Meaning | Appearance |
 |---|---|---|
-| 🔴 **Error** | It will not load. | Red gutter dot, red line tint |
-| 🟠 **Warning** | It loads, then misbehaves mid-match. | Amber gutter dot, amber line tint |
-| 🔵 **Info** | An **advisory**. The code is correct as written. | Light blue gutter dot, nothing else |
+| **Error** | Won't load. | Red gutter dot, red line tint |
+| **Warning** | Loads, then misbehaves mid-match. | Amber gutter dot, amber line tint |
+| **Info** | Advisory; the code is valid as written. | Light blue gutter dot only |
 
-`info` is the desync advice, the duck-typed-handle notices, and the
-`worm-msg-filter` optimisation. These **will not break your match**, so they're
-deliberately quiet — a light blue dot, no underline, no line tint. It gets its
-own `Info (n)` filter pill so it never buries the warnings you actually need.
+`Info` covers desync advice, duck-typed handle notices, and the `worm-msg-filter` suggestion. It has its own `Info (n)` filter pill so it doesn't bury warnings.
 
-**Click any diagnostic row** to jump to the line *and* expand the full
-explanation of why it was flagged. 🎯
+Click any diagnostic row to jump to the line and expand its full explanation.
 
-### 🚨 Runtime-Fatal Name Detection
+### Undefined-Name Detection
 
-Because the compiler doesn't *run* your code, a chunk full of invented globals is perfectly valid Lua. Not anymore! Proper scoping now catches the following errors!
+Because the compiler doesn't execute your code, invented globals are valid Lua syntax:
 
 ```lua
-eaea:abstract(asynca)          -- compiles. dies instantly.
-inventedclass:dothingy({})     -- compiles. dies instantly.
-local e = awasd.ra             -- compiles. dies instantly.
+eaea:abstract(asynca)          -- compiles, crashes in-game
+inventedclass:dothingy({})     -- compiles, crashes in-game
+local e = awasd.ra             -- compiles, crashes in-game
 ```
 
-That chunk loads fine and then crashes at `InitGraphic` — and because every mod shares one Lua state, **one bad mod takes every other mod down with it.** The editor flags every name that is read but never defined, so you find out here rather than in a match.
+A chunk like that loads and then crashes at `InitGraphic`. Because all mods share one Lua state, one bad mod brings down the rest. The editor flags any name that is read without being defined.
 
-It also understands the Lua you'd actually write: callback parameters, `for` loop variables, method definitions (`function Worm:ammo(x)` binds `self` implicitly), table keys, and plain global assignment. Verified against the engine repo's example packs with **zero false positives**.
+It recognizes callback parameters, `for` loop variables, method definitions (`function Worm:ammo(x)` binds `self`), table keys, and global assignments.
 
----
-
-## 🏗️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| 🎨 Frontend | React 19 + Tailwind CSS 4 |
-| ⚡ Bundler | Vite 6 |
-| 🦀 Desktop Shell | Tauri 2 (Rust) |
-| 🧠 Lua Compiler | `mlua` 0.10 — Lua 5.4, vendored (identical to the engine's build) |
-| 📝 Language | TypeScript |
-| 🖥️ Local Dev Server | Express — `/api/health` + Vite middleware only, loopback-bound. Serves `npx tauri dev`; not a way to run the app. |
+| Frontend | React 19 + Tailwind CSS 4 |
+| Bundler | Vite 6 |
+| Desktop shell | Tauri 2 (Rust) |
+| Lua compiler | `mlua` 0.10 (Lua 5.4, vendored to match the engine build) |
+| Language | TypeScript |
+| Local dev server | Express (`/api/health` + Vite middleware only, loopback-bound; serves `npx tauri dev`) |
 
----
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) 🟢
-- [Rust](https://rustup.rs/) 🦀 (`winget install Rustlang.Rustup`)
-- Visual Studio Build Tools with **Desktop development with C++** 🛠️ (Windows only)
+
+- [Node.js](https://nodejs.org/)
+- [Rust](https://rustup.rs/) (`winget install Rustlang.Rustup`)
+- Visual Studio Build Tools with **Desktop development with C++** (Windows only)
 
 ### Run in Development
+
 ```bash
 npm install --legacy-peer-deps
 npx tauri dev
 ```
-That starts the local server and opens the desktop window. The dev server exists to
-serve the window during development; **it is not a supported way to run the app.** 🪄
 
-> **The desktop app is the supported target.** Folder open/save, the real Lua
-> compiler, the mods list and Create Mod all need Tauri. A static web build is
-> published for browsing/editing single files; it is not a full replacement.
-> There are no filesystem endpoints on the dev server.
+This starts the local dev server and opens the desktop window. The dev server only exists to serve the window during development; it isn't a supported way to run the app.
 
-### Web build (GitHub Pages)
+> **The desktop app is the supported target.** Folder open/save, the Lua 5.4 compiler, the mods list, and Create Mod all require Tauri. The static web build is for browsing and editing single files, and the dev server has no filesystem endpoints.
 
-`.github/workflows/deploy-pages.yml` builds the Vite frontend and deploys `dist`
-to GitHub Pages on every push to `main`. Enable **Settings → Pages → Source:
-GitHub Actions** once in the repository; after that the site is at:
+### Web Build (GitHub Pages)
+
+`.github/workflows/deploy-pages.yml` builds the Vite frontend and deploys `dist` to GitHub Pages on every push to `main`. Enable **Settings -> Pages -> Source: GitHub Actions** once in the repository; the site is then published at:
 
 ```text
 https://<owner>.github.io/WormBench-Lua-Editor/
 ```
 
-The web build keeps the editor, the API sidebar and single-file syntax checking.
-It does not have the Rust Lua compiler, folder open/save, the mods list or Create
-Mod. The desktop `.exe` remains the real modding tool.
+The web build includes the editor, the API sidebar, and single-file checking. It doesn't include the Rust Lua compiler, folder open/save, the mods list, or Create Mod.
 
-### New mod layout
-Create Mod writes a bundle in the same shape the loader installs:
+### New Mod Layout
 
-```
+Create Mod writes a mod in the same layout the loader installs:
+
+```text
 my_mod/
   mod.toml                  # one component + [[components.options]]
   code/mod.lua              # feature: install(ctx); weapon: { defaults, install }
   profiles/My Mod.toml      # selects the component and stores the chosen values
 ```
 
-Behavior mods default to bool options, which the loader shows as checkmarks. Weapon
-mods default to numeric options for values such as `ctx.option("bullets")`, and their
-starter profile places the weapon on F1 with a small stock kit.
+Feature mods default to boolean options, which the loader shows as checkboxes. Weapon mods default to numeric options for values like `ctx.option("bullets")`, and their starter profile places the weapon on F1 with a small stock kit.
 
-For the full explanation of `return`, `ctx`, `defaults`, profiles and where
-custom behavior belongs, read [MODDING.md](MODDING.md).
+Read [MODDING.md](MODDING.md) for the full guide to `return`, `ctx`, `defaults`, profiles, and custom behavior.
 
 ### Build the Windows `.exe`
+
 ```bat
 build-tauri.bat
 ```
-Your shiny new executable will be waiting at:
-```
+
+Output path:
+
+```text
 src-tauri\target\release\wormbench-code-editor.exe
 ```
-🎉 *(The first build compiles Rust crates **and** the vendored Lua 5.4 C sources, and may take several minutes. Grab a coffee!)* ☕
 
-> 💡 **Rebuilding after a TypeScript-only change?** Use `npx tauri build` instead. It reuses the cached Rust codegen and is dramatically faster — `build-tauri.bat` wipes `node_modules` and `dist`, then installs exactly what `package-lock.json` pins. Use the full script when something is genuinely wedged.
+The first build compiles Rust crates and the vendored Lua 5.4 C sources, which takes several minutes.
 
----
+> **Rebuilding after a TypeScript-only change?** Run `npx tauri build` instead. It reuses the cached Rust build and finishes much faster. `build-tauri.bat` wipes `node_modules` and `dist` and reinstalls from `package-lock.json`; use it for a clean rebuild.
 
-## 📁 Project Structure
+## Project Structure
 
-```
+```text
 ├── src/
-│   ├── components/   # 🎨 UI components
-│   ├── data/         # 📚 Engine definitions, templates, the generated example corpus
-│   ├── services/     # ⚙️ lexer, parser/checker, formatter, luaCompiler, mod folder, config
-│   └── types/        # 🧾 TypeScript types
-├── examples/         # 🧩 8 curated entry points (modern px/utilities/pooz/bees/ripper)
-├── API-5-CHANGES.md  # 🧭 API 4 → API 5 migration reference
+│   ├── components/   # UI components
+│   ├── data/         # Engine definitions, templates, generated example corpus
+│   ├── services/     # Lexer, parser/checker, formatter, luaCompiler, mod folder, config
+│   └── types/        # TypeScript types
+├── examples/         # 8 curated entry points (px, utilities, pooz, bees, ripper)
+├── API-5-CHANGES.md  # API 4 -> API 5 migration reference
 ├── src-tauri/
-│   ├── src/          # 🦀 Rust: full_moon semantic checker + the compile_lua command
-│   └── capabilities/ # 🔐 Plugin permissions (fs, dialog)
-├── scripts/          # 🧪 Engine-data generator + the Rust-vs-TS differential sweep
-└── server.ts         # 🔌 Dev-only server (health + Vite middleware, loopback)
+│   ├── src/          # Rust full_moon semantic checker and compile_lua command
+│   └── capabilities/ # Plugin permissions (fs, dialog)
+├── scripts/          # Engine-data generator and Rust-vs-TS differential sweep
+└── server.ts         # Dev-only server (health + Vite middleware, loopback)
 ```
 
----
+## Known Limitations
 
-## ⚠️ Known Limitations
+- The semantic checker has two implementations kept in sync: TypeScript and Rust (`full_moon`). A differential sweep runs both over the engine mod corpus on demand; it currently reports 0 real drift, and known differences are listed in the sweep script.
+- Syntax checking isn't AST-based on the TypeScript side. Despite the "AST Inspector" label in the UI, that layer is a hand-written tokenizer and two stacks. The Lua 5.4 compiler in the desktop build is the authoritative syntax check.
+- The Lua 5.4 compiler requires a current build. An older `.exe` falls back to the built-in parser and reports that in the console.
+- Undefined-name checking is scope-aware in the Rust checker and in autocomplete; the TypeScript fallback used in the web build is a flat file-wide pass.
+- Unknown-method checks only cover a fixed receiver list (`a`, `actor`, `worm`, `m`, `missile`, `inv`/`store`/`inventory`, `mine`/`drum`/`oil`/`crate`/`grave`/`obj`/`object`). Receivers narrowed by a `.kind` test are treated as a runtime union and reported as `Info` rather than a warning.
+- The API sidebar and autocomplete target engine 1.0 (Lua API 5.0) and may lag behind newer engine versions. Use **+ Custom Verb** to add missing verbs; registered verbs feed autocomplete and both checkers, silencing `wa-namespace-typo` warnings. For a namespaced function like `wa.one.two()`, choose **+ New Class**, enter `wa.one` as the namespace/class and `two` as the member (dots belong in the namespace field, not the member name). Custom verbs persist to `custom_verbs.cfg`.
+- Built with heavy AI assistance; expect rough edges.
 
-- The semantic checker has **two implementations** kept in step: a TypeScript one and a Rust `full_moon` one. A differential sweep runs both over the engine's whole mod corpus on demand; it currently reports **0 real drift**, and the handful of differences are adjudicated in the sweep script. 🧪
-- Syntax checking is **not AST-based** on the TypeScript side. Despite the "AST Inspector" label in the UI, that layer is a hand-written tokenizer plus two stacks. The real Lua 5.4 compiler in the desktop build is what makes syntax checking authoritative. 🤖
-- **The real compiler requires a current build.** An `.exe` predating the compiler silently falls back to the built-in parser, and the console says so.
-- The undefined-name check is **scope-aware in the Rust checker** (and in autocomplete); the TypeScript fallback used outside the desktop app is a flat file-wide pass.
-- Unknown-method checks only cover a **fixed receiver list** (`a`, `actor`, `worm`, `m`, `missile`, `inv`/`store`/`inventory`, `mine`/`drum`/`oil`/`crate`/`grave`/`obj`/`object`). Receivers narrowed by a `.kind` test are treated as a runtime union and reported as an `info` notice rather than a warning.
-- The API sidebar and autocomplete follow engine **1.0** (Lua API 5.0) and may lag behind newer engine versions. Use the **+ Custom Verb** button to cover the gaps, or wait for updates. A registered verb feeds autocomplete **and** both checkers, so the same registration also silences the `wa-namespace-typo` warning. For a namespaced function such as `wa.one.two()`, choose **+ New Class**, enter `wa.one` as the namespace/class and `two` as the member — dots belong in the namespace field, not the member name. Verbs persist to `custom_verbs.cfg`.
-- Built with heavy AI assistance (vibecoded). Expect rough edges. 🤖
+## Contributing
 
----
+Issues and pull requests are welcome.
 
-## 🤖 Contributing
+> Adding a WormBench verb? Add it to `src/data/wormbenchDefinitions.ts`. That table feeds the docs pane, autocomplete, and unknown-method warnings.
 
-Contributions are **warmly welcomed**! 💖 Feel free to open an issue or submit a pull request. Together, we can **forge** the future of Worms modding. 🔥
+## Development
 
-> ⚠️ Adding a WormBench verb? Add it to `src/data/wormbenchDefinitions.ts`. That one table feeds the docs pane, the autocomplete, **and** the unknown-method warnings — three consumers, zero duplication. 🔗
-
----
-
-## 🧪 Development
-
-Six gates, and **`npm run lint` alone is not enough**:
+Six checks are required (`npm run lint` alone isn't enough):
 
 | Command | Checks |
 |---|---|
 | `npm run lint` | TypeScript types (`tsc --noEmit`) |
-| `npm test` | The vitest suite |
-| `cd src-tauri; cargo test` | The Rust checker |
-| `npx tsx scripts/__sweep.ts` | Rust vs TypeScript over the engine's mod corpus |
-| `npx tsx scripts/genEngineData.ts --check` | The generated engine tables are current |
-| `npx tsx scripts/genRecordFields.ts --check` | The generated record-field table is current |
+| `npm test` | Vitest suite |
+| `cd src-tauri; cargo test` | Rust checker |
+| `npx tsx scripts/__sweep.ts` | Rust vs TypeScript over the engine mod corpus |
+| `npx tsx scripts/genEngineData.ts --check` | Generated engine tables are current |
+| `npx tsx scripts/genRecordFields.ts --check` | Generated record-field table is current |
 
-The sweep and the two `--check` generators catch the failure mode no unit test can see: the two checker
-implementations silently drifting apart, or a hand-edited data table falling out
-of sync with its generated Rust copy. 🧪
+The sweep and the two `--check` scripts catch drift between the two checker implementations or between hand-edited TypeScript tables and their generated Rust copies.
 
-> 💡 After a TypeScript-only change, `npx tauri build` is the only real runtime
-> check — and it fails with *Access is denied* if the `.exe` is already running.
-> Ask the user to close the app; don't kill the process.
+> After a TypeScript-only change, `npx tauri build` is the real runtime check, and it fails with *Access is denied* if the `.exe` is already running. Close the app first.
 
----
+## License
 
-## 📜 License
-
-MIT. See [LICENSE](LICENSE). ⚖️
+MIT. See [LICENSE](LICENSE).
 
 Not affiliated with Team17 or Worms Armageddon. This is a third-party tool for the [WormBench](https://github.com/EdLud/WormBench) modding engine, which is MIT-licensed and maintained separately.
 
 <div align="center">
 
 [![128x128-2x.png](https://i.postimg.cc/vBfwbz62/128x128-2x.png)](https://postimg.cc/ZBbML6H6)
-
-**Made with ❤️ and a *deep passion* for worms.** 🪱
 
 </div>
